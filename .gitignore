@@ -236,3 +236,42 @@ laragon/
 !config/wsgi.py
 !config/asgi.py
 !*/__init__.py
+
+# Frontend (React/Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.env.local
+frontend/.env.*.local
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.vite/
+frontend/.eslintcache
+frontend/coverage/
+frontend/.parcel-cache/
+frontend/.cache/
+frontend/.next/
+frontend/out/
+frontend/.nuxt/
+frontend/.output/
+
+# Windows specific
+nul
+*.cab
+*.msi
+*.msm
+*.msp
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux
+*~
+
+# Archivos temporales
+*.swp
+*.swo
+*~
