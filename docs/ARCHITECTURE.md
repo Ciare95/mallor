@@ -16,6 +16,7 @@ Documento técnico de alto nivel que describe la arquitectura, componentes, patr
 - [10. Integraciones Externas](#10-integraciones-externas)
 - [11. Principios de Diseño](#11-principios-de-diseño)
 - [12. Decisiones de Arquitectura](#12-decisiones-de-arquitectura)
+- [13. Deuda Técnica y Mejoras Pendientes](#13-deuda-técnica-y-mejoras-pendientes)
 
 ---
 
@@ -535,6 +536,182 @@ Implementación:
 **Contexto**: Acelerar desarrollo inicial de funcionalidades core.
 **Decisión**: Autenticación de sesión Django en fases tempranas, JWT al final.
 **Justificación**: Permite testing ágil durante desarrollo; JWT se integrará como capa añadida sin romper la API.
+
+---
+
+## 13. Deuda Técnica y Mejoras Pendientes
+
+Esta sección documenta las áreas de la arquitectura que requieren atención antes o durante la entrada a producción. Se clasifican por prioridad.
+
+### 13.1 🔴 Estandarización de errores en Services
+
+**Problema actual**: las validaciones de formato se realizan en los Serializers, pero la capa de Services puede romper el flujo de ejecución lanzando excepciones genéricas de Python/Django sin un contrato de error definido. Esto hace que los errores de dominio sean difíciles de capturar, traducir al cliente y loguear de forma uniforme.
+
+**Mejora propuesta**: definir excepciones de dominio personalizadas y usarlas de forma consistente en toda la capa de servicios.
+
+```python
+# core/exceptions.py
+class DomainError(Exception):
+    """Error de regla de negocio controlado."""
+    def __init__(self, message: str, code: str = "domain_error"):
+        self.message = message
+        self.code = code
+        super().__init__(message)
+
+class StockInsuficienteError(DomainError): ...
+class VentaCerradaError(DomainError): ...
+class FacturacionError(DomainError): ...
+```
+
+- Los Services lanzan `DomainError` (o subclases) ante violaciones de reglas de negocio.
+- Las Views capturan `DomainError` y retornan `400` con el mensaje estructurado.
+- Las excepciones inesperadas siguen subiendo para ser capturadas por el handler global (`500`).
+
+**Archivos a crear/modificar**: `core/exceptions.py`, handler global en `core/views.py` o `settings.py`, cada `services.py` existente.
+
+---
+
+### 13.2 🟡 Interfaces/Adaptadores formales en Services
+
+**Problema actual**: toda la lógica de negocio y las llamadas a servicios externos (Factus, DeepSeek) están implementadas directamente en las clases `*Service`. Esto acopla el dominio a implementaciones concretas: si se cambia Factus por otro proveedor de facturación, hay que modificar código de negocio.
+
+**Mejora propuesta**: introducir interfaces (clases abstractas o protocolos) que definan el contrato de cada integración, e inyectar la implementación concreta como dependencia.
+
+```python
+# ventas/ports.py
+from abc import ABC, abstractmethod
+
+class FacturacionPort(ABC):
+    @abstractmethod
+    def emitir_factura(self, venta) -> dict: ...
+
+    @abstractmethod
+    def anular_factura(self, numero: str) -> bool: ...
+
+# ventas/adapters/factus_adapter.py
+class FactusAdapter(FacturacionPort):
+    def emitir_factura(self, venta) -> dict:
+        # implementación real con Factus
+        ...
+```
+
+- Los Services dependen de `FacturacionPort`, no de `FactusAdapter` directamente (Dependency Inversion — SOLID D).
+- En tests se puede inyectar un `MockFacturacionAdapter` sin levantar HTTP.
+- Cambiar de proveedor implica crear un nuevo adaptador, no tocar el dominio.
+
+**Archivos a crear**: `ventas/ports.py`, `ventas/adapters/factus_adapter.py`, `IA/ports.py`, `IA/adapters/deepseek_adapter.py`.
+
+---
+
+### 13.3 🟡 Seguridad estricta en el Asistente IA (DeepSeek)
+
+**Problema actual**: el módulo `IA` conecta el chat de lenguaje natural directamente con la base de datos. Aunque se planificó filtrado de queries y permisos por rol, un modelo de lenguaje puede generar consultas destructivas (`DELETE`, `UPDATE`, `DROP`) o exponer datos sensibles si la capa de autorización no es suficientemente estricta.
+
+**Riesgos identificados**:
+
+| Riesgo | Impacto |
+|---|---|
+| Queries destructivas generadas por el LLM | Pérdida de datos irreversible |
+| Exposición de datos de usuarios/clientes | Violación de privacidad / GDPR |
+| Prompt injection para eludir restricciones | Acceso no autorizado |
+
+**Medidas de mitigación requeridas**:
+
+1. **Capa de autorización por rol**: el asistente solo puede ejecutar consultas de lectura (`SELECT`) para el rol `EMPLEADO`; el rol `ADMIN` puede tener acceso ampliado pero auditado.
+2. **Lista blanca de tablas/campos**: definir explícitamente qué tablas y columnas son consultables por el LLM. Nunca exponer `usuario.password`, tokens, credenciales.
+3. **Query sanitization**: parsear la consulta generada antes de ejecutarla; rechazar cualquier sentencia que no sea `SELECT`.
+4. **Rate limiting**: limitar el número de consultas por sesión/usuario para evitar exfiltración masiva de datos.
+5. **Auditoría**: registrar todas las consultas ejecutadas por el LLM con el usuario que las originó.
+
+```python
+# IA/services.py — ejemplo de guardrail
+TABLAS_PERMITIDAS = {'producto', 'venta', 'cliente', 'historialinventario'}
+CAMPOS_BLOQUEADOS = {'password', 'token', 'secret', 'credencial'}
+
+def ejecutar_query_ia(query_sql: str, rol: str) -> list:
+    validar_query_segura(query_sql, TABLAS_PERMITIDAS, CAMPOS_BLOQUEADOS)
+    if rol != 'ADMIN':
+        validar_solo_lectura(query_sql)
+    return ejecutar_con_timeout(query_sql, timeout_ms=3000)
+```
+
+---
+
+### 13.4 🟢 Logging centralizado
+
+**Problema actual**: no existe una estrategia de logging unificada. En producción esto impide diagnosticar errores, auditar integraciones y monitorear el comportamiento del sistema.
+
+**Mejora propuesta**: configurar Django `LOGGING` con handlers diferenciados por nivel y destino.
+
+```python
+# settings.py
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'file_errors': {
+            'level': 'ERROR',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs/errors.log',
+            'formatter': 'verbose',
+        },
+        'file_integraciones': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'logs/integraciones.log',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'mallor.errors': {
+            'handlers': ['file_errors'],
+            'level': 'ERROR',
+            'propagate': False,
+        },
+        'mallor.factus': {
+            'handlers': ['file_integraciones'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'mallor.ia': {
+            'handlers': ['file_integraciones'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+    },
+}
+```
+
+**Uso en código**:
+
+```python
+import logging
+logger = logging.getLogger('mallor.factus')
+
+class FactusService:
+    def emitir_factura(self, venta):
+        logger.info("Emitiendo factura para venta %s", venta.id)
+        try:
+            resultado = self._llamar_api(venta)
+            logger.info("Factura emitida: %s", resultado.get('numero'))
+            return resultado
+        except Exception as exc:
+            logger.error("Error al emitir factura venta %s: %s", venta.id, exc, exc_info=True)
+            raise
+```
+
+**Consideraciones para producción**:
+
+- Rotar logs con `RotatingFileHandler` (evitar archivos de log sin límite de tamaño).
+- Considerar integración con Sentry o similar para alertas en tiempo real.
+- Nunca loguear datos sensibles (passwords, tokens, datos personales).
+- Añadir directorio `logs/` al `.gitignore`.
 
 ---
 
