@@ -407,7 +407,7 @@ El modelo `productos` debe incluir los siguientes campos para garantizar compati
 #### Buenas Prácticas
 
 **React**:
-- [Guía de estilo Airbnb para React](https://github.com/airbnb/javascript/tree/master/react)
+- [vercel-react-best-practices](https://skills.sh/vercel-labs/agent-skills/vercel-react-best-practices)
 
 **Python**:
 - [PEP 8 - Guía de estilo Python](https://peps.python.org/pep-0008/)
