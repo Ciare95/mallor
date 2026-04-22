@@ -216,30 +216,32 @@ Funciones auxiliares reutilizables, independientes del dominio específico.
 
 ```
 frontend/src/
-├── components/           # Componentes reutilizables (UI)
-│   ├── common/          # Button, Modal, Input, Table...
-│   ├── layout/          # Sidebar, Navbar, Layout
-│   ├── usuarios/
-│   ├── inventario/
-│   └── ventas/
-├── pages/               # Vistas/páginas enrutadas
-│   ├── usuarios/
-│   ├── inventario/
-│   └── ventas/
-├── services/            # Cliente API (Axios)
-│   ├── api.js          # Instancia axios + interceptors
-│   ├── usuarios.service.js
-│   ├── inventario.service.js
-│   └── ventas.service.js
-├── hooks/               # Custom hooks (useAuth, useDebounce...)
-├── store/               # Estado global (Zustand)
-│   ├── authStore.js
-│   └── uiStore.js
-├── utils/               # formatters, validators
-├── assets/              # imágenes, iconos
+├── components/              # Componentes reutilizables
+│   ├── ui/                 # Toast, Button, Modal...
+│   ├── Layout.jsx          # Layout principal con navegación
+│   └── usuarios/           # Componentes del módulo usuarios
+│       ├── UsuariosPage.jsx
+│       ├── UsuariosList.jsx
+│       ├── UsuarioForm.jsx
+│       ├── UsuarioDetail.jsx
+│       ├── ConfirmDelete.jsx
+│       └── CambiarPasswordModal.jsx
+├── pages/                   # Wrappers de páginas enrutadas
+│   └── usuarios/
+├── routes/                  # Configuración de React Router
+│   └── index.jsx
+├── services/                # Cliente API (Axios)
+│   ├── api.js              # Instancia axios + auth (dev: Basic)
+│   └── usuarios.service.js
+├── hooks/                   # Custom hooks
+│   └── useToast.js
+├── store/                   # Estado global (Zustand)
+│   └── useStore.js         # usuarioActivo, UI state
 ├── App.jsx
 └── main.jsx
 ```
+
+> Nota: la estructura seguirá creciendo conforme avancen las épicas. Las carpetas `inventario/`, `ventas/`, etc. se añadirán con el mismo patrón que `usuarios/`.
 
 ### 5.2 Flujo de datos
 
@@ -374,16 +376,25 @@ Para el detalle de campos del modelo `Producto`, ver [DOCUMENTACION_REQUISITOS.m
 
 ### 8.2 Paginación
 
-Paginación estándar de DRF con `PageNumberPagination`:
+Paginación basada en `PageNumberPagination` de DRF, con un formato de respuesta extendido (implementado en `UsuarioViewSet` y adoptado como convención para todos los listados):
+
+- `page_size` por defecto: **10**
+- `page_size_query_param`: `page_size` (configurable por request)
+- `max_page_size`: **100**
 
 ```json
 {
   "count": 120,
   "next": "http://api/productos/?page=3",
   "previous": "http://api/productos/?page=1",
-  "results": [ ... ]
+  "results": [ ... ],
+  "page_size": 10,
+  "current_page": 2,
+  "total_pages": 12
 }
 ```
+
+Los campos `page_size`, `current_page` y `total_pages` facilitan la construcción del paginador en el frontend sin necesidad de parsear las URLs `next`/`previous`.
 
 ### 8.3 Filtrado y búsqueda
 
@@ -423,10 +434,32 @@ Sistema de roles con dos niveles:
 | `ADMIN`     | Acceso total: usuarios, inventario, informes, config    |
 | `EMPLEADO`  | Ventas, registro de facturas, consulta; sin informes financieros |
 
-Implementación:
-- Decorador `@role_required(['ADMIN'])` en views o services.
-- Mixin `RolePermissionMixin` para ViewSets.
-- Validación también en capa de servicios (defense in depth).
+**Implementación actual** (módulo `usuario/utils.py`):
+
+1. **Decorador `@role_required(roles)`** — para vistas basadas en funciones:
+   ```python
+   from usuario.utils import role_required
+
+   @role_required(['ADMIN'])
+   def vista_solo_admin(request): ...
+   ```
+
+2. **Mixin `RolePermissionMixin`** — para `APIView` / `ViewSet`:
+   ```python
+   class ConfigView(RolePermissionMixin, APIView):
+       required_roles = ['ADMIN']
+   ```
+
+3. **Permission class `UsuarioPermission`** — permiso DRF que delega la decisión en el servicio `UsuarioService.validar_permisos(usuario, accion, recurso)`, permitiendo reglas granulares a nivel de objeto (ej. un empleado solo puede editar su propio perfil).
+
+4. **Catálogo centralizado `PERMISOS`** (`usuario/utils.py`) — diccionario con todas las acciones del sistema (`USUARIO_CREAR`, `VENTA_CREAR`, `INFORME_VER_FINANCIERO`, etc.) para evitar strings mágicos y facilitar refactors.
+
+5. **Defense in depth**: la validación se realiza en tres capas:
+   - **View** (DRF permissions + mixin)
+   - **Service** (`UsuarioService.validar_permisos` + validaciones explícitas como `UltimoAdministradorError`)
+   - **Modelo** (`is_admin` / `is_empleado` como properties)
+
+**Regla especial — primer usuario del sistema**: cuando no existe ningún `Usuario` activo, el endpoint `POST /api/usuarios/` permite creación sin autenticación (bootstrap). Una vez exista al menos un usuario, se exige autenticación para todas las acciones de escritura.
 
 ### 9.3 Seguridad general
 
@@ -543,31 +576,43 @@ Implementación:
 
 Esta sección documenta las áreas de la arquitectura que requieren atención antes o durante la entrada a producción. Se clasifican por prioridad.
 
-### 13.1 🔴 Estandarización de errores en Services
+### 13.1 ✅ Estandarización de errores en Services *(Implementado — Épica 2)*
 
-**Problema actual**: las validaciones de formato se realizan en los Serializers, pero la capa de Services puede romper el flujo de ejecución lanzando excepciones genéricas de Python/Django sin un contrato de error definido. Esto hace que los errores de dominio sean difíciles de capturar, traducir al cliente y loguear de forma uniforme.
+**Estado**: Implementado en la Épica 2 como parte del módulo `core`. Pendiente de extender a los módulos restantes (`inventario`, `ventas`, `cliente`, etc.) conforme se desarrollen.
 
-**Mejora propuesta**: definir excepciones de dominio personalizadas y usarlas de forma consistente en toda la capa de servicios.
+**Implementación actual**: jerarquía de excepciones de dominio en `core/exceptions.py`, usada por los Services y capturada por las Views para traducir errores de negocio a respuestas HTTP estructuradas.
 
 ```python
-# core/exceptions.py
-class DomainError(Exception):
-    """Error de regla de negocio controlado."""
-    def __init__(self, message: str, code: str = "domain_error"):
+# core/exceptions.py (implementado)
+class MallorError(Exception):
+    """Excepción base para todos los errores de dominio del sistema."""
+    def __init__(self, message: str, code: str = "error_general"):
         self.message = message
         self.code = code
         super().__init__(message)
 
-class StockInsuficienteError(DomainError): ...
-class VentaCerradaError(DomainError): ...
-class FacturacionError(DomainError): ...
+class UsuarioError(MallorError): ...
+class UsuarioNoEncontradoError(UsuarioError): ...
+class UsuarioDuplicadoError(UsuarioError): ...
+class PasswordIncorrectoError(UsuarioError): ...
+class PasswordInseguroError(UsuarioError): ...
+class PermisoDenegadoError(UsuarioError): ...
+class UltimoAdministradorError(UsuarioError): ...
 ```
 
-- Los Services lanzan `DomainError` (o subclases) ante violaciones de reglas de negocio.
-- Las Views capturan `DomainError` y retornan `400` con el mensaje estructurado.
-- Las excepciones inesperadas siguen subiendo para ser capturadas por el handler global (`500`).
+**Convenciones adoptadas**:
 
-**Archivos a crear/modificar**: `core/exceptions.py`, handler global en `core/views.py` o `settings.py`, cada `services.py` existente.
+- Cada excepción incluye `message` y `code` (código estable para el cliente).
+- Las excepciones específicas por módulo heredan de un error base de módulo (`UsuarioError`), que a su vez hereda de `MallorError`.
+- Los Services lanzan la excepción más específica posible.
+- Las Views capturan las excepciones conocidas y retornan `400 Bad Request` / `404 Not Found` con `{"error": exc.message}`.
+- Las excepciones inesperadas suben como `500 Internal Server Error`.
+
+**Pendiente**:
+
+- Crear las subjerarquías para módulos futuros: `InventarioError`, `VentaError`, `FacturacionError`, etc.
+- Implementar un `exception_handler` global de DRF en `core/` para uniformar la respuesta (formato `{"detail": ..., "code": ..., "errors": {...}}`) y eliminar el `try/except` repetido en cada view.
+- Añadir logging automático de `MallorError` para auditoría.
 
 ---
 
