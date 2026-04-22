@@ -26,6 +26,36 @@ class UsuarioService:
     
     Sigue el principio de Single Responsibility (SOLID) separando la
     lógica de negocio de las vistas y serializers.
+    
+    **Sistema de Permisos:**
+    
+    El servicio incluye un sistema completo de permisos basado en roles
+    (ADMIN/EMPLEADO) que se utiliza en toda la aplicación para controlar
+    el acceso a funcionalidades. Los permisos se validan mediante el
+    método `validar_permisos()` que implementa las reglas de negocio
+    definidas en los requerimientos del sistema.
+    
+    **Roles y sus capacidades:**
+    
+    1. **ADMINISTRADOR (ADMIN):**
+       - Acceso completo al sistema
+       - Gestión completa de usuarios (CRUD)
+       - Acceso a informes y estadísticas
+       - Configuración del sistema
+       - Sin restricciones
+    
+    2. **EMPLEADO (EMPLEADO):**
+       - Creación de ventas
+       - Registro de facturas
+       - Ingreso de productos
+       - Consulta de información básica
+       - Sin acceso a informes financieros
+       - Solo puede gestionar su propio perfil de usuario
+    
+    Los permisos se aplican en tres capas:
+    1. **Vistas**: Mediante `UsuarioPermission` y decoradores
+    2. **Servicios**: Validación en métodos de negocio
+    3. **Serializers**: Validación de datos según permisos
     """
     
     @staticmethod
@@ -271,13 +301,51 @@ class UsuarioService:
         """
         Valida si un usuario tiene permisos para realizar una acción.
         
+        Este es el corazón del sistema de permisos basado en roles. Implementa
+        la lógica de negocio para determinar qué acciones puede realizar cada
+        tipo de usuario (ADMIN o EMPLEADO).
+        
+        **Reglas de permisos:**
+        
+        1. **Administradores (ADMIN):**
+           - Acceso completo a todas las funcionalidades
+           - Pueden gestionar cualquier usuario
+           - Pueden acceder a informes y configuración
+        
+        2. **Empleados (EMPLEADO):**
+           - NO pueden: crear usuarios, eliminar usuarios, actualizar roles
+           - PUEDEN: ver y actualizar su propio perfil
+           - PUEDEN: cambiar su propia contraseña
+           - Acceso limitado a otras funcionalidades (definidas por cada módulo)
+        
+        **Acciones definidas:**
+        - 'crear_usuario': Crear nuevos usuarios
+        - 'ver_usuario': Ver información de usuario
+        - 'actualizar_usuario': Actualizar información de usuario
+        - 'eliminar_usuario': Eliminar usuario (soft delete)
+        - 'cambiar_password': Cambiar contraseña de usuario
+        - 'listar_usuarios': Listar todos los usuarios
+        - 'actualizar_rol': Cambiar rol de un usuario
+        
         Args:
-            usuario: Usuario a validar
-            accion: Acción a realizar (crear, leer, actualizar, eliminar, etc.)
-            recurso: Recurso sobre el que se realiza la acción (opcional)
+            usuario: Usuario a validar (debe ser instancia de Usuario)
+            accion: Acción a realizar (ver lista arriba)
+            recurso: Recurso sobre el que se realiza la acción (opcional, ej: objeto Usuario)
             
         Returns:
             bool: True si tiene permisos, False en caso contrario
+            
+        Raises:
+            ValueError: Si el usuario no es una instancia válida de Usuario
+            
+        Ejemplo:
+            >>> usuario_admin = Usuario.objects.get(role='ADMIN')
+            >>> UsuarioService.validar_permisos(usuario_admin, 'crear_usuario')
+            True
+            
+            >>> usuario_empleado = Usuario.objects.get(role='EMPLEADO')
+            >>> UsuarioService.validar_permisos(usuario_empleado, 'crear_usuario')
+            False
         """
         # Administradores tienen acceso completo
         if usuario.is_admin:

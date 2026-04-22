@@ -1,5 +1,5 @@
 from typing import Any, Dict
-from rest_framework import viewsets, status, permissions
+from rest_framework import viewsets, status, permissions, views
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.request import Request
@@ -14,6 +14,7 @@ from .serializers import (
     UsuarioUpdateSerializer,
 )
 from .services import UsuarioService
+from .utils import RolePermissionMixin, role_required, permission_required, PERMISOS
 from core.exceptions import (
     UsuarioError,
     UsuarioNoEncontradoError,
@@ -83,7 +84,7 @@ class UsuarioPermission(permissions.BasePermission):
         return mapping.get(view_action, view_action)
 
 
-class UsuarioViewSet(viewsets.ViewSet):
+class UsuarioViewSet(RolePermissionMixin, viewsets.ViewSet):
     """
     ViewSet para gestionar operaciones CRUD de usuarios.
     
@@ -97,6 +98,9 @@ class UsuarioViewSet(viewsets.ViewSet):
     Sigue la arquitectura de capas: View → Serializer → Service → Model
     """
 
+    # Roles requeridos para el mixin (None = validación granular por UsuarioPermission)
+    required_roles = None
+    
     permission_classes = [UsuarioPermission]
     serializer_classes = {
         'list': UsuarioListSerializer,
@@ -460,3 +464,71 @@ class UsuarioViewSet(viewsets.ViewSet):
         """
         assert self.paginator is not None
         return self.paginator.get_paginated_response(data)
+
+
+# Vista de ejemplo para demostrar el uso de RolePermissionMixin y decoradores
+class EjemploAdminView(RolePermissionMixin, views.APIView):
+    """
+    Vista de ejemplo que requiere rol de administrador.
+    
+    Demuestra el uso del RolePermissionMixin para proteger endpoints
+    que solo deben ser accesibles por administradores.
+    
+    Esta vista sería útil para endpoints de configuración del sistema,
+    informes financieros, o cualquier funcionalidad exclusiva de administradores.
+    """
+    
+    required_roles = ['ADMIN']
+    
+    def get(self, request):
+        """
+        Endpoint GET de ejemplo para administradores.
+        
+        Returns:
+            Response con mensaje de éxito y datos de ejemplo
+        """
+        return Response({
+            'message': 'Acceso concedido - Solo administradores pueden ver esto',
+            'usuario': {
+                'id': request.user.id,
+                'username': request.user.username,
+                'role': request.user.role,
+            },
+            'ejemplo': {
+                'configuracion': 'Valores de configuración del sistema',
+                'estadisticas': 'Datos financieros confidenciales',
+                'usuarios_activos': 5,
+            }
+        })
+    
+    def post(self, request):
+        """
+        Endpoint POST de ejemplo para administradores.
+        
+        Body:
+            {
+                "config_key": "nuevo_valor"
+            }
+        """
+        return Response({
+            'message': 'Configuración actualizada exitosamente',
+            'data': request.data,
+            'usuario': request.user.username,
+        }, status=status.HTTP_201_CREATED)
+
+
+# Vista de ejemplo con decorador (para demostración, no enrutada)
+@role_required(['ADMIN'])
+def vista_con_decorador(request):
+    """
+    Vista basada en función con decorador @role_required.
+    
+    Esta es una demostración de cómo usar el decorador en vistas
+    basadas en funciones de Django.
+    """
+    from django.http import JsonResponse
+    return JsonResponse({
+        'message': 'Vista protegida con decorador @role_required',
+        'usuario': request.user.username,
+        'role': request.user.role,
+    })
