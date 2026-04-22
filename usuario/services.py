@@ -106,7 +106,11 @@ class UsuarioService:
             if password:
                 data['password'] = make_password(password)
             
-            usuario = Usuario.objects.create(**data)
+            # Eliminar campos que no son del modelo (ej. confirm_password)
+            campos_modelo = {field.name for field in Usuario._meta.get_fields()}
+            data_filtrada = {k: v for k, v in data.items() if k in campos_modelo}
+            
+            usuario = Usuario.objects.create(**data_filtrada)
             return usuario
             
         except Exception as e:
@@ -162,7 +166,10 @@ class UsuarioService:
         filtros_aplicados = {}
         for filtro_db, filtro_input in filtros_permitidos.items():
             if filtro_input in filtros:
-                filtros_aplicados[filtro_db] = filtros[filtro_input]
+                valor = filtros[filtro_input]
+                # Ignorar valores vacíos o None
+                if valor is not None and valor != '':
+                    filtros_aplicados[filtro_db] = valor
         
         if filtros_aplicados:
             queryset = queryset.filter(**filtros_aplicados)

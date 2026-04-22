@@ -1,10 +1,11 @@
-import { Outlet, Link } from 'react-router-dom';
-import { Home, Package, ShoppingCart, Users, FileText, Settings } from 'lucide-react';
+import { Outlet, Link, NavLink } from 'react-router-dom';
+import { Home, Users, FileText, Settings } from 'lucide-react';
 
 export default function Layout() {
   const navItems = [
-    { path: '/', label: 'Inicio', icon: <Home size={20} /> },
-    { path: '/about', label: 'Acerca', icon: <FileText size={20} /> },
+    { path: '/', label: 'Inicio', icon: <Home size={20} />, end: true },
+    { path: '/usuarios', label: 'Usuarios', icon: <Users size={20} />, end: false },
+    { path: '/about', label: 'Acerca', icon: <FileText size={20} />, end: false },
   ];
 
   return (
@@ -20,14 +21,17 @@ export default function Layout() {
             </div>
             <nav className="hidden md:flex items-center space-x-6">
               {navItems.map((item) => (
-                <Link
+                <NavLink
                   key={item.path}
                   to={item.path}
-                  className="flex items-center space-x-2 text-gray-600 hover:text-blue-600 transition"
+                  end={item.end}
+                  className={({ isActive }) =>
+                    `flex items-center space-x-2 transition ${isActive ? 'text-blue-600 font-semibold' : 'text-gray-600 hover:text-blue-600'}`
+                  }
                 >
                   {item.icon}
                   <span>{item.label}</span>
-                </Link>
+                </NavLink>
               ))}
               <div className="flex items-center space-x-4">
                 <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
@@ -44,13 +48,16 @@ export default function Layout() {
           <div className="flex md:hidden items-center justify-between mt-4">
             <div className="flex space-x-4">
               {navItems.map((item) => (
-                <Link
+                <NavLink
                   key={item.path}
                   to={item.path}
-                  className="flex items-center space-x-2 text-gray-600 hover:text-blue-600 transition"
+                  end={item.end}
+                  className={({ isActive }) =>
+                    `flex items-center space-x-2 transition ${isActive ? 'text-blue-600' : 'text-gray-600 hover:text-blue-600'}`
+                  }
                 >
                   {item.icon}
-                </Link>
+                </NavLink>
               ))}
             </div>
             <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
