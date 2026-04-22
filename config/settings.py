@@ -38,6 +38,7 @@ ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'django.contrib.admin',
+    'usuario',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -51,9 +52,14 @@ INSTALLED_APPS = [
     'informes',
     'inventario',
     'proveedor',
-    'usuario',
     'ventas',
 ]
+
+# Modelo de usuario personalizado
+AUTH_USER_MODEL = 'usuario.Usuario'
+
+# Configuración de campos auto-incrementales
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
