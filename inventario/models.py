@@ -1,6 +1,7 @@
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
+from decimal import Decimal
 
 
 class Categoria(models.Model):
@@ -346,6 +347,390 @@ class Producto(models.Model):
         if self.codigo_interno is None:
             self.codigo_interno = self.get_next_codigo_interno()
         
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class FacturaCompra(models.Model):
+    """
+    Modelo que representa una factura de compra de productos a proveedores.
+    
+    Registra las compras realizadas a proveedores para actualizar el inventario
+    y llevar control de las transacciones de entrada.
+    """
+    
+    # Estados de la factura
+    ESTADO_PENDIENTE = 'PENDIENTE'
+    ESTADO_PROCESADA = 'PROCESADA'
+    
+    ESTADO_CHOICES = [
+        (ESTADO_PENDIENTE, _('Pendiente')),
+        (ESTADO_PROCESADA, _('Procesada')),
+    ]
+    
+    numero_factura = models.CharField(
+        _('número de factura'),
+        max_length=50,
+        unique=True,
+        help_text=_('Número único de la factura del proveedor')
+    )
+    
+    proveedor = models.ForeignKey(
+        'proveedor.Proveedor',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=False,
+        verbose_name=_('proveedor'),
+        help_text=_('Proveedor que emitió la factura')
+    )
+    
+    fecha_factura = models.DateField(
+        _('fecha de factura'),
+        help_text=_('Fecha de emisión de la factura')
+    )
+    
+    fecha_registro = models.DateTimeField(
+        _('fecha de registro'),
+        auto_now_add=True,
+        help_text=_('Fecha y hora de registro en el sistema')
+    )
+    
+    subtotal = models.DecimalField(
+        _('subtotal'),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_('Suma de los valores antes de impuestos y descuentos')
+    )
+    
+    iva = models.DecimalField(
+        _('IVA'),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_('Valor del impuesto al valor agregado')
+    )
+    
+    descuento = models.DecimalField(
+        _('descuento'),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_('Descuento aplicado a la factura')
+    )
+    
+    total = models.DecimalField(
+        _('total'),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_('Valor total de la factura (subtotal + IVA - descuento)')
+    )
+    
+    observaciones = models.TextField(
+        _('observaciones'),
+        blank=True,
+        help_text=_('Observaciones adicionales sobre la factura')
+    )
+    
+    usuario_registro = models.ForeignKey(
+        'usuario.Usuario',
+        on_delete=models.PROTECT,
+        verbose_name=_('usuario de registro'),
+        help_text=_('Usuario que registró la factura en el sistema')
+    )
+    
+    estado = models.CharField(
+        _('estado'),
+        max_length=20,
+        choices=ESTADO_CHOICES,
+        default=ESTADO_PENDIENTE,
+        help_text=_('Estado actual de la factura')
+    )
+    
+    created_at = models.DateTimeField(
+        _('fecha de creación'),
+        auto_now_add=True,
+        help_text=_('Fecha y hora de creación del registro')
+    )
+    
+    updated_at = models.DateTimeField(
+        _('fecha de actualización'),
+        auto_now=True,
+        help_text=_('Fecha y hora de la última actualización')
+    )
+    
+    class Meta:
+        db_table = 'facturas_compra'
+        ordering = ['-fecha_factura', '-fecha_registro']
+        verbose_name = _('factura de compra')
+        verbose_name_plural = _('facturas de compra')
+        indexes = [
+            models.Index(fields=['numero_factura']),
+            models.Index(fields=['proveedor']),
+            models.Index(fields=['fecha_factura']),
+            models.Index(fields=['estado']),
+            models.Index(fields=['usuario_registro']),
+            models.Index(fields=['created_at']),
+        ]
+    
+    def __str__(self):
+        """
+        Representación en string de la factura de compra.
+        
+        Returns:
+            str: Número de factura y proveedor
+        """
+        proveedor_nombre = self.proveedor.razon_social if self.proveedor else 'Sin proveedor'
+        return f"Factura {self.numero_factura} - {proveedor_nombre}"
+    
+    def calcular_totales(self):
+        """
+        Calcula subtotal, IVA y total de la factura.
+        
+        Este método debe ser llamado después de agregar los detalles de la factura
+        o cuando cambien los valores de los productos.
+        
+        Returns:
+            dict: Diccionario con subtotal, iva, descuento y total
+        """
+        detalles = self.detalles.all()
+        
+        subtotal = Decimal('0.00')
+        iva_total = Decimal('0.00')
+        
+        for detalle in detalles:
+            subtotal += detalle.cantidad * detalle.precio_unitario
+            iva_total += detalle.cantidad * detalle.precio_unitario * (detalle.iva / Decimal('100'))
+        
+        total = subtotal + iva_total - self.descuento
+        
+        # Actualizar campos
+        self.subtotal = subtotal
+        self.iva = iva_total
+        self.total = total
+        
+        return {
+            'subtotal': subtotal,
+            'iva': iva_total,
+            'descuento': self.descuento,
+            'total': total
+        }
+    
+    def marcar_como_procesada(self):
+        """
+        Cambia el estado de la factura a PROCESADA.
+        
+        Returns:
+            bool: True si se cambió el estado, False si ya estaba procesada
+        """
+        if self.estado != self.ESTADO_PROCESADA:
+            self.estado = self.ESTADO_PROCESADA
+            self.save(update_fields=['estado', 'updated_at'])
+            return True
+        return False
+    
+    def clean(self):
+        """
+        Validaciones personalizadas del modelo.
+        """
+        from django.core.exceptions import ValidationError
+        
+        # Validar que fecha_factura no sea futura
+        if self.fecha_factura and self.fecha_factura > timezone.now().date():
+            raise ValidationError({
+                'fecha_factura': _('La fecha de factura no puede ser futura')
+            })
+        
+        # Validar que descuento no sea negativo
+        if self.descuento < 0:
+            raise ValidationError({
+                'descuento': _('El descuento no puede ser negativo')
+            })
+        
+        # Validar que total sea positivo (o cero)
+        if self.total < 0:
+            raise ValidationError({
+                'total': _('El total no puede ser negativo')
+            })
+        
+        # Validar que subtotal sea positivo (o cero)
+        if self.subtotal < 0:
+            raise ValidationError({
+                'subtotal': _('El subtotal no puede ser negativo')
+            })
+        
+        # Validar que IVA no sea negativo
+        if self.iva < 0:
+            raise ValidationError({
+                'iva': _('El IVA no puede ser negativo')
+            })
+    
+    def save(self, *args, **kwargs):
+        """
+        Sobrescribe el método save para ejecutar validaciones.
+        """
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class DetalleFacturaCompra(models.Model):
+    """
+    Modelo que representa un producto dentro de una factura de compra.
+    
+    Relaciona productos con facturas de compra, almacenando cantidades,
+    precios unitarios e impuestos aplicados en el momento de la compra.
+    """
+    
+    factura = models.ForeignKey(
+        FacturaCompra,
+        on_delete=models.CASCADE,
+        related_name='detalles',
+        verbose_name=_('factura'),
+        help_text=_('Factura de compra a la que pertenece este detalle')
+    )
+    
+    producto = models.ForeignKey(
+        Producto,
+        on_delete=models.PROTECT,
+        verbose_name=_('producto'),
+        help_text=_('Producto comprado')
+    )
+    
+    cantidad = models.DecimalField(
+        _('cantidad'),
+        max_digits=10,
+        decimal_places=2,
+        default=Decimal('1.00'),
+        help_text=_('Cantidad comprada del producto')
+    )
+    
+    precio_unitario = models.DecimalField(
+        _('precio unitario'),
+        max_digits=12,
+        decimal_places=2,
+        help_text=_('Precio unitario al que se compró el producto')
+    )
+    
+    iva = models.DecimalField(
+        _('IVA'),
+        max_digits=5,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_('Porcentaje de IVA aplicado al producto (0-100)')
+    )
+    
+    descuento = models.DecimalField(
+        _('descuento'),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+        help_text=_('Descuento aplicado a este producto')
+    )
+    
+    created_at = models.DateTimeField(
+        _('fecha de creación'),
+        auto_now_add=True,
+        help_text=_('Fecha y hora de creación del registro')
+    )
+    
+    updated_at = models.DateTimeField(
+        _('fecha de actualización'),
+        auto_now=True,
+        help_text=_('Fecha y hora de la última actualización')
+    )
+    
+    class Meta:
+        db_table = 'detalles_factura_compra'
+        ordering = ['factura', 'producto']
+        verbose_name = _('detalle de factura de compra')
+        verbose_name_plural = _('detalles de factura de compra')
+        indexes = [
+            models.Index(fields=['factura']),
+            models.Index(fields=['producto']),
+            models.Index(fields=['created_at']),
+        ]
+        unique_together = [['factura', 'producto']]
+    
+    def __str__(self):
+        """
+        Representación en string del detalle.
+        
+        Returns:
+            str: Producto y cantidad
+        """
+        return f"{self.producto.nombre} x {self.cantidad} - {self.factura.numero_factura}"
+    
+    @property
+    def subtotal(self):
+        """
+        Calcula el subtotal del detalle (cantidad * precio_unitario).
+        
+        Returns:
+            Decimal: Subtotal sin impuestos ni descuentos
+        """
+        return self.cantidad * self.precio_unitario
+    
+    @property
+    def iva_valor(self):
+        """
+        Calcula el valor del IVA del detalle.
+        
+        Returns:
+            Decimal: Valor del IVA
+        """
+        return self.subtotal * (self.iva / Decimal('100'))
+    
+    @property
+    def total(self):
+        """
+        Calcula el total del detalle (subtotal + iva_valor - descuento).
+        
+        Returns:
+            Decimal: Total del detalle
+        """
+        return self.subtotal + self.iva_valor - self.descuento
+    
+    def clean(self):
+        """
+        Validaciones personalizadas del modelo.
+        """
+        from django.core.exceptions import ValidationError
+        
+        # Validar que cantidad sea positiva
+        if self.cantidad <= 0:
+            raise ValidationError({
+                'cantidad': _('La cantidad debe ser mayor que cero')
+            })
+        
+        # Validar que precio_unitario sea positivo
+        if self.precio_unitario <= 0:
+            raise ValidationError({
+                'precio_unitario': _('El precio unitario debe ser mayor que cero')
+            })
+        
+        # Validar que IVA esté entre 0 y 100
+        if self.iva < 0 or self.iva > 100:
+            raise ValidationError({
+                'iva': _('El IVA debe estar entre 0 y 100')
+            })
+        
+        # Validar que descuento no sea negativo
+        if self.descuento < 0:
+            raise ValidationError({
+                'descuento': _('El descuento no puede ser negativo')
+            })
+        
+        # Validar que descuento no exceda el subtotal
+        if self.descuento > self.subtotal:
+            raise ValidationError({
+                'descuento': _('El descuento no puede exceder el subtotal del producto')
+            })
+    
+    def save(self, *args, **kwargs):
+        """
+        Sobrescribe el método save para ejecutar validaciones.
+        """
         self.full_clean()
         super().save(*args, **kwargs)
     
