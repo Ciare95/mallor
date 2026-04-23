@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
-from .models import Categoria, Producto
+from .models import Categoria, Producto, FacturaCompra, DetalleFacturaCompra, HistorialInventario
 
 
 @admin.register(Categoria)
@@ -128,3 +128,180 @@ class ProductoAdmin(admin.ModelAdmin):
         else:
             return '✅ Activo'
     activo.short_description = _('Estado')
+
+
+@admin.register(FacturaCompra)
+class FacturaCompraAdmin(admin.ModelAdmin):
+    """
+    Configuración del modelo FacturaCompra en el admin de Django.
+    """
+    list_display = (
+        'numero_factura',
+        'proveedor',
+        'fecha_factura',
+        'subtotal',
+        'iva',
+        'descuento',
+        'total',
+        'estado',
+        'usuario_registro',
+        'fecha_registro'
+    )
+    list_filter = (
+        'estado',
+        'fecha_factura',
+        'proveedor',
+        'usuario_registro'
+    )
+    search_fields = (
+        'numero_factura',
+        'proveedor__razon_social',
+        'observaciones'
+    )
+    ordering = ('-fecha_factura', '-fecha_registro')
+    readonly_fields = (
+        'created_at',
+        'updated_at',
+        'fecha_registro'
+    )
+    fieldsets = (
+        ('Información Básica', {
+            'fields': (
+                'numero_factura',
+                'proveedor',
+                'fecha_factura',
+                'estado'
+            )
+        }),
+        ('Totales', {
+            'fields': (
+                'subtotal',
+                'iva',
+                'descuento',
+                'total'
+            )
+        }),
+        ('Auditoría', {
+            'fields': (
+                'usuario_registro',
+                'fecha_registro',
+                'observaciones',
+                'created_at',
+                'updated_at'
+            ),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(DetalleFacturaCompra)
+class DetalleFacturaCompraAdmin(admin.ModelAdmin):
+    """
+    Configuración del modelo DetalleFacturaCompra en el admin de Django.
+    """
+    list_display = (
+        'factura',
+        'producto',
+        'cantidad',
+        'precio_unitario',
+        'iva',
+        'descuento',
+        'subtotal',
+        'iva_valor',
+        'total'
+    )
+    list_filter = (
+        'factura',
+        'producto'
+    )
+    search_fields = (
+        'factura__numero_factura',
+        'producto__nombre'
+    )
+    ordering = ('factura', 'producto')
+    readonly_fields = (
+        'created_at',
+        'updated_at'
+    )
+    fieldsets = (
+        ('Información Básica', {
+            'fields': (
+                'factura',
+                'producto',
+                'cantidad',
+                'precio_unitario',
+                'iva',
+                'descuento'
+            )
+        }),
+        ('Auditoría', {
+            'fields': (
+                'created_at',
+                'updated_at'
+            ),
+            'classes': ('collapse',)
+        }),
+    )
+
+
+@admin.register(HistorialInventario)
+class HistorialInventarioAdmin(admin.ModelAdmin):
+    """
+    Configuración del modelo HistorialInventario en el admin de Django.
+    """
+    list_display = (
+        'producto',
+        'tipo_movimiento',
+        'cantidad',
+        'precio_unitario',
+        'motivo',
+        'usuario',
+        'fecha',
+        'factura',
+        'venta'
+    )
+    list_filter = (
+        'tipo_movimiento',
+        'fecha',
+        'usuario',
+        'producto'
+    )
+    search_fields = (
+        'producto__nombre',
+        'motivo',
+        'observaciones',
+        'factura__numero_factura'
+    )
+    ordering = ('-fecha', '-created_at')
+    readonly_fields = (
+        'created_at',
+        'updated_at',
+        'fecha'
+    )
+    fieldsets = (
+        ('Información del Movimiento', {
+            'fields': (
+                'producto',
+                'tipo_movimiento',
+                'cantidad',
+                'precio_unitario',
+                'motivo'
+            )
+        }),
+        ('Referencias', {
+            'fields': (
+                'factura',
+                'venta'
+            )
+        }),
+        ('Auditoría', {
+            'fields': (
+                'usuario',
+                'fecha',
+                'observaciones',
+                'created_at',
+                'updated_at'
+            ),
+            'classes': ('collapse',)
+        }),
+    )

@@ -733,5 +733,189 @@ class DetalleFacturaCompra(models.Model):
         """
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class HistorialInventario(models.Model):
+    """
+    Modelo que registra todos los movimientos de inventario (entradas, salidas, ajustes).
     
+    Cada vez que cambia el stock de un producto, se crea un registro en este historial
+    para mantener trazabilidad completa de los movimientos.
+    """
+    
+    # Tipos de movimiento
+    TIPO_ENTRADA = 'ENTRADA'
+    TIPO_SALIDA = 'SALIDA'
+    TIPO_AJUSTE = 'AJUSTE'
+    
+    TIPO_MOVIMIENTO_CHOICES = [
+        (TIPO_ENTRADA, _('Entrada')),
+        (TIPO_SALIDA, _('Salida')),
+        (TIPO_AJUSTE, _('Ajuste')),
+    ]
+    
+    producto = models.ForeignKey(
+        Producto,
+        on_delete=models.PROTECT,
+        related_name='historial',
+        verbose_name=_('producto'),
+        help_text=_('Producto al que se le registra el movimiento')
+    )
+    
+    tipo_movimiento = models.CharField(
+        _('tipo de movimiento'),
+        max_length=20,
+        choices=TIPO_MOVIMIENTO_CHOICES,
+        help_text=_('Tipo de movimiento: Entrada, Salida o Ajuste')
+    )
+    
+    cantidad = models.DecimalField(
+        _('cantidad'),
+        max_digits=10,
+        decimal_places=2,
+        help_text=_('Cantidad movida (positiva para entrada, negativa para salida)')
+    )
+    
+    precio_unitario = models.DecimalField(
+        _('precio unitario'),
+        max_digits=12,
+        decimal_places=2,
+        help_text=_('Precio unitario del producto al momento del movimiento')
+    )
+    
+    factura = models.ForeignKey(
+        FacturaCompra,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='movimientos_inventario',
+        verbose_name=_('factura de compra'),
+        help_text=_('Factura de compra asociada a la entrada (opcional)')
+    )
+    
+    venta = models.ForeignKey(
+        'ventas.Venta',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='movimientos_inventario',
+        verbose_name=_('venta'),
+        help_text=_('Venta asociada a la salida (opcional)')
+    )
+    
+    motivo = models.CharField(
+        _('motivo'),
+        max_length=200,
+        help_text=_('Motivo o descripción del movimiento')
+    )
+    
+    usuario = models.ForeignKey(
+        'usuario.Usuario',
+        on_delete=models.PROTECT,
+        verbose_name=_('usuario'),
+        help_text=_('Usuario que registró el movimiento')
+    )
+    
+    fecha = models.DateTimeField(
+        _('fecha'),
+        auto_now_add=True,
+        help_text=_('Fecha y hora del movimiento')
+    )
+    
+    observaciones = models.TextField(
+        _('observaciones'),
+        blank=True,
+        help_text=_('Observaciones adicionales sobre el movimiento')
+    )
+    
+    created_at = models.DateTimeField(
+        _('fecha de creación'),
+        auto_now_add=True,
+        help_text=_('Fecha y hora de creación del registro')
+    )
+    
+    updated_at = models.DateTimeField(
+        _('fecha de actualización'),
+        auto_now=True,
+        help_text=_('Fecha y hora de la última actualización')
+    )
+    
+    class Meta:
+        db_table = 'historial_inventario'
+        ordering = ['-fecha', '-created_at']
+        verbose_name = _('registro de historial de inventario')
+        verbose_name_plural = _('registros de historial de inventario')
+        indexes = [
+            models.Index(fields=['producto']),
+            models.Index(fields=['tipo_movimiento']),
+            models.Index(fields=['fecha']),
+            models.Index(fields=['usuario']),
+            models.Index(fields=['factura']),
+            models.Index(fields=['venta']),
+        ]
+    
+    def __str__(self):
+        """
+        Representación en string del registro de historial.
+        
+        Returns:
+            str: Producto, tipo, cantidad y fecha
+        """
+        return f"{self.producto.nombre} - {self.get_tipo_movimiento_display()} x{self.cantidad} ({self.fecha.strftime('%Y-%m-%d %H:%M')})"
+    
+    def clean(self):
+        """
+        Validaciones personalizadas del modelo.
+        """
+        from django.core.exceptions import ValidationError
+        from decimal import Decimal
+        
+        # Validar que cantidad no sea cero
+        if self.cantidad == 0:
+            raise ValidationError({
+                'cantidad': _('La cantidad no puede ser cero')
+            })
+        
+        # Validar que precio_unitario sea positivo
+        if self.precio_unitario <= 0:
+            raise ValidationError({
+                'precio_unitario': _('El precio unitario debe ser mayor que cero')
+            })
+        
+        # Validar consistencia entre tipo_movimiento y signo de cantidad
+        if self.tipo_movimiento == self.TIPO_ENTRADA and self.cantidad < 0:
+            raise ValidationError({
+                'cantidad': _('Para movimientos de ENTRADA, la cantidad debe ser positiva')
+            })
+        elif self.tipo_movimiento == self.TIPO_SALIDA and self.cantidad > 0:
+            raise ValidationError({
+                'cantidad': _('Para movimientos de SALIDA, la cantidad debe ser negativa')
+            })
+        
+        # Validar que factura solo esté presente para entradas
+        if self.factura and self.tipo_movimiento != self.TIPO_ENTRADA:
+            raise ValidationError({
+                'factura': _('La factura solo puede asociarse a movimientos de ENTRADA')
+            })
+        
+        # Validar que venta solo esté presente para salidas
+        if self.venta and self.tipo_movimiento != self.TIPO_SALIDA:
+            raise ValidationError({
+                'venta': _('La venta solo puede asociarse a movimientos de SALIDA')
+            })
+        
+        # Validar que al menos una de las referencias (factura/venta) esté presente para entradas/salidas
+        if self.tipo_movimiento == self.TIPO_ENTRADA and not self.factura:
+            # Advertencia: entrada sin factura (podría ser ajuste positivo)
+            pass
+        elif self.tipo_movimiento == self.TIPO_SALIDA and not self.venta:
+            # Advertencia: salida sin venta (podría ser ajuste negativo)
+            pass
+    
+    def save(self, *args, **kwargs):
+        """
+        Sobrescribe el método save para ejecutar validaciones.
+        """
+        self.full_clean()
+        super().save(*args, **kwargs)
 
