@@ -65,11 +65,12 @@ class Producto(models.Model):
     desde el sistema antiguo.
     """
     
-    codigo_interno = models.CharField(
+    codigo_interno = models.IntegerField(
         _('código interno'),
-        max_length=50,
         unique=True,
-        help_text=_('Código único de identificación interna del producto')
+        blank=True,
+        null=True,
+        help_text=_('Código único numérico autoincremental para identificación interna')
     )
     
     codigo_barras = models.CharField(
@@ -199,7 +200,20 @@ class Producto(models.Model):
         Returns:
             str: Nombre y código interno del producto
         """
-        return f"{self.nombre} ({self.codigo_interno})"
+        codigo = self.codigo_interno_formateado if self.codigo_interno else "Sin código"
+        return f"{self.nombre} ({codigo})"
+    
+    @property
+    def codigo_interno_formateado(self):
+        """
+        Retorna el código interno formateado con 8 dígitos.
+        
+        Returns:
+            str: Código interno formateado (ej: 00000017)
+        """
+        if self.codigo_interno is None:
+            return ""
+        return f"{self.codigo_interno:08d}"
     
     def calcular_valor_inventario(self):
         """
@@ -209,6 +223,8 @@ class Producto(models.Model):
             Decimal: Valor total (precio_compra * existencias)
         """
         from decimal import Decimal
+        if self.precio_compra is None or self.existencias is None:
+            return Decimal('0')
         return self.precio_compra * self.existencias
     
     def calcular_valor_venta(self):
@@ -219,6 +235,8 @@ class Producto(models.Model):
             Decimal: Valor total de venta (precio_venta * existencias)
         """
         from decimal import Decimal
+        if self.precio_venta is None or self.existencias is None:
+            return Decimal('0')
         return self.precio_venta * self.existencias
     
     def actualizar_stock(self, cantidad):
@@ -235,10 +253,11 @@ class Producto(models.Model):
             ValueError: Si la cantidad resultante es negativa
         """
         from decimal import Decimal
-        nuevas_existencias = self.existencias + cantidad
+        existencias_actuales = self.existencias if self.existencias is not None else Decimal('0')
+        nuevas_existencias = existencias_actuales + cantidad
         if nuevas_existencias < 0:
             raise ValueError(
-                f"No hay suficiente stock. Disponible: {self.existencias}, "
+                f"No hay suficiente stock. Disponible: {existencias_actuales}, "
                 f"requerido: {-cantidad}"
             )
         self.existencias = nuevas_existencias
@@ -255,7 +274,9 @@ class Producto(models.Model):
         Returns:
             bool: True si hay suficiente stock, False en caso contrario
         """
-        return self.existencias >= cantidad
+        from decimal import Decimal
+        existencias_actuales = self.existencias if self.existencias is not None else Decimal('0')
+        return existencias_actuales >= cantidad
     
     def clean(self):
         """
@@ -264,32 +285,33 @@ class Producto(models.Model):
         from django.core.exceptions import ValidationError
         from decimal import Decimal
         
-        # Validar que existencias no sean negativas
-        if self.existencias < 0:
+        # Validar que existencias no sean negativas (solo si tiene valor)
+        if self.existencias is not None and self.existencias < 0:
             raise ValidationError({
                 'existencias': _('Las existencias no pueden ser negativas')
             })
         
-        # Validar que precio_compra sea positivo
-        if self.precio_compra <= 0:
+        # Validar que precio_compra sea positivo (solo si tiene valor)
+        if self.precio_compra is not None and self.precio_compra <= 0:
             raise ValidationError({
                 'precio_compra': _('El precio de compra debe ser mayor que cero')
             })
         
-        # Validar que precio_venta sea positivo
-        if self.precio_venta <= 0:
+        # Validar que precio_venta sea positivo (solo si tiene valor)
+        if self.precio_venta is not None and self.precio_venta <= 0:
             raise ValidationError({
                 'precio_venta': _('El precio de venta debe ser mayor que cero')
             })
         
-        # Advertencia: precio_venta menor que precio_compra
-        if self.precio_venta < self.precio_compra:
+        # Advertencia: precio_venta menor que precio_compra (solo si ambos tienen valor)
+        if (self.precio_venta is not None and self.precio_compra is not None and 
+                self.precio_venta < self.precio_compra):
             # Esto es una advertencia, no un error
             # Se podría registrar en logs o mostrar como warning
             pass
         
-        # Validar que IVA esté entre 0 y 100
-        if self.iva < 0 or self.iva > 100:
+        # Validar que IVA esté entre 0 y 100 (solo si tiene valor)
+        if self.iva is not None and (self.iva < 0 or self.iva > 100):
             raise ValidationError({
                 'iva': _('El IVA debe estar entre 0 y 100')
             })
@@ -300,10 +322,30 @@ class Producto(models.Model):
                 'fecha_caducidad': _('La fecha de caducidad no puede ser en el pasado')
             })
     
+    @classmethod
+    def get_next_codigo_interno(cls):
+        """
+        Obtiene el siguiente código interno disponible.
+        
+        Returns:
+            int: Siguiente código interno numérico
+        """
+        ultimo_producto = cls.objects.filter(
+            codigo_interno__isnull=False
+        ).order_by('-codigo_interno').first()
+        
+        if ultimo_producto and ultimo_producto.codigo_interno is not None:
+            return ultimo_producto.codigo_interno + 1
+        return 1
+    
     def save(self, *args, **kwargs):
         """
-        Sobrescribe el método save para ejecutar validaciones.
+        Sobrescribe el método save para generar código interno y ejecutar validaciones.
         """
+        # Generar código interno automáticamente si no se proporciona
+        if self.codigo_interno is None:
+            self.codigo_interno = self.get_next_codigo_interno()
+        
         self.full_clean()
         super().save(*args, **kwargs)
     

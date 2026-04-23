@@ -32,7 +32,7 @@ class ProductoAdmin(admin.ModelAdmin):
     """
     list_display = (
         'nombre',
-        'codigo_interno',
+        'codigo_interno_formateado',
         'categoria',
         'existencias',
         'precio_compra',

@@ -320,3 +320,62 @@ class ProductoModelTest(TestCase):
         nombres = [p.nombre for p in productos]
         
         self.assertEqual(nombres, ['Alfa', 'Beta', 'Zeta'])
+
+
+class ProductoAdminTest(TestCase):
+    """
+    Pruebas para el admin de Producto.
+    """
+    
+    def setUp(self):
+        """
+        Configuración inicial para las pruebas de admin.
+        """
+        from usuario.models import Usuario
+        
+        # Crear superusuario para acceder al admin
+        self.superuser = Usuario.objects.create_superuser(
+            username='admin',
+            email='admin@example.com',
+            password='adminpass'
+        )
+        self.client.login(username='admin', password='adminpass')
+    
+    def test_admin_add_page_loads(self):
+        """
+        Verifica que la página de agregar producto en el admin cargue sin errores.
+        """
+        url = '/admin/inventario/producto/add/'
+        response = self.client.get(url)
+        
+        # Debe retornar 200 (OK) o 302 (redirect si no está autenticado)
+        # Con autenticación debería ser 200
+        self.assertIn(response.status_code, [200, 302])
+        
+        # Si es 200, verificar que no hay errores de tipo en el template
+        if response.status_code == 200:
+            self.assertNotContains(response, 'TypeError')
+            self.assertNotContains(response, 'unsupported operand type')
+    
+    def test_admin_change_page_loads(self):
+        """
+        Verifica que la página de edición de producto en el admin cargue sin errores.
+        """
+        # Primero crear un producto
+        categoria = Categoria.objects.create(nombre='Test Cat')
+        producto = Producto.objects.create(
+            codigo_interno='ADM001',
+            nombre='Producto Admin Test',
+            categoria=categoria,
+            existencias=10,
+            precio_compra=50.00,
+            precio_venta=80.00
+        )
+        
+        url = f'/admin/inventario/producto/{producto.id}/change/'
+        response = self.client.get(url)
+        
+        self.assertIn(response.status_code, [200, 302])
+        if response.status_code == 200:
+            self.assertNotContains(response, 'TypeError')
+            self.assertNotContains(response, 'unsupported operand type')
