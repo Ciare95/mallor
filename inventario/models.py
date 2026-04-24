@@ -226,7 +226,7 @@ class Producto(models.Model):
         from decimal import Decimal
         if self.precio_compra is None or self.existencias is None:
             return Decimal('0')
-        return self.precio_compra * self.existencias
+        return (self.precio_compra * self.existencias).quantize(Decimal('0.01'))
     
     def calcular_valor_venta(self):
         """
@@ -238,7 +238,7 @@ class Producto(models.Model):
         from decimal import Decimal
         if self.precio_venta is None or self.existencias is None:
             return Decimal('0')
-        return self.precio_venta * self.existencias
+        return (self.precio_venta * self.existencias).quantize(Decimal('0.01'))
     
     def actualizar_stock(self, cantidad):
         """
@@ -498,12 +498,15 @@ class FacturaCompra(models.Model):
         
         subtotal = Decimal('0.00')
         iva_total = Decimal('0.00')
+        q = Decimal('0.01')
         
         for detalle in detalles:
             subtotal += detalle.cantidad * detalle.precio_unitario
             iva_total += detalle.cantidad * detalle.precio_unitario * (detalle.iva / Decimal('100'))
         
-        total = subtotal + iva_total - self.descuento
+        subtotal = subtotal.quantize(q)
+        iva_total = iva_total.quantize(q)
+        total = (subtotal + iva_total - self.descuento).quantize(q)
         
         # Actualizar campos
         self.subtotal = subtotal
