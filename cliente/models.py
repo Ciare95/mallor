@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.utils.translation import gettext_lazy as _
 
 
@@ -40,7 +40,6 @@ class Cliente(models.Model):
     numero_documento = models.CharField(
         _('numero de documento'),
         max_length=20,
-        unique=True,
         help_text=_('Numero unico de identificacion del cliente.'),
     )
     nombre = models.CharField(
@@ -163,10 +162,29 @@ class Cliente(models.Model):
         verbose_name_plural = _('clientes')
         indexes = [
             models.Index(fields=['numero_documento']),
+            models.Index(fields=['tipo_documento']),
             models.Index(fields=['nombre']),
             models.Index(fields=['razon_social']),
             models.Index(fields=['tipo_cliente']),
             models.Index(fields=['activo']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['tipo_documento', 'numero_documento'],
+                name='cliente_tipo_numero_documento_unique',
+            ),
+            models.CheckConstraint(
+                condition=Q(limite_credito__gte=0),
+                name='cliente_limite_credito_gte_0',
+            ),
+            models.CheckConstraint(
+                condition=Q(credito_disponible__gte=0),
+                name='cliente_credito_disponible_gte_0',
+            ),
+            models.CheckConstraint(
+                condition=Q(dias_plazo__gte=0),
+                name='cliente_dias_plazo_gte_0',
+            ),
         ]
 
     def __str__(self):
@@ -194,15 +212,20 @@ class Cliente(models.Model):
         )['total']
         return total or Decimal('0.00')
 
+    def _calcular_credito_disponible_actual(self):
+        """
+        Calcula el credito disponible a partir del saldo pendiente actual.
+        """
+        saldo_actual = self.calcular_saldo_pendiente()
+        return max(self.limite_credito - saldo_actual, Decimal('0.00'))
+
     def tiene_credito_disponible(self, monto):
         """
         Valida si el cliente puede asumir un nuevo credito.
         """
         monto_decimal = Decimal(str(monto))
-        saldo_actual = self.calcular_saldo_pendiente()
-        disponible = self.limite_credito - saldo_actual
-        self.credito_disponible = max(disponible, Decimal('0.00'))
-        return self.credito_disponible >= monto_decimal
+        disponible = self._calcular_credito_disponible_actual()
+        return disponible >= monto_decimal
 
     def calcular_total_compras(self):
         """
@@ -224,9 +247,9 @@ class Cliente(models.Model):
         Obtiene o crea el cliente por defecto Consumidor Final.
         """
         cliente, _ = cls.objects.get_or_create(
+            tipo_documento=cls.TipoDocumento.CC,
             numero_documento=cls.CONSUMIDOR_FINAL_DOCUMENTO,
             defaults={
-                'tipo_documento': cls.TipoDocumento.CC,
                 'nombre': 'Consumidor Final',
                 'telefono': '0000000000',
                 'direccion': 'No especificada',
@@ -239,7 +262,31 @@ class Cliente(models.Model):
         )
         return cliente
 
+    def validate_unique(self, exclude=None):
+        super().validate_unique(exclude=exclude)
+
+        if not self.tipo_documento or not self.numero_documento:
+            return
+
+        queryset = type(self).objects.filter(
+            tipo_documento=self.tipo_documento,
+            numero_documento=self.numero_documento,
+        )
+
+        if self.pk:
+            queryset = queryset.exclude(pk=self.pk)
+
+        if queryset.exists():
+            raise ValidationError({
+                'numero_documento': _(
+                    'Ya existe un cliente con este tipo y numero de '
+                    'documento.'
+                ),
+            })
+
     def clean(self):
+        super().clean()
+
         if self.limite_credito < 0:
             raise ValidationError({
                 'limite_credito': _(
@@ -302,10 +349,6 @@ class Cliente(models.Model):
             })
 
     def save(self, *args, **kwargs):
-        saldo_actual = self.calcular_saldo_pendiente()
-        self.credito_disponible = max(
-            self.limite_credito - saldo_actual,
-            Decimal('0.00'),
-        )
+        self.credito_disponible = self._calcular_credito_disponible_actual()
         self.full_clean()
         super().save(*args, **kwargs)
