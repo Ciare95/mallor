@@ -6,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.request import Request
 from rest_framework.pagination import PageNumberPagination
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from .models import Categoria, Producto, FacturaCompra
@@ -41,6 +42,7 @@ from core.exceptions import (
 )
 from usuario.utils import RolePermissionMixin
 from usuario.services import UsuarioService
+from .utils import generar_excel_inventario, generar_respuesta_excel
 
 
 class InventarioPagination(PageNumberPagination):
@@ -608,7 +610,16 @@ class ExportarInventarioView(RolePermissionMixin, views.APIView):
     required_roles = ['ADMIN']
 
     def get(self, request: Request) -> Response:
-        return Response(
-            {'message': _('Funcionalidad de exportación a Excel no implementada aún')},
-            status=status.HTTP_501_NOT_IMPLEMENTED
-        )
+        try:
+            output = generar_excel_inventario()
+            filename = (
+                f"inventario_{timezone.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            )
+            return generar_respuesta_excel(output, filename)
+        except Exception as e:
+            return Response(
+                {'error': _('Error al exportar inventario: %(error)s') % {
+                    'error': str(e)
+                }},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

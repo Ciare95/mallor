@@ -800,10 +800,7 @@ pip install openpyxl==3.1.2
 
 **Funcionalidades:**
 - Exportar inventario completo
-- Exportar con filtros aplicados
-- Incluir columnas configurables
-- Formato profesional con encabezados
-- Cálculos de totales al final
+
 
 **Columnas del Excel:**
 - N°
@@ -812,26 +809,24 @@ pip install openpyxl==3.1.2
 - Nombre
 - Categoría
 - Marca
+- Descripción
 - Existencias
+- Invima
 - Precio Compra
 - Precio Venta
 - IVA
-- Valor Inventario
 - Fecha Ingreso
+- Fecha Caducidad
 
 **Pasos de implementación:**
 1. Instalar openpyxl
 2. Crear utilidad `generar_excel_inventario()` en `utils.py`
 3. Configurar estilos de Excel
-4. Agregar fórmulas de totales
-5. Crear endpoint de exportación
-6. Implementar descarga de archivo
+4. Crear endpoint de exportación
+5. Implementar descarga de archivo
 
 **Criterios de aceptación:**
 - [ ] Excel se genera correctamente
-- [ ] Formato profesional aplicado
-- [ ] Filtros funcionando en exportación
-- [ ] Totales calculados correctamente
 - [ ] Descarga funciona en navegador
 
 ---
