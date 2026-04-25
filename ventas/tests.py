@@ -7,6 +7,12 @@ from cliente.models import Cliente
 from inventario.models import Producto
 from usuario.models import Usuario
 from ventas.models import Abono, DetalleVenta, Venta
+from ventas.serializers import (
+    AbonoCreateSerializer,
+    DetalleVentaSerializer,
+    VentaCreateSerializer,
+    VentaSerializer,
+)
 
 
 class VentaModelTest(TestCase):
@@ -257,3 +263,164 @@ class AbonoModelTest(TestCase):
                 usuario_registro=self.usuario,
             )
             abono.full_clean()
+
+
+class VentaSerializerTest(TestCase):
+    def setUp(self):
+        self.usuario = Usuario.objects.create_user(
+            username='serializador',
+            email='serializador@example.com',
+            password='password-seguro-123',
+        )
+        self.cliente = Cliente.objects.create(
+            tipo_documento=Cliente.TipoDocumento.CC,
+            numero_documento='44556677',
+            nombre='Cliente Serializer',
+            telefono='3001112233',
+            direccion='Carrera 10 # 20-30',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_cliente=Cliente.TipoCliente.NATURAL,
+        )
+        self.producto = Producto.objects.create(
+            nombre='Producto Serializer',
+            existencias=Decimal('15.00'),
+            precio_compra=Decimal('60.00'),
+            precio_venta=Decimal('120.00'),
+            iva=Decimal('19.00'),
+        )
+
+    def test_detalle_venta_serializer_retorna_producto_anidado(self):
+        venta = Venta.objects.create(
+            cliente=self.cliente,
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+        detalle = DetalleVenta.objects.create(
+            venta=venta,
+            producto=self.producto,
+            cantidad=Decimal('1.00'),
+            precio_unitario=Decimal('120.00'),
+        )
+
+        serializer = DetalleVentaSerializer(detalle)
+
+        self.assertEqual(serializer.data['producto']['id'], self.producto.id)
+        self.assertEqual(serializer.data['producto']['nombre'], self.producto.nombre)
+        self.assertEqual(serializer.data['subtotal'], '120.00')
+        self.assertEqual(serializer.data['iva'], '22.80')
+
+    def test_venta_create_serializer_asigna_consumidor_final_y_calcula_totales(self):
+        serializer = VentaCreateSerializer(data={
+            'estado': Venta.Estado.TERMINADA,
+            'metodo_pago': Venta.MetodoPago.EFECTIVO,
+            'usuario_registro': self.usuario.id,
+            'detalles': [
+                {
+                    'producto': self.producto.id,
+                    'cantidad': '2.00',
+                }
+            ],
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        venta = serializer.save()
+
+        venta.refresh_from_db()
+        self.producto.refresh_from_db()
+
+        self.assertEqual(venta.cliente.nombre, 'Consumidor Final')
+        self.assertEqual(venta.subtotal, Decimal('240.00'))
+        self.assertEqual(venta.impuestos, Decimal('45.60'))
+        self.assertEqual(venta.total, Decimal('285.60'))
+        self.assertEqual(self.producto.existencias, Decimal('13.00'))
+
+    def test_venta_create_serializer_requiere_al_menos_un_detalle(self):
+        serializer = VentaCreateSerializer(data={
+            'estado': Venta.Estado.TERMINADA,
+            'metodo_pago': Venta.MetodoPago.EFECTIVO,
+            'usuario_registro': self.usuario.id,
+            'detalles': [],
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('detalles', serializer.errors)
+
+    def test_venta_create_serializer_valida_stock_disponible(self):
+        serializer = VentaCreateSerializer(data={
+            'cliente': self.cliente.id,
+            'estado': Venta.Estado.TERMINADA,
+            'metodo_pago': Venta.MetodoPago.EFECTIVO,
+            'usuario_registro': self.usuario.id,
+            'detalles': [
+                {
+                    'producto': self.producto.id,
+                    'cantidad': '20.00',
+                }
+            ],
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('detalles', serializer.errors)
+
+    def test_venta_serializer_retorna_detalles_anidados(self):
+        venta = Venta.objects.create(
+            cliente=self.cliente,
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+        DetalleVenta.objects.create(
+            venta=venta,
+            producto=self.producto,
+            cantidad=Decimal('1.00'),
+            precio_unitario=Decimal('120.00'),
+        )
+
+        serializer = VentaSerializer(venta)
+
+        self.assertEqual(serializer.data['cliente']['id'], self.cliente.id)
+        self.assertEqual(len(serializer.data['detalles']), 1)
+        self.assertEqual(serializer.data['detalles_count'], 1)
+
+    def test_abono_create_serializer_actualiza_estado_pago(self):
+        venta = Venta.objects.create(
+            cliente=self.cliente,
+            subtotal=Decimal('100.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('100.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+        serializer = AbonoCreateSerializer(data={
+            'venta': venta.id,
+            'monto_abonado': '30.00',
+            'metodo_pago': Abono.MetodoPago.EFECTIVO,
+            'usuario_registro': self.usuario.id,
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+        venta.refresh_from_db()
+
+        self.assertEqual(venta.total_abonado, Decimal('30.00'))
+        self.assertEqual(venta.saldo_pendiente, Decimal('70.00'))
+        self.assertEqual(venta.estado_pago, Venta.EstadoPago.PARCIAL)
+
+    def test_abono_create_serializer_rechaza_venta_no_terminada(self):
+        venta = Venta.objects.create(
+            cliente=self.cliente,
+            subtotal=Decimal('100.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('100.00'),
+            estado=Venta.Estado.PENDIENTE,
+            usuario_registro=self.usuario,
+        )
+        serializer = AbonoCreateSerializer(data={
+            'venta': venta.id,
+            'monto_abonado': '10.00',
+            'metodo_pago': Abono.MetodoPago.EFECTIVO,
+            'usuario_registro': self.usuario.id,
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('venta', serializer.errors)
