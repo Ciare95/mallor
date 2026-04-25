@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   Activity,
+  Building2,
   CreditCard,
   FileText,
   Home,
@@ -18,6 +19,7 @@ export default function Layout() {
   const navItems = [
     { path: '/', label: 'Inicio', icon: Home, end: true },
     { path: '/ventas', label: 'Ventas', icon: CreditCard, end: false },
+    { path: '/clientes', label: 'Clientes', icon: Building2, end: false },
     { path: '/inventario', label: 'Inventario', icon: PackageSearch, end: false },
     { path: '/usuarios', label: 'Usuarios', icon: Users, end: false },
     { path: '/about', label: 'Acerca', icon: FileText, end: false },
