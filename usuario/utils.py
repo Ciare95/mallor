@@ -312,7 +312,15 @@ PERMISOS = {
     'VENTA_ACTUALIZAR': 'actualizar_venta',
     'VENTA_ELIMINAR': 'eliminar_venta',
     'VENTA_LISTAR': 'listar_ventas',
-    
+
+    # Clientes
+    'CLIENTE_CREAR': 'crear_cliente',
+    'CLIENTE_VER': 'ver_cliente',
+    'CLIENTE_ACTUALIZAR': 'actualizar_cliente',
+    'CLIENTE_ELIMINAR': 'eliminar_cliente',
+    'CLIENTE_LISTAR': 'listar_clientes',
+    'CLIENTE_VER_INFORMES': 'ver_informe_clientes',
+
     # Facturas
     'FACTURA_CREAR': 'crear_factura',
     'FACTURA_VER': 'ver_factura',

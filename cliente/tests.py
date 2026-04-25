@@ -3,6 +3,9 @@ from decimal import Decimal
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APIClient
 
 from cliente.models import Cliente
 from cliente.serializers import (
@@ -532,3 +535,175 @@ class ClienteServiceTest(TestCase):
     def test_obtener_cliente_inexistente_lanza_error(self):
         with self.assertRaises(ClienteNoEncontradoError):
             ClienteService.obtener_cliente(999999)
+
+
+class ClienteApiTest(TestCase):
+    def setUp(self):
+        self.client_api = APIClient()
+        self.admin = Usuario.objects.create_user(
+            username='cliente_admin',
+            email='cliente_admin@example.com',
+            password='Admin1234',
+            role=Usuario.Rol.ADMIN,
+        )
+        self.empleado = Usuario.objects.create_user(
+            username='cliente_empleado',
+            email='cliente_empleado@example.com',
+            password='Admin1234',
+            role=Usuario.Rol.EMPLEADO,
+        )
+        self.cliente = Cliente.objects.create(
+            tipo_documento=Cliente.TipoDocumento.CC,
+            numero_documento='80808080',
+            nombre='Cliente API',
+            telefono='3004444444',
+            direccion='Calle API 1',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_cliente=Cliente.TipoCliente.NATURAL,
+            limite_credito=Decimal('200.00'),
+            dias_plazo=10,
+        )
+        self.cliente_sin_ventas = Cliente.objects.create(
+            tipo_documento=Cliente.TipoDocumento.CE,
+            numero_documento='90909090',
+            nombre='Cliente Eliminable',
+            telefono='3005555555',
+            direccion='Calle API 2',
+            ciudad='Cali',
+            departamento='Valle',
+            tipo_cliente=Cliente.TipoCliente.NATURAL,
+        )
+        self.venta = Venta.objects.create(
+            numero_venta='V-00000300',
+            cliente=self.cliente,
+            subtotal=Decimal('150.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('150.00'),
+            descuento=Decimal('0.00'),
+            total_abonado=Decimal('50.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.admin,
+        )
+        Venta.objects.filter(pk=self.venta.pk).update(
+            fecha_venta=self.venta.fecha_venta - timedelta(days=15),
+        )
+        self.venta.refresh_from_db()
+
+    def autenticar(self, usuario):
+        self.client_api.force_authenticate(user=usuario)
+
+    def test_listar_clientes_con_filtros_y_paginacion(self):
+        self.autenticar(self.empleado)
+
+        response = self.client_api.get(
+            reverse('cliente-list'),
+            {
+                'q': 'Cliente API',
+                'ciudad': 'Bogota',
+                'activo': 'true',
+                'page_size': 5,
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['current_page'], 1)
+        self.assertEqual(response.data['results'][0]['id'], self.cliente.id)
+
+    def test_crear_cliente(self):
+        self.autenticar(self.empleado)
+
+        response = self.client_api.post(
+            reverse('cliente-list'),
+            {
+                'tipo_documento': Cliente.TipoDocumento.NIT,
+                'numero_documento': '900777888',
+                'razon_social': 'Nuevo Cliente SAS',
+                'telefono': '3017777777',
+                'direccion': 'Carrera Nueva 1',
+                'ciudad': 'Medellin',
+                'departamento': 'Antioquia',
+                'tipo_cliente': Cliente.TipoCliente.JURIDICO,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['numero_documento'], '900777888')
+
+    def test_detalle_historial_cartera_y_estadisticas(self):
+        self.autenticar(self.empleado)
+
+        detalle = self.client_api.get(
+            reverse('cliente-detail', args=[self.cliente.id]),
+        )
+        historial = self.client_api.get(
+            reverse('cliente-historial', args=[self.cliente.id]),
+        )
+        cartera = self.client_api.get(
+            reverse('cliente-cartera', args=[self.cliente.id]),
+        )
+        estadisticas = self.client_api.get(
+            reverse('cliente-estadisticas', args=[self.cliente.id]),
+        )
+
+        self.assertEqual(detalle.status_code, status.HTTP_200_OK)
+        self.assertEqual(historial.status_code, status.HTTP_200_OK)
+        self.assertEqual(cartera.status_code, status.HTTP_200_OK)
+        self.assertEqual(estadisticas.status_code, status.HTTP_200_OK)
+        self.assertEqual(historial.data['count'], 1)
+        self.assertEqual(cartera.data['count'], 1)
+        self.assertEqual(estadisticas.data['saldo_pendiente'], '100.00')
+
+    def test_busqueda_funciona(self):
+        self.autenticar(self.empleado)
+
+        response = self.client_api.get(
+            reverse('cliente-buscar'),
+            {'q': '80808080'},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 1)
+
+    def test_actualizar_cliente(self):
+        self.autenticar(self.empleado)
+
+        response = self.client_api.patch(
+            reverse('cliente-detail', args=[self.cliente.id]),
+            {'ciudad': 'Soacha'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['ciudad'], 'Soacha')
+
+    def test_eliminar_cliente_soft_delete(self):
+        self.autenticar(self.admin)
+
+        response = self.client_api.delete(
+            reverse('cliente-detail', args=[self.cliente_sin_ventas.id]),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.cliente_sin_ventas.refresh_from_db()
+        self.assertFalse(self.cliente_sin_ventas.activo)
+
+    def test_mejores_y_morosos_requieren_permiso_de_admin(self):
+        self.autenticar(self.empleado)
+
+        mejores = self.client_api.get(reverse('cliente-mejores'))
+        morosos = self.client_api.get(reverse('cliente-morosos'))
+
+        self.assertEqual(mejores.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(morosos.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.autenticar(self.admin)
+        mejores_admin = self.client_api.get(reverse('cliente-mejores'))
+        morosos_admin = self.client_api.get(reverse('cliente-morosos'))
+
+        self.assertEqual(mejores_admin.status_code, status.HTTP_200_OK)
+        self.assertEqual(morosos_admin.status_code, status.HTTP_200_OK)
+        self.assertEqual(mejores_admin.data['count'], 1)
+        self.assertEqual(morosos_admin.data['count'], 1)

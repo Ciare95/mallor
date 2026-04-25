@@ -24,6 +24,7 @@ urlpatterns = [
     path('api/', include('usuario.urls')),
     path('api/inventario/', include('inventario.urls')),
     path('api/', include('ventas.urls')),
+    path('api/', include('cliente.urls')),
     
     # Autenticación de DRF (login/logout para interfaz navegable)
     path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),

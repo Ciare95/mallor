@@ -361,6 +361,10 @@ class UsuarioService:
         # Empleados tienen permisos limitados
         if usuario.is_empleado:
             acciones_operativas = {
+                'crear_cliente',
+                'ver_cliente',
+                'actualizar_cliente',
+                'listar_clientes',
                 'crear_venta',
                 'ver_venta',
                 'actualizar_venta',
