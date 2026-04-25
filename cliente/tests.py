@@ -4,6 +4,12 @@ from django.core.exceptions import ValidationError
 from django.test import TestCase
 
 from cliente.models import Cliente
+from cliente.serializers import (
+    ClienteCreateSerializer,
+    ClienteDetailSerializer,
+    ClienteListSerializer,
+    ClienteUpdateSerializer,
+)
 from usuario.models import Usuario
 from ventas.models import Venta
 
@@ -170,3 +176,113 @@ class ClienteModelTest(TestCase):
             )
 
         self.assertIn('dias_plazo', exc.exception.message_dict)
+
+
+class ClienteSerializerTest(TestCase):
+    def setUp(self):
+        self.usuario = Usuario.objects.create_user(
+            username='cliente_serializer',
+            email='cliente_serializer@example.com',
+            password='Admin1234',
+        )
+        self.cliente = Cliente.objects.create(
+            tipo_documento=Cliente.TipoDocumento.CC,
+            numero_documento='100200300',
+            nombre='Cliente Serializado',
+            telefono='3007654321',
+            direccion='Carrera 10 # 20-30',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_cliente=Cliente.TipoCliente.NATURAL,
+            limite_credito=Decimal('300.00'),
+        )
+        Venta.objects.create(
+            numero_venta='V-00000100',
+            cliente=self.cliente,
+            subtotal=Decimal('120.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('120.00'),
+            descuento=Decimal('0.00'),
+            total_abonado=Decimal('20.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+
+    def test_cliente_detail_serializer_expone_campos_calculados(self):
+        serializer = ClienteDetailSerializer(instance=self.cliente)
+
+        self.assertEqual(
+            serializer.data['nombre_completo'],
+            'Cliente Serializado',
+        )
+        self.assertEqual(serializer.data['saldo_pendiente'], '100.00')
+        self.assertEqual(serializer.data['total_compras'], '120.00')
+        self.assertEqual(serializer.data['cantidad_compras'], 1)
+        self.assertIsNotNone(serializer.data['ultima_compra'])
+
+    def test_cliente_list_serializer_incluye_resumen(self):
+        serializer = ClienteListSerializer(instance=self.cliente)
+
+        self.assertEqual(
+            serializer.data['numero_documento'],
+            self.cliente.numero_documento,
+        )
+        self.assertEqual(serializer.data['saldo_pendiente'], '100.00')
+
+    def test_create_serializer_valida_documento_unico_por_tipo(self):
+        serializer = ClienteCreateSerializer(data={
+            'tipo_documento': Cliente.TipoDocumento.CC,
+            'numero_documento': '100200300',
+            'nombre': 'Cliente Duplicado',
+            'telefono': '3000000000',
+            'direccion': 'Calle 5 # 1-2',
+            'ciudad': 'Bogota',
+            'departamento': 'Cundinamarca',
+            'tipo_cliente': Cliente.TipoCliente.NATURAL,
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('numero_documento', serializer.errors)
+
+    def test_create_serializer_valida_email(self):
+        serializer = ClienteCreateSerializer(data={
+            'tipo_documento': Cliente.TipoDocumento.CC,
+            'numero_documento': '700800900',
+            'nombre': 'Cliente Email',
+            'email': 'correo-invalido',
+            'telefono': '3000000001',
+            'direccion': 'Calle 6 # 3-4',
+            'ciudad': 'Bogota',
+            'departamento': 'Cundinamarca',
+            'tipo_cliente': Cliente.TipoCliente.NATURAL,
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('email', serializer.errors)
+
+    def test_create_serializer_requiere_telefono(self):
+        serializer = ClienteCreateSerializer(data={
+            'tipo_documento': Cliente.TipoDocumento.CC,
+            'numero_documento': '900800700',
+            'nombre': 'Cliente Sin Telefono',
+            'telefono': '   ',
+            'direccion': 'Calle 7 # 8-9',
+            'ciudad': 'Bogota',
+            'departamento': 'Cundinamarca',
+            'tipo_cliente': Cliente.TipoCliente.NATURAL,
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('telefono', serializer.errors)
+
+    def test_update_serializer_valida_limite_credito_contra_saldo(self):
+        serializer = ClienteUpdateSerializer(
+            instance=self.cliente,
+            data={
+                'limite_credito': '90.00',
+            },
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('limite_credito', serializer.errors)
