@@ -1,96 +1,163 @@
-import { Outlet, Link, NavLink } from 'react-router-dom';
-import { Home, Users, FileText, Settings, PackageSearch } from 'lucide-react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import {
+  Activity,
+  CreditCard,
+  FileText,
+  Home,
+  PackageSearch,
+  Settings,
+  Users,
+} from 'lucide-react';
+import { useAppStore } from '../store/useStore';
 
 export default function Layout() {
+  const location = useLocation();
+  const sidebarOpen = useAppStore((state) => state.sidebarOpen);
+  const toggleSidebar = useAppStore((state) => state.toggleSidebar);
+
   const navItems = [
-    { path: '/', label: 'Inicio', icon: <Home size={20} />, end: true },
-    { path: '/usuarios', label: 'Usuarios', icon: <Users size={20} />, end: false },
-    { path: '/inventario', label: 'Inventario', icon: <PackageSearch size={20} />, end: false },
-    { path: '/about', label: 'Acerca', icon: <FileText size={20} />, end: false },
+    { path: '/', label: 'Inicio', icon: Home, end: true },
+    { path: '/ventas', label: 'Ventas', icon: CreditCard, end: false },
+    { path: '/inventario', label: 'Inventario', icon: PackageSearch, end: false },
+    { path: '/usuarios', label: 'Usuarios', icon: Users, end: false },
+    { path: '/about', label: 'Acerca', icon: FileText, end: false },
   ];
 
+  const pageTitle =
+    navItems.find((item) =>
+      item.end
+        ? location.pathname === item.path
+        : location.pathname.startsWith(item.path),
+    )?.label || 'Mallor';
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold">M</span>
+    <div className="min-h-screen bg-app">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.18),transparent_28%),radial-gradient(circle_at_top_right,rgba(251,191,36,0.1),transparent_24%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.98))]" />
+      <div className="relative flex min-h-screen">
+        <aside
+          className={`hidden border-r border-white/10 bg-panel/90 backdrop-blur xl:flex xl:flex-col ${
+            sidebarOpen ? 'xl:w-72' : 'xl:w-24'
+          }`}
+        >
+          <div className="border-b border-white/10 px-5 py-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/18 text-emerald-300">
+                <Activity className="h-5 w-5" />
               </div>
-              <h1 className="text-2xl font-bold text-gray-800">Mallor</h1>
+              {sidebarOpen && (
+                <div>
+                  <div className="font-display text-xl text-white">Mallor</div>
+                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">
+                    Centro operativo
+                  </div>
+                </div>
+              )}
             </div>
-            <nav className="hidden md:flex items-center space-x-6">
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    `flex items-center space-x-2 transition ${isActive ? 'text-blue-600 font-semibold' : 'text-gray-600 hover:text-blue-600'}`
-                  }
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </NavLink>
-              ))}
-              <div className="flex items-center space-x-4">
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                  Iniciar sesión
-                </button>
-                <button className="p-2 text-gray-600 hover:text-gray-800">
-                  <Settings size={20} />
-                </button>
-              </div>
-            </nav>
           </div>
 
-          {/* Navegación móvil */}
-          <div className="flex md:hidden items-center justify-between mt-4">
-            <div className="flex space-x-4">
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    `flex items-center space-x-2 transition ${isActive ? 'text-blue-600' : 'text-gray-600 hover:text-blue-600'}`
-                  }
-                >
-                  {item.icon}
-                </NavLink>
-              ))}
+          <nav className="flex-1 px-4 py-5">
+            <div className="mb-3 px-2 text-[10px] uppercase tracking-[0.28em] text-slate-500">
+              {sidebarOpen ? 'Modulos' : 'Nav'}
             </div>
-            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
-              Iniciar sesión
+            <div className="space-y-2">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    end={item.end}
+                    className={({ isActive }) =>
+                      `group flex min-h-12 items-center gap-3 rounded-2xl px-3 py-3 transition ${
+                        isActive
+                          ? 'bg-white text-slate-950 shadow-[0_18px_50px_rgba(15,23,42,0.28)]'
+                          : 'text-slate-400 hover:bg-white/6 hover:text-white'
+                      }`
+                    }
+                    title={item.label}
+                  >
+                    <Icon className="h-5 w-5" />
+                    {sidebarOpen && (
+                      <span className="text-sm font-semibold">{item.label}</span>
+                    )}
+                  </NavLink>
+                );
+              })}
+            </div>
+          </nav>
+
+          <div className="border-t border-white/10 px-4 py-5">
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="flex min-h-11 w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+            >
+              {sidebarOpen ? 'Compactar panel' : 'Expandir'}
             </button>
           </div>
-        </div>
-      </header>
+        </aside>
 
-      <main className="container mx-auto px-4 py-8">
-        <Outlet />
-      </main>
-
-      <footer className="bg-white border-t mt-8">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="mb-4 md:mb-0">
-              <div className="flex items-center space-x-2">
-                <div className="w-6 h-6 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white text-sm font-bold">M</span>
+        <div className="relative flex min-h-screen flex-1 flex-col">
+          <header className="sticky top-0 z-30 border-b border-white/10 bg-app/92 backdrop-blur">
+            <div className="mx-auto flex w-full max-w-[1680px] items-center justify-between gap-4 px-4 py-4 sm:px-6 xl:px-10">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  className="hidden h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 xl:flex"
+                  aria-label="Alternar panel"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.32em] text-slate-500">
+                    Mallor workspace
+                  </div>
+                  <h1 className="font-display text-2xl text-white">
+                    {pageTitle}
+                  </h1>
                 </div>
-                <span className="text-lg font-semibold text-gray-800">Mallor</span>
               </div>
-              <p className="text-gray-600 text-sm mt-2">Sistema de gestión integral para Pymes</p>
+
+              <div className="hidden items-center gap-3 md:flex">
+                <div className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200">
+                  Backend conectado
+                </div>
+                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
+                  React + DRF
+                </div>
+              </div>
             </div>
-            <div className="text-center md:text-right">
-              <p className="text-gray-600">© 2025 Mallor - Todos los derechos reservados</p>
-              <p className="text-gray-500 text-sm mt-1">Versión 1.0.0</p>
+
+            <div className="flex items-center gap-2 overflow-x-auto border-t border-white/10 px-4 py-3 xl:hidden">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    end={item.end}
+                    className={({ isActive }) =>
+                      `inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                        isActive
+                          ? 'border-emerald-400/50 bg-emerald-400/14 text-emerald-100'
+                          : 'border-white/10 bg-white/5 text-slate-400'
+                      }`
+                    }
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </NavLink>
+                );
+              })}
             </div>
-          </div>
+          </header>
+
+          <main className="mx-auto flex w-full max-w-[1680px] flex-1 flex-col px-4 py-6 sm:px-6 xl:px-10 xl:py-8">
+            <Outlet />
+          </main>
         </div>
-      </footer>
+      </div>
     </div>
   );
 }
