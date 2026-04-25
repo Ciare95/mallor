@@ -4,7 +4,8 @@ from django.test import TestCase
 from django.core.exceptions import ValidationError
 
 from cliente.models import Cliente
-from inventario.models import Producto
+from core.exceptions import AbonoNoPermitidoError, VentaNoCancelableError
+from inventario.models import HistorialInventario, Producto
 from usuario.models import Usuario
 from ventas.models import Abono, DetalleVenta, Venta
 from ventas.serializers import (
@@ -13,6 +14,7 @@ from ventas.serializers import (
     VentaCreateSerializer,
     VentaSerializer,
 )
+from ventas.services import AbonoService, VentaReporteService, VentaService
 
 
 class VentaModelTest(TestCase):
@@ -424,3 +426,260 @@ class VentaSerializerTest(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn('venta', serializer.errors)
+
+
+class VentaServiceTest(TestCase):
+    def setUp(self):
+        self.usuario = Usuario.objects.create_user(
+            username='servicios',
+            email='servicios@example.com',
+            password='password-seguro-123',
+        )
+        self.cliente = Cliente.objects.create(
+            tipo_documento=Cliente.TipoDocumento.CC,
+            numero_documento='99887766',
+            nombre='Cliente Servicios',
+            telefono='3004445566',
+            direccion='Calle 1 # 2-3',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_cliente=Cliente.TipoCliente.NATURAL,
+        )
+        self.producto = Producto.objects.create(
+            nombre='Producto Servicio',
+            existencias=Decimal('10.00'),
+            precio_compra=Decimal('45.00'),
+            precio_venta=Decimal('100.00'),
+            iva=Decimal('19.00'),
+        )
+
+    def test_crear_venta_service_registra_historial_y_descuenta_stock(self):
+        venta = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'observaciones': 'Venta desde servicio',
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('3.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        self.producto.refresh_from_db()
+        historial = HistorialInventario.objects.get(venta=venta)
+
+        self.assertEqual(venta.detalles.count(), 1)
+        self.assertEqual(self.producto.existencias, Decimal('7.00'))
+        self.assertEqual(venta.total, Decimal('357.00'))
+        self.assertEqual(
+            historial.tipo_movimiento,
+            HistorialInventario.TIPO_SALIDA,
+        )
+        self.assertEqual(historial.cantidad, Decimal('-3.00'))
+
+    def test_actualizar_venta_service_reemplaza_detalles_y_recalcula_stock(self):
+        venta = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('2.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        venta = VentaService.actualizar_venta(
+            venta_id=venta.id,
+            data={
+                'descuento': Decimal('10.00'),
+                'observaciones': 'Actualizada desde servicio',
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('4.00'),
+                        'precio_unitario': Decimal('100.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        self.producto.refresh_from_db()
+
+        self.assertEqual(self.producto.existencias, Decimal('6.00'))
+        self.assertEqual(venta.subtotal, Decimal('400.00'))
+        self.assertEqual(venta.impuestos, Decimal('76.00'))
+        self.assertEqual(venta.total, Decimal('466.00'))
+        self.assertEqual(
+            HistorialInventario.objects.filter(
+                producto=self.producto,
+            ).count(),
+            3,
+        )
+
+    def test_cancelar_venta_service_restaura_stock_y_marca_estado(self):
+        venta = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('2.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        venta = VentaService.cancelar_venta(
+            venta_id=venta.id,
+            motivo='Cliente desistió',
+            usuario=self.usuario,
+        )
+
+        self.producto.refresh_from_db()
+
+        self.assertEqual(self.producto.existencias, Decimal('10.00'))
+        self.assertEqual(venta.estado, Venta.Estado.CANCELADA)
+        self.assertIn('Cliente desistió', venta.observaciones)
+        self.assertEqual(
+            HistorialInventario.objects.filter(
+                producto=self.producto,
+            ).count(),
+            2,
+        )
+
+    def test_cancelar_venta_service_rechaza_ventas_con_abonos(self):
+        venta = Venta.objects.create(
+            cliente=self.cliente,
+            subtotal=Decimal('100.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('100.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+        Abono.objects.create(
+            venta=venta,
+            monto_abonado=Decimal('20.00'),
+            metodo_pago=Abono.MetodoPago.EFECTIVO,
+            usuario_registro=self.usuario,
+        )
+
+        with self.assertRaises(VentaNoCancelableError):
+            VentaService.cancelar_venta(
+                venta_id=venta.id,
+                motivo='No debe cancelar',
+                usuario=self.usuario,
+            )
+
+    def test_registrar_abono_service_actualiza_cartera(self):
+        venta = Venta.objects.create(
+            cliente=self.cliente,
+            subtotal=Decimal('100.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('100.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+
+        AbonoService.registrar_abono(
+            venta_id=venta.id,
+            data={
+                'monto_abonado': Decimal('30.00'),
+                'metodo_pago': Abono.MetodoPago.EFECTIVO,
+            },
+            usuario=self.usuario,
+        )
+
+        venta.refresh_from_db()
+        cuentas = AbonoService.obtener_cuentas_por_cobrar()
+
+        self.assertEqual(venta.estado_pago, Venta.EstadoPago.PARCIAL)
+        self.assertEqual(venta.saldo_pendiente, Decimal('70.00'))
+        self.assertEqual(len(cuentas), 1)
+        self.assertEqual(
+            AbonoService.calcular_total_por_cobrar(),
+            Decimal('70.00'),
+        )
+
+    def test_registrar_abono_service_rechaza_exceso_de_saldo(self):
+        venta = Venta.objects.create(
+            cliente=self.cliente,
+            subtotal=Decimal('100.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('100.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+
+        with self.assertRaises(AbonoNoPermitidoError):
+            AbonoService.registrar_abono(
+                venta_id=venta.id,
+                data={
+                    'monto_abonado': Decimal('120.00'),
+                    'metodo_pago': Abono.MetodoPago.EFECTIVO,
+                },
+                usuario=self.usuario,
+            )
+
+    def test_reporte_service_calcula_estadisticas_excluyendo_canceladas(self):
+        venta_activa = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('1.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+        venta_cancelada = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('1.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+        VentaService.cancelar_venta(
+            venta_id=venta_cancelada.id,
+            motivo='Anulada para reporte',
+            usuario=self.usuario,
+        )
+
+        estadisticas = VentaReporteService.calcular_estadisticas_ventas('hoy')
+        ventas_periodo = VentaReporteService.ventas_por_periodo(
+            fecha_inicio=venta_activa.fecha_venta.date(),
+            fecha_fin=venta_activa.fecha_venta.date(),
+        )
+        ventas_producto = VentaReporteService.ventas_por_producto(
+            producto_id=self.producto.id,
+        )
+
+        self.assertEqual(estadisticas['total_ventas'], 1)
+        self.assertEqual(estadisticas['ingresos'], Decimal('119.00'))
+        self.assertEqual(estadisticas['unidades_vendidas'], Decimal('1.00'))
+        self.assertEqual(len(ventas_periodo), 1)
+        self.assertEqual(len(ventas_producto), 1)

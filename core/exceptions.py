@@ -200,3 +200,100 @@ class CategoriaConProductosError(InventarioError):
             message=_("No se puede eliminar la categoría '%(nombre)s' porque tiene productos asociados.") % {'nombre': categoria_nombre},
             code="categoria_con_productos"
         )
+
+
+class VentaError(MallorError):
+    """
+    Excepción base para errores de dominio en el módulo de ventas.
+    """
+
+    def __init__(self, message: str, code: str = "venta_error"):
+        super().__init__(message, code)
+
+
+class VentaNoEncontradaError(VentaError):
+    """Excepción cuando una venta no existe."""
+
+    def __init__(self, venta_id: int):
+        super().__init__(
+            message=_("Venta con ID %(id)s no encontrada.") % {'id': venta_id},
+            code="venta_no_encontrada",
+        )
+
+
+class VentaSinDetallesError(VentaError):
+    """Excepción cuando una venta no contiene productos."""
+
+    def __init__(self):
+        super().__init__(
+            message=_("La venta debe incluir al menos un producto."),
+            code="venta_sin_detalles",
+        )
+
+
+class VentaNoEditableError(VentaError):
+    """Excepción cuando una venta no puede modificarse."""
+
+    def __init__(self, numero_venta: str, motivo: str):
+        super().__init__(
+            message=_(
+                "La venta %(numero)s no se puede modificar: %(motivo)s."
+            ) % {
+                'numero': numero_venta,
+                'motivo': motivo,
+            },
+            code="venta_no_editable",
+        )
+
+
+class VentaNoCancelableError(VentaError):
+    """Excepción cuando una venta no puede cancelarse."""
+
+    def __init__(self, numero_venta: str, motivo: str):
+        super().__init__(
+            message=_(
+                "La venta %(numero)s no se puede cancelar: %(motivo)s."
+            ) % {
+                'numero': numero_venta,
+                'motivo': motivo,
+            },
+            code="venta_no_cancelable",
+        )
+
+
+class VentaFacturadaError(VentaError):
+    """Excepción cuando se intenta alterar una venta facturada."""
+
+    def __init__(self, numero_venta: str):
+        super().__init__(
+            message=_(
+                "La venta %(numero)s ya fue facturada y no admite cambios."
+            ) % {
+                'numero': numero_venta,
+            },
+            code="venta_facturada",
+        )
+
+
+class EstadoVentaInvalidoError(VentaError):
+    """Excepción cuando se intenta usar un estado de venta inválido."""
+
+    def __init__(self, estado: str):
+        super().__init__(
+            message=_("El estado de venta '%(estado)s' no es válido.") % {
+                'estado': estado,
+            },
+            code="estado_venta_invalido",
+        )
+
+
+class AbonoNoPermitidoError(VentaError):
+    """Excepción cuando un abono no cumple las reglas de negocio."""
+
+    def __init__(self, motivo: str):
+        super().__init__(
+            message=_("No se puede registrar el abono: %(motivo)s.") % {
+                'motivo': motivo,
+            },
+            code="abono_no_permitido",
+        )
