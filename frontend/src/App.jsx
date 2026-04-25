@@ -1,20 +1,7 @@
-import { useState, useEffect } from 'react';
 import './App.css';
 
 function App() {
-  const [depsInstalled, setDepsInstalled] = useState(false);
-
-  useEffect(() => {
-    // Verificar si react-router-dom está disponible
-    if (typeof window !== 'undefined') {
-      try {
-        require('react-router-dom');
-        setDepsInstalled(true);
-      } catch (e) {
-        setDepsInstalled(false);
-      }
-    }
-  }, []);
+  const depsInstalled = true;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col items-center justify-center p-8">

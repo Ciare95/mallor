@@ -1,10 +1,11 @@
 import { Outlet, Link, NavLink } from 'react-router-dom';
-import { Home, Users, FileText, Settings } from 'lucide-react';
+import { Home, Users, FileText, Settings, PackageSearch } from 'lucide-react';
 
 export default function Layout() {
   const navItems = [
     { path: '/', label: 'Inicio', icon: <Home size={20} />, end: true },
     { path: '/usuarios', label: 'Usuarios', icon: <Users size={20} />, end: false },
+    { path: '/inventario', label: 'Inventario', icon: <PackageSearch size={20} />, end: false },
     { path: '/about', label: 'Acerca', icon: <FileText size={20} />, end: false },
   ];
 
