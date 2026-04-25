@@ -321,6 +321,13 @@ PERMISOS = {
     'CLIENTE_LISTAR': 'listar_clientes',
     'CLIENTE_VER_INFORMES': 'ver_informe_clientes',
 
+    # Proveedores
+    'PROVEEDOR_CREAR': 'crear_proveedor',
+    'PROVEEDOR_VER': 'ver_proveedor',
+    'PROVEEDOR_ACTUALIZAR': 'actualizar_proveedor',
+    'PROVEEDOR_ELIMINAR': 'eliminar_proveedor',
+    'PROVEEDOR_LISTAR': 'listar_proveedores',
+
     # Facturas
     'FACTURA_CREAR': 'crear_factura',
     'FACTURA_VER': 'ver_factura',

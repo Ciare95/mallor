@@ -392,3 +392,38 @@ class ClienteInactivoError(ClienteError):
             },
             code="cliente_inactivo",
         )
+
+
+class ProveedorError(MallorError):
+    """
+    Excepcion base para errores del modulo de proveedores.
+    """
+
+    def __init__(self, message: str, code: str = "proveedor_error"):
+        super().__init__(message, code)
+
+
+class ProveedorNoEncontradoError(ProveedorError):
+    """Excepcion cuando un proveedor no existe."""
+
+    def __init__(self, proveedor_id: int):
+        super().__init__(
+            message=_("Proveedor con ID %(id)s no encontrado.") % {
+                'id': proveedor_id,
+            },
+            code="proveedor_no_encontrado",
+        )
+
+
+class ProveedorDuplicadoError(ProveedorError):
+    """Excepcion cuando se intenta usar un documento duplicado."""
+
+    def __init__(self, numero_documento: str):
+        super().__init__(
+            message=_(
+                "Ya existe un proveedor con documento %(numero)s."
+            ) % {
+                'numero': numero_documento,
+            },
+            code="proveedor_duplicado",
+        )
