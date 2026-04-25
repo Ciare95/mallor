@@ -6,6 +6,7 @@ import UsuariosPage from '../pages/usuarios/UsuariosPage';
 import ProductosPage from '../pages/inventario/ProductosPage';
 import VentasPage from '../pages/ventas/VentasPage';
 import ClientesPage from '../pages/clientes/ClientesPage';
+import ProveedoresPage from '../pages/proveedores/ProveedoresPage';
 
 export const router = createBrowserRouter([
   {
@@ -35,6 +36,10 @@ export const router = createBrowserRouter([
       {
         path: 'clientes',
         element: <ClientesPage />,
+      },
+      {
+        path: 'proveedores',
+        element: <ProveedoresPage />,
       },
     ],
   },
