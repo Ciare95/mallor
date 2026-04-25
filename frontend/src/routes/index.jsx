@@ -3,6 +3,7 @@ import Layout from '../components/Layout';
 import HomePage from '../pages/HomePage';
 import AboutPage from '../pages/AboutPage';
 import UsuariosPage from '../pages/usuarios/UsuariosPage';
+import ProductosPage from '../pages/inventario/ProductosPage';
 
 export const router = createBrowserRouter([
   {
@@ -20,6 +21,10 @@ export const router = createBrowserRouter([
       {
         path: 'usuarios',
         element: <UsuariosPage />,
+      },
+      {
+        path: 'inventario',
+        element: <ProductosPage />,
       },
     ],
   },

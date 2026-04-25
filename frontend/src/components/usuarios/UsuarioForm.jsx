@@ -40,6 +40,7 @@ const UsuarioForm = ({ usuario, onSubmit, onCancel, isLoading, error }) => {
   // Inicializar con datos de usuario si está en modo edición
   useEffect(() => {
     if (usuario) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         username: usuario.username || '',
         email: usuario.email || '',
@@ -88,7 +89,7 @@ const UsuarioForm = ({ usuario, onSubmit, onCancel, isLoading, error }) => {
       return null;
     },
     phone: (value) => {
-      if (value && !/^[\d\s\-\+\(\)]+$/.test(value)) return 'Teléfono inválido';
+      if (value && !/^[\d\s+()-]+$/.test(value)) return 'Teléfono inválido';
       return null;
     },
   };
