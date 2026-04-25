@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -9,6 +10,13 @@ from cliente.serializers import (
     ClienteDetailSerializer,
     ClienteListSerializer,
     ClienteUpdateSerializer,
+)
+from cliente.services import ClienteService
+from core.exceptions import (
+    ClienteConVentasError,
+    ClienteCreditoInsuficienteError,
+    ClienteDuplicadoError,
+    ClienteNoEncontradoError,
 )
 from usuario.models import Usuario
 from ventas.models import Venta
@@ -286,3 +294,241 @@ class ClienteSerializerTest(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn('limite_credito', serializer.errors)
+
+
+class ClienteServiceTest(TestCase):
+    def setUp(self):
+        self.usuario = Usuario.objects.create_user(
+            username='cliente_service',
+            email='cliente_service@example.com',
+            password='Admin1234',
+        )
+        self.cliente = Cliente.objects.create(
+            tipo_documento=Cliente.TipoDocumento.CC,
+            numero_documento='555666777',
+            nombre='Cliente Servicio',
+            telefono='3010000000',
+            direccion='Avenida 1 # 1-1',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_cliente=Cliente.TipoCliente.NATURAL,
+            limite_credito=Decimal('500.00'),
+            dias_plazo=15,
+        )
+        self.venta_1 = Venta.objects.create(
+            numero_venta='V-00000200',
+            cliente=self.cliente,
+            subtotal=Decimal('200.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('200.00'),
+            descuento=Decimal('0.00'),
+            total_abonado=Decimal('20.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+        self.venta_2 = Venta.objects.create(
+            numero_venta='V-00000201',
+            cliente=self.cliente,
+            subtotal=Decimal('100.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('100.00'),
+            descuento=Decimal('0.00'),
+            total_abonado=Decimal('100.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+        Venta.objects.filter(pk=self.venta_1.pk).update(
+            fecha_venta=self.venta_1.fecha_venta - timedelta(days=20),
+        )
+        self.venta_1.refresh_from_db()
+
+    def test_crear_cliente_valida_documento_unico(self):
+        with self.assertRaises(ClienteDuplicadoError):
+            ClienteService.crear_cliente({
+                'tipo_documento': Cliente.TipoDocumento.CC,
+                'numero_documento': self.cliente.numero_documento,
+                'nombre': 'Cliente Repetido',
+                'telefono': '3009999999',
+                'direccion': 'Calle 1',
+                'ciudad': 'Bogota',
+                'departamento': 'Cundinamarca',
+                'tipo_cliente': Cliente.TipoCliente.NATURAL,
+            })
+
+    def test_obtener_cliente_asigna_estadisticas(self):
+        cliente = ClienteService.obtener_cliente(self.cliente.id)
+
+        self.assertEqual(cliente.id, self.cliente.id)
+        self.assertEqual(
+            cliente.estadisticas['saldo_pendiente'],
+            Decimal('180.00'),
+        )
+        self.assertEqual(cliente.estadisticas['cantidad_compras'], 2)
+
+    def test_listar_clientes_aplica_filtro(self):
+        otro = Cliente.objects.create(
+            tipo_documento=Cliente.TipoDocumento.NIT,
+            numero_documento='900111222',
+            razon_social='Otro Cliente SAS',
+            telefono='3020000000',
+            direccion='Calle 10',
+            ciudad='Medellin',
+            departamento='Antioquia',
+            tipo_cliente=Cliente.TipoCliente.JURIDICO,
+        )
+
+        resultados = ClienteService.listar_clientes({
+            'q': 'Servicio',
+        })
+
+        self.assertEqual([cliente.id for cliente in resultados], [self.cliente.id])
+        self.assertNotIn(otro.id, [cliente.id for cliente in resultados])
+
+    def test_actualizar_cliente_modifica_datos(self):
+        actualizado = ClienteService.actualizar_cliente(
+            self.cliente.id,
+            {
+                'telefono': '3011111111',
+                'ciudad': 'Soacha',
+            },
+        )
+
+        self.assertEqual(actualizado.telefono, '3011111111')
+        self.assertEqual(actualizado.ciudad, 'Soacha')
+
+    def test_eliminar_cliente_con_ventas_lanza_error(self):
+        with self.assertRaises(ClienteConVentasError):
+            ClienteService.eliminar_cliente(self.cliente.id)
+
+    def test_eliminar_cliente_sin_ventas_hace_soft_delete(self):
+        cliente = Cliente.objects.create(
+            tipo_documento=Cliente.TipoDocumento.CE,
+            numero_documento='123123123',
+            nombre='Sin Ventas',
+            telefono='3030000000',
+            direccion='Calle 3',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_cliente=Cliente.TipoCliente.NATURAL,
+        )
+
+        eliminado = ClienteService.eliminar_cliente(cliente.id)
+
+        self.assertFalse(eliminado.activo)
+        cliente.refresh_from_db()
+        self.assertFalse(cliente.activo)
+
+    def test_activar_desactivar_cliente_cambia_estado(self):
+        ClienteService.activar_desactivar_cliente(self.cliente.id, False)
+        self.cliente.refresh_from_db()
+        self.assertFalse(self.cliente.activo)
+
+        ClienteService.activar_desactivar_cliente(self.cliente.id, True)
+        self.cliente.refresh_from_db()
+        self.assertTrue(self.cliente.activo)
+
+    def test_obtener_historial_compras_filtra_canceladas_y_ordena(self):
+        Venta.objects.create(
+            numero_venta='V-00000202',
+            cliente=self.cliente,
+            subtotal=Decimal('50.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('50.00'),
+            descuento=Decimal('0.00'),
+            total_abonado=Decimal('0.00'),
+            estado=Venta.Estado.CANCELADA,
+            usuario_registro=self.usuario,
+        )
+
+        historial = ClienteService.obtener_historial_compras(self.cliente.id)
+
+        self.assertEqual(len(historial), 2)
+        self.assertEqual(historial[0].id, self.venta_2.id)
+
+    def test_obtener_cartera_cliente_retorna_solo_ventas_con_saldo(self):
+        cartera = ClienteService.obtener_cartera_cliente(self.cliente.id)
+
+        self.assertEqual(len(cartera), 1)
+        self.assertEqual(cartera[0].id, self.venta_1.id)
+
+    def test_calcular_estadisticas_cliente_retorna_resumen(self):
+        estadisticas = ClienteService.calcular_estadisticas_cliente(
+            self.cliente.id,
+        )
+
+        self.assertEqual(estadisticas['cantidad_compras'], 2)
+        self.assertEqual(estadisticas['saldo_pendiente'], Decimal('180.00'))
+        self.assertEqual(estadisticas['ventas_con_saldo'], 1)
+        self.assertEqual(estadisticas['ventas_vencidas'], 1)
+
+    def test_validar_credito_disponible(self):
+        self.assertTrue(
+            ClienteService.validar_credito_disponible(
+                self.cliente.id,
+                Decimal('320.00'),
+            )
+        )
+
+        with self.assertRaises(ClienteCreditoInsuficienteError):
+            ClienteService.validar_credito_disponible(
+                self.cliente.id,
+                Decimal('321.00'),
+            )
+
+    def test_validar_documento_unico(self):
+        self.assertTrue(
+            ClienteService.validar_documento_unico(
+                Cliente.TipoDocumento.CE,
+                self.cliente.numero_documento,
+            )
+        )
+
+        with self.assertRaises(ClienteDuplicadoError):
+            ClienteService.validar_documento_unico(
+                Cliente.TipoDocumento.CC,
+                self.cliente.numero_documento,
+            )
+
+    def test_obtener_mejores_clientes_ordenados_por_total(self):
+        otro = Cliente.objects.create(
+            tipo_documento=Cliente.TipoDocumento.CC,
+            numero_documento='111222333',
+            nombre='Cliente Menor',
+            telefono='3040000000',
+            direccion='Calle 4',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_cliente=Cliente.TipoCliente.NATURAL,
+        )
+        Venta.objects.create(
+            numero_venta='V-00000203',
+            cliente=otro,
+            subtotal=Decimal('50.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('50.00'),
+            descuento=Decimal('0.00'),
+            total_abonado=Decimal('0.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+
+        clientes = ClienteService.obtener_mejores_clientes(limite=2)
+
+        self.assertEqual(clientes[0].id, self.cliente.id)
+        self.assertEqual(clientes[1].id, otro.id)
+
+    def test_obtener_clientes_morosos(self):
+        morosos = ClienteService.obtener_clientes_morosos()
+
+        self.assertEqual(len(morosos), 1)
+        self.assertEqual(morosos[0]['cliente'].id, self.cliente.id)
+        self.assertEqual(morosos[0]['total_vencido'], Decimal('180.00'))
+
+    def test_obtener_clientes_nuevos(self):
+        recientes = ClienteService.obtener_clientes_nuevos(dias=1)
+
+        self.assertIn(self.cliente.id, [cliente.id for cliente in recientes])
+
+    def test_obtener_cliente_inexistente_lanza_error(self):
+        with self.assertRaises(ClienteNoEncontradoError):
+            ClienteService.obtener_cliente(999999)

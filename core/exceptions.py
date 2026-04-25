@@ -309,3 +309,86 @@ class AbonoNoEncontradoError(VentaError):
             },
             code="abono_no_encontrado",
         )
+
+
+class ClienteError(MallorError):
+    """
+    Excepción base para errores de dominio en el módulo de clientes.
+    """
+
+    def __init__(self, message: str, code: str = "cliente_error"):
+        super().__init__(message, code)
+
+
+class ClienteNoEncontradoError(ClienteError):
+    """Excepción cuando un cliente no existe."""
+
+    def __init__(self, cliente_id: int):
+        super().__init__(
+            message=_("Cliente con ID %(id)s no encontrado.") % {
+                'id': cliente_id,
+            },
+            code="cliente_no_encontrado",
+        )
+
+
+class ClienteDuplicadoError(ClienteError):
+    """Excepción cuando se intenta usar un documento duplicado."""
+
+    def __init__(self, tipo_documento: str, numero_documento: str):
+        super().__init__(
+            message=_(
+                "Ya existe un cliente con documento %(tipo)s "
+                "%(numero)s."
+            ) % {
+                'tipo': tipo_documento,
+                'numero': numero_documento,
+            },
+            code="cliente_duplicado",
+        )
+
+
+class ClienteConVentasError(ClienteError):
+    """Excepción cuando un cliente tiene ventas asociadas."""
+
+    def __init__(self, cliente_nombre: str):
+        super().__init__(
+            message=_(
+                "No se puede eliminar el cliente %(cliente)s porque "
+                "tiene ventas asociadas."
+            ) % {
+                'cliente': cliente_nombre,
+            },
+            code="cliente_con_ventas",
+        )
+
+
+class ClienteCreditoInsuficienteError(ClienteError):
+    """Excepción cuando el cliente no tiene crédito disponible."""
+
+    def __init__(self, cliente_nombre: str, disponible, requerido):
+        super().__init__(
+            message=_(
+                "El cliente %(cliente)s no tiene crédito suficiente. "
+                "Disponible: %(disponible)s, requerido: %(requerido)s."
+            ) % {
+                'cliente': cliente_nombre,
+                'disponible': disponible,
+                'requerido': requerido,
+            },
+            code="cliente_credito_insuficiente",
+        )
+
+
+class ClienteInactivoError(ClienteError):
+    """Excepción cuando se intenta operar con un cliente inactivo."""
+
+    def __init__(self, cliente_nombre: str):
+        super().__init__(
+            message=_(
+                "El cliente %(cliente)s se encuentra inactivo."
+            ) % {
+                'cliente': cliente_nombre,
+            },
+            code="cliente_inactivo",
+        )
