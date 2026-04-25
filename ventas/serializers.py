@@ -271,6 +271,10 @@ class VentaCreateSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    usuario_registro = serializers.PrimaryKeyRelatedField(
+        queryset=Usuario.objects.all(),
+        required=False,
+    )
     detalles = DetalleVentaCreateSerializer(many=True)
 
     class Meta:
@@ -363,6 +367,10 @@ class VentaUpdateSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    detalles = DetalleVentaCreateSerializer(
+        many=True,
+        required=False,
+    )
 
     class Meta:
         model = Venta
@@ -375,6 +383,7 @@ class VentaUpdateSerializer(serializers.ModelSerializer):
             'numero_factura_electronica',
             'fecha_facturacion',
             'observaciones',
+            'detalles',
         ]
 
     def validate_descuento(self, value):
@@ -387,7 +396,14 @@ class VentaUpdateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         instance = self.instance
         descuento = attrs.get('descuento', instance.descuento)
+        detalles = attrs.get('detalles')
         subtotal_disponible = instance.subtotal
+
+        if detalles is not None:
+            subtotal_disponible = sum(
+                detalle['cantidad'] * detalle['precio_unitario']
+                for detalle in detalles
+            )
 
         if descuento > subtotal_disponible:
             raise serializers.ValidationError({

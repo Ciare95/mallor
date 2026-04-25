@@ -12,6 +12,7 @@ from django.utils.translation import gettext_lazy as _
 
 from cliente.models import Cliente
 from core.exceptions import (
+    AbonoNoEncontradoError,
     AbonoNoPermitidoError,
     EstadoVentaInvalidoError,
     ProductoNoEncontradoError,
@@ -388,6 +389,18 @@ class VentaService:
             raise VentaNoEncontradaError(venta_id) from exc
 
     @staticmethod
+    def obtener_historial(venta_id: int) -> List[HistorialInventario]:
+        VentaService.obtener_venta(venta_id)
+        return list(
+            HistorialInventario.objects.select_related(
+                'producto',
+                'usuario',
+            ).filter(
+                venta_id=venta_id,
+            ).order_by('-fecha', '-created_at')
+        )
+
+    @staticmethod
     def listar_ventas(
         filtros: Optional[Dict[str, Any]] = None,
     ) -> List[Venta]:
@@ -610,11 +623,47 @@ class VentaService:
         venta.save()
         return VentaService.obtener_venta(venta.id)
 
+    @staticmethod
+    @transaction.atomic
+    def eliminar_venta(
+        venta_id: int,
+        usuario: Optional[Usuario] = None,
+    ) -> None:
+        venta = VentaService._obtener_venta_para_actualizar(venta_id)
+        VentaService._validar_venta_cancelable(venta)
+
+        usuario_accion = usuario or venta.usuario_registro
+        detalles = list(venta.detalles.select_related('producto'))
+
+        for detalle in detalles:
+            _VentaInventarioService.registrar_historial_entrada(
+                producto=detalle.producto,
+                cantidad=detalle.cantidad,
+                precio_unitario=detalle.precio_unitario,
+                usuario=usuario_accion,
+                motivo=_('EliminaciÃ³n de venta %(numero)s') % {
+                    'numero': venta.numero_venta,
+                },
+                observaciones=_(
+                    'RestituciÃ³n automÃ¡tica por eliminaciÃ³n de venta.'
+                ),
+            )
+
+        venta.delete()
+
 
 class AbonoService:
     """
     Servicio de negocio para pagos parciales a ventas.
     """
+
+    @staticmethod
+    def _queryset_base():
+        return Abono.objects.select_related(
+            'venta',
+            'venta__cliente',
+            'usuario_registro',
+        )
 
     @staticmethod
     @transaction.atomic
@@ -654,13 +703,52 @@ class AbonoService:
     def obtener_abonos_venta(venta_id: int) -> List[Abono]:
         VentaService.obtener_venta(venta_id)
         return list(
-            Abono.objects.select_related(
-                'venta',
-                'usuario_registro',
-            ).filter(
+            AbonoService._queryset_base().filter(
                 venta_id=venta_id,
             ).order_by('-fecha_abono')
         )
+
+    @staticmethod
+    def listar_abonos(
+        filtros: Optional[Dict[str, Any]] = None,
+    ) -> List[Abono]:
+        queryset = AbonoService._queryset_base()
+
+        if filtros:
+            if filtros.get('venta_id'):
+                queryset = queryset.filter(venta_id=filtros['venta_id'])
+            if filtros.get('usuario_id'):
+                queryset = queryset.filter(
+                    usuario_registro_id=filtros['usuario_id'],
+                )
+            if filtros.get('metodo_pago'):
+                queryset = queryset.filter(
+                    metodo_pago=filtros['metodo_pago'],
+                )
+            if filtros.get('fecha_desde'):
+                queryset = queryset.filter(
+                    fecha_abono__date__gte=filtros['fecha_desde'],
+                )
+            if filtros.get('fecha_hasta'):
+                queryset = queryset.filter(
+                    fecha_abono__date__lte=filtros['fecha_hasta'],
+                )
+            if filtros.get('q'):
+                termino = filtros['q']
+                queryset = queryset.filter(
+                    Q(venta__numero_venta__icontains=termino) |
+                    Q(referencia_pago__icontains=termino) |
+                    Q(observaciones__icontains=termino)
+                )
+
+        return list(queryset.order_by('-fecha_abono'))
+
+    @staticmethod
+    def obtener_abono(abono_id: int) -> Abono:
+        try:
+            return AbonoService._queryset_base().get(pk=abono_id)
+        except Abono.DoesNotExist as exc:
+            raise AbonoNoEncontradoError(abono_id) from exc
 
     @staticmethod
     def obtener_cuentas_por_cobrar(
