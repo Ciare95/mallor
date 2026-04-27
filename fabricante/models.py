@@ -6,6 +6,45 @@ from django.db.models import Sum
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+ZERO = Decimal('0.00')
+ZERO_QUANTITY = Decimal('0.0000')
+COST_QUANTIZER = Decimal('0.0001')
+PERCENTAGE_QUANTIZER = Decimal('0.01')
+
+UNIDAD_CONVERSIONES = {
+    ('LITROS', 'MILILITROS'): Decimal('1000'),
+    ('MILILITROS', 'LITROS'): Decimal('0.001'),
+    ('KILOGRAMOS', 'GRAMOS'): Decimal('1000'),
+    ('GRAMOS', 'KILOGRAMOS'): Decimal('0.001'),
+}
+
+
+def convertir_cantidad_unidad(cantidad, unidad_origen, unidad_destino):
+    """
+    Convierte una cantidad entre unidades compatibles.
+    """
+    if unidad_origen == unidad_destino:
+        return Decimal(cantidad).quantize(COST_QUANTIZER)
+
+    factor = UNIDAD_CONVERSIONES.get((unidad_origen, unidad_destino))
+    if factor is None:
+        raise ValueError(
+            'No existe una conversion configurada entre las unidades '
+            f'{unidad_origen} y {unidad_destino}.'
+        )
+
+    return (Decimal(cantidad) * factor).quantize(COST_QUANTIZER)
+
+
+def unidades_compatibles(unidad_origen, unidad_destino):
+    """
+    Determina si dos unidades pueden convertirse entre si.
+    """
+    return (
+        unidad_origen == unidad_destino or
+        (unidad_origen, unidad_destino) in UNIDAD_CONVERSIONES
+    )
+
 
 class Ingrediente(models.Model):
     """
@@ -268,3 +307,379 @@ class InventarioIngredientes(models.Model):
             super().delete(*args, **kwargs)
             if ingrediente is not None:
                 ingrediente.sincronizar_stock_actual()
+
+
+class ProductoFabricado(models.Model):
+    """
+    Modelo que representa un producto elaborado con receta.
+    """
+
+    class UnidadMedida(models.TextChoices):
+        LITROS = 'LITROS', _('Litros')
+        MILILITROS = 'MILILITROS', _('Mililitros')
+        KILOGRAMOS = 'KILOGRAMOS', _('Kilogramos')
+        GRAMOS = 'GRAMOS', _('Gramos')
+        UNIDADES = 'UNIDADES', _('Unidades')
+
+    id = models.AutoField(primary_key=True)
+    nombre = models.CharField(
+        _('nombre'),
+        max_length=200,
+        help_text=_('Nombre del producto fabricado.'),
+    )
+    descripcion = models.TextField(
+        _('descripcion'),
+        help_text=_('Descripcion del producto fabricado.'),
+    )
+    unidad_medida = models.CharField(
+        _('unidad de medida'),
+        max_length=20,
+        choices=UnidadMedida.choices,
+        help_text=_('Unidad de medida del producto terminado.'),
+    )
+    cantidad_producida = models.DecimalField(
+        _('cantidad producida'),
+        max_digits=14,
+        decimal_places=4,
+        help_text=_('Cantidad producida por lote.'),
+    )
+    costo_produccion = models.DecimalField(
+        _('costo de produccion'),
+        max_digits=14,
+        decimal_places=4,
+        default=ZERO_QUANTITY,
+        help_text=_('Costo total de produccion por lote.'),
+    )
+    costo_unitario = models.DecimalField(
+        _('costo unitario'),
+        max_digits=14,
+        decimal_places=4,
+        default=ZERO_QUANTITY,
+        help_text=_('Costo unitario calculado del producto fabricado.'),
+    )
+    precio_venta_sugerido = models.DecimalField(
+        _('precio de venta sugerido'),
+        max_digits=14,
+        decimal_places=2,
+        default=ZERO,
+        help_text=_('Precio sugerido de venta al publico.'),
+    )
+    precio_venta = models.DecimalField(
+        _('precio de venta'),
+        max_digits=14,
+        decimal_places=2,
+        default=ZERO,
+        help_text=_('Precio final de venta del producto.'),
+    )
+    margen_utilidad = models.DecimalField(
+        _('margen de utilidad'),
+        max_digits=14,
+        decimal_places=4,
+        default=ZERO_QUANTITY,
+        help_text=_('Margen de utilidad calculado por unidad.'),
+    )
+    porcentaje_utilidad = models.DecimalField(
+        _('porcentaje de utilidad'),
+        max_digits=7,
+        decimal_places=2,
+        default=ZERO,
+        help_text=_('Porcentaje de utilidad calculado.'),
+    )
+    tiempo_produccion = models.IntegerField(
+        _('tiempo de produccion'),
+        help_text=_('Tiempo estimado de produccion por lote en minutos.'),
+    )
+    producto_final = models.ForeignKey(
+        'inventario.Producto',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='productos_fabricados',
+        verbose_name=_('producto final'),
+        help_text=_('Producto de inventario asociado al producto fabricado.'),
+    )
+    created_at = models.DateTimeField(
+        _('fecha de creacion'),
+        auto_now_add=True,
+        help_text=_('Fecha y hora de creacion del registro.'),
+    )
+    updated_at = models.DateTimeField(
+        _('fecha de actualizacion'),
+        auto_now=True,
+        help_text=_('Fecha y hora de la ultima actualizacion.'),
+    )
+
+    class Meta:
+        db_table = 'productos_fabricados'
+        ordering = ['nombre', 'id']
+        verbose_name = _('producto fabricado')
+        verbose_name_plural = _('productos fabricados')
+        indexes = [
+            models.Index(fields=['nombre']),
+            models.Index(fields=['unidad_medida']),
+            models.Index(fields=['producto_final']),
+        ]
+
+    def __str__(self):
+        return self.nombre
+
+    def calcular_costo_produccion(self):
+        """
+        Suma el costo de todos los ingredientes de la receta.
+        """
+        if not self.pk:
+            return self.costo_produccion or ZERO_QUANTITY
+
+        costo_total = sum(
+            (
+                ingrediente_producto.calcular_costo_ingrediente()
+                for ingrediente_producto in self.receta.select_related(
+                    'ingrediente',
+                )
+            ),
+            ZERO_QUANTITY,
+        )
+        return Decimal(costo_total).quantize(COST_QUANTIZER)
+
+    def calcular_costo_unitario(self):
+        """
+        Calcula el costo unitario por producto elaborado.
+        """
+        if self.cantidad_producida <= ZERO_QUANTITY:
+            return ZERO_QUANTITY
+
+        return (
+            self.calcular_costo_produccion() / self.cantidad_producida
+        ).quantize(COST_QUANTIZER)
+
+    def calcular_margen_utilidad(self):
+        """
+        Calcula la utilidad por unidad vendida.
+        """
+        precio_venta = Decimal(self.precio_venta or ZERO)
+        return (
+            precio_venta - self.calcular_costo_unitario()
+        ).quantize(COST_QUANTIZER)
+
+    def calcular_porcentaje_utilidad(self):
+        """
+        Calcula el porcentaje de utilidad sobre el costo unitario.
+        """
+        costo_unitario = self.calcular_costo_unitario()
+        if costo_unitario <= ZERO_QUANTITY:
+            return ZERO
+
+        return (
+            (self.calcular_margen_utilidad() / costo_unitario) * Decimal('100')
+        ).quantize(PERCENTAGE_QUANTIZER)
+
+    def _obtener_ingredientes_faltantes(self):
+        faltantes = []
+
+        for ingrediente_producto in self.receta.select_related(
+            'ingrediente',
+        ):
+            cantidad_requerida = convertir_cantidad_unidad(
+                ingrediente_producto.cantidad_necesaria,
+                ingrediente_producto.unidad_medida,
+                ingrediente_producto.ingrediente.unidad_medida,
+            )
+
+            if (
+                ingrediente_producto.ingrediente.stock_actual <
+                cantidad_requerida
+            ):
+                faltantes.append(ingrediente_producto.ingrediente_id)
+
+        return faltantes
+
+    def validar_disponibilidad_ingredientes(self):
+        """
+        Verifica si existe stock suficiente para fabricar un lote.
+        """
+        return not self._obtener_ingredientes_faltantes()
+
+    def actualizar_campos_calculados(self):
+        """
+        Sincroniza los campos calculados del producto fabricado.
+        """
+        self.costo_produccion = self.calcular_costo_produccion()
+        self.costo_unitario = self.calcular_costo_unitario()
+        self.margen_utilidad = self.calcular_margen_utilidad()
+        self.porcentaje_utilidad = self.calcular_porcentaje_utilidad()
+
+    def clean(self):
+        self.nombre = (self.nombre or '').strip()
+        self.descripcion = (self.descripcion or '').strip()
+
+        errores = {}
+
+        if not self.nombre:
+            errores['nombre'] = _(
+                'El nombre del producto fabricado es obligatorio.'
+            )
+
+        if not self.descripcion:
+            errores['descripcion'] = _(
+                'La descripcion del producto fabricado es obligatoria.'
+            )
+
+        if self.cantidad_producida <= ZERO_QUANTITY:
+            errores['cantidad_producida'] = _(
+                'La cantidad producida debe ser mayor que cero.'
+            )
+
+        if self.precio_venta_sugerido < ZERO:
+            errores['precio_venta_sugerido'] = _(
+                'El precio de venta sugerido no puede ser negativo.'
+            )
+
+        if self.precio_venta < ZERO:
+            errores['precio_venta'] = _(
+                'El precio de venta no puede ser negativo.'
+            )
+
+        if self.tiempo_produccion < 0:
+            errores['tiempo_produccion'] = _(
+                'El tiempo de produccion no puede ser negativo.'
+            )
+
+        if errores:
+            raise ValidationError(errores)
+
+    def save(self, *args, **kwargs):
+        self.actualizar_campos_calculados()
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class IngredientesProducto(models.Model):
+    """
+    Modelo que representa la receta de un producto fabricado.
+    """
+
+    id = models.AutoField(primary_key=True)
+    producto_fabricado = models.ForeignKey(
+        ProductoFabricado,
+        on_delete=models.CASCADE,
+        related_name='receta',
+        verbose_name=_('producto fabricado'),
+        help_text=_('Producto fabricado al que pertenece la receta.'),
+    )
+    ingrediente = models.ForeignKey(
+        Ingrediente,
+        on_delete=models.PROTECT,
+        related_name='productos_receta',
+        verbose_name=_('ingrediente'),
+        help_text=_('Ingrediente usado en la receta del producto.'),
+    )
+    cantidad_necesaria = models.DecimalField(
+        _('cantidad necesaria'),
+        max_digits=14,
+        decimal_places=4,
+        help_text=_('Cantidad necesaria del ingrediente para un lote.'),
+    )
+    unidad_medida = models.CharField(
+        _('unidad de medida'),
+        max_length=20,
+        choices=Ingrediente.UnidadMedida.choices,
+        help_text=_('Unidad de medida usada en la receta.'),
+    )
+    costo_ingrediente = models.DecimalField(
+        _('costo del ingrediente'),
+        max_digits=14,
+        decimal_places=4,
+        default=ZERO_QUANTITY,
+        help_text=_('Costo calculado del ingrediente dentro del lote.'),
+    )
+
+    class Meta:
+        db_table = 'ingredientes_producto'
+        ordering = ['producto_fabricado', 'ingrediente']
+        verbose_name = _('ingrediente de producto')
+        verbose_name_plural = _('ingredientes de producto')
+        indexes = [
+            models.Index(fields=['producto_fabricado']),
+            models.Index(fields=['ingrediente']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['producto_fabricado', 'ingrediente'],
+                name='unique_ingrediente_por_producto_fabricado',
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.producto_fabricado.nombre} - {self.ingrediente.nombre}"
+        )
+
+    def calcular_costo_ingrediente(self):
+        """
+        Calcula el costo del ingrediente dentro del lote.
+        """
+        cantidad_base = convertir_cantidad_unidad(
+            self.cantidad_necesaria,
+            self.unidad_medida,
+            self.ingrediente.unidad_medida,
+        )
+        self.costo_ingrediente = (
+            cantidad_base * self.ingrediente.precio_por_unidad
+        ).quantize(COST_QUANTIZER)
+        return self.costo_ingrediente
+
+    def clean(self):
+        errores = {}
+
+        if self.cantidad_necesaria <= ZERO_QUANTITY:
+            errores['cantidad_necesaria'] = _(
+                'La cantidad necesaria debe ser mayor que cero.'
+            )
+
+        if (
+            self.ingrediente_id and
+            not unidades_compatibles(
+                self.unidad_medida,
+                self.ingrediente.unidad_medida,
+            )
+        ):
+            errores['unidad_medida'] = _(
+                'La unidad de medida de la receta no es compatible con el '
+                'ingrediente seleccionado.'
+            )
+
+        if errores:
+            raise ValidationError(errores)
+
+    def save(self, *args, **kwargs):
+        producto_fabricado_anterior_id = None
+
+        if self.pk:
+            producto_fabricado_anterior_id = type(self).objects.filter(
+                pk=self.pk,
+            ).values_list('producto_fabricado_id', flat=True).first()
+
+        with transaction.atomic():
+            self.full_clean()
+            self.calcular_costo_ingrediente()
+            super().save(*args, **kwargs)
+
+            if (
+                producto_fabricado_anterior_id and
+                producto_fabricado_anterior_id != self.producto_fabricado_id
+            ):
+                producto_anterior = ProductoFabricado.objects.filter(
+                    pk=producto_fabricado_anterior_id,
+                ).first()
+                if producto_anterior is not None:
+                    producto_anterior.save()
+
+            self.producto_fabricado.save()
+
+    def delete(self, *args, **kwargs):
+        producto_fabricado = self.producto_fabricado
+
+        with transaction.atomic():
+            super().delete(*args, **kwargs)
+            if producto_fabricado is not None:
+                producto_fabricado.save()
