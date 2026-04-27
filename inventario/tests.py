@@ -1,6 +1,13 @@
+from datetime import date
+from decimal import Decimal
+
 from django.test import TestCase
 from django.core.exceptions import ValidationError
-from .models import Categoria, Producto
+from usuario.models import Usuario
+from proveedor.models import Proveedor
+
+from .models import Categoria, DetalleFacturaCompra, FacturaCompra, Producto
+from .services import FacturaCompraService
 
 
 class CategoriaModelTest(TestCase):
@@ -356,26 +363,148 @@ class ProductoAdminTest(TestCase):
         if response.status_code == 200:
             self.assertNotContains(response, 'TypeError')
             self.assertNotContains(response, 'unsupported operand type')
-    
+
     def test_admin_change_page_loads(self):
         """
-        Verifica que la página de edición de producto en el admin cargue sin errores.
+        Verifica que la pÃ¡gina de ediciÃ³n de producto en el admin cargue sin errores.
         """
-        # Primero crear un producto
         categoria = Categoria.objects.create(nombre='Test Cat')
         producto = Producto.objects.create(
-            codigo_interno='ADM001',
+            codigo_interno=900002,
             nombre='Producto Admin Test',
             categoria=categoria,
             existencias=10,
             precio_compra=50.00,
             precio_venta=80.00
         )
-        
+
         url = f'/admin/inventario/producto/{producto.id}/change/'
         response = self.client.get(url)
-        
+
         self.assertIn(response.status_code, [200, 302])
         if response.status_code == 200:
             self.assertNotContains(response, 'TypeError')
             self.assertNotContains(response, 'unsupported operand type')
+
+
+class FacturaCompraServiceTest(TestCase):
+    def setUp(self):
+        self.usuario = Usuario.objects.create_user(
+            username='inventario_factura',
+            email='inventario_factura@example.com',
+            password='password-seguro-123',
+        )
+        self.superuser = Usuario.objects.create_superuser(
+            username='inventario_factura_admin',
+            email='inventario_factura_admin@example.com',
+            password='password-seguro-123',
+        )
+        self.client.login(
+            username='inventario_factura_admin',
+            password='password-seguro-123',
+        )
+        self.categoria = Categoria.objects.create(nombre='Abarrotes')
+        self.proveedor = Proveedor.objects.create(
+            numero_documento='900123456',
+            razon_social='Proveedor de prueba',
+            nombre_contacto='Compras',
+            email='proveedor@example.com',
+            telefono='3001234567',
+            direccion='Calle 1 # 2-3',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_productos='Abarrotes',
+        )
+        self.producto = Producto.objects.create(
+            codigo_interno=900001,
+            nombre='Producto factura',
+            categoria=self.categoria,
+            existencias=Decimal('10.00'),
+            precio_compra=Decimal('5000.00'),
+            precio_venta=Decimal('7000.00'),
+            iva=Decimal('0.00'),
+        )
+
+    def test_procesar_factura_aplica_precio_venta_sugerido(self):
+        factura = FacturaCompra.objects.create(
+            numero_factura='FC-TEST-001',
+            proveedor=self.proveedor,
+            fecha_factura=date(2026, 4, 27),
+            usuario_registro=self.usuario,
+        )
+        DetalleFacturaCompra.objects.create(
+            factura=factura,
+            producto=self.producto,
+            cantidad=Decimal('3.00'),
+            precio_unitario=Decimal('6000.00'),
+            precio_venta_sugerido=Decimal('8500.00'),
+            iva=Decimal('0.00'),
+            descuento=Decimal('0.00'),
+        )
+        factura.calcular_totales()
+        factura.save()
+
+        FacturaCompraService.procesar_factura(factura.id, self.usuario)
+
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.precio_compra, Decimal('6000.00'))
+        self.assertEqual(self.producto.precio_venta, Decimal('8500.00'))
+
+    def test_procesar_factura_aplica_regla_precio_venta(self):
+        producto_bajo = Producto.objects.create(
+            codigo_interno=900003,
+            nombre='Producto bajo umbral',
+            categoria=self.categoria,
+            existencias=Decimal('2.00'),
+            precio_compra=Decimal('400.00'),
+            precio_venta=Decimal('500.00'),
+            iva=Decimal('0.00'),
+        )
+        producto_alto = Producto.objects.create(
+            codigo_interno=900004,
+            nombre='Producto alto umbral',
+            categoria=self.categoria,
+            existencias=Decimal('2.00'),
+            precio_compra=Decimal('2000.00'),
+            precio_venta=Decimal('2500.00'),
+            iva=Decimal('0.00'),
+        )
+        factura = FacturaCompra.objects.create(
+            numero_factura='FC-TEST-002',
+            proveedor=self.proveedor,
+            fecha_factura=date(2026, 4, 27),
+            usuario_registro=self.usuario,
+        )
+        DetalleFacturaCompra.objects.create(
+            factura=factura,
+            producto=producto_bajo,
+            cantidad=Decimal('1.00'),
+            precio_unitario=Decimal('500.00'),
+            iva=Decimal('0.00'),
+            descuento=Decimal('0.00'),
+        )
+        DetalleFacturaCompra.objects.create(
+            factura=factura,
+            producto=producto_alto,
+            cantidad=Decimal('1.00'),
+            precio_unitario=Decimal('2000.00'),
+            iva=Decimal('0.00'),
+            descuento=Decimal('0.00'),
+        )
+        factura.calcular_totales()
+        factura.save()
+
+        FacturaCompraService.procesar_factura(
+            factura.id,
+            self.usuario,
+            pricing_rules={
+                'umbral': Decimal('1000'),
+                'margen_menor_igual': Decimal('119'),
+                'margen_mayor': Decimal('69'),
+            },
+        )
+
+        producto_bajo.refresh_from_db()
+        producto_alto.refresh_from_db()
+        self.assertEqual(producto_bajo.precio_venta, Decimal('1095.00'))
+        self.assertEqual(producto_alto.precio_venta, Decimal('3380.00'))

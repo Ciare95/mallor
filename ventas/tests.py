@@ -253,18 +253,17 @@ class AbonoModelTest(TestCase):
             )
             abono.full_clean()
 
-    def test_no_permite_abonos_a_venta_pendiente(self):
+    def test_permite_abonos_a_venta_pendiente(self):
         self.venta.estado = Venta.Estado.PENDIENTE
         self.venta.save()
 
-        with self.assertRaises(ValidationError):
-            abono = Abono(
-                venta=self.venta,
-                monto_abonado=Decimal('20.00'),
-                metodo_pago=Abono.MetodoPago.EFECTIVO,
-                usuario_registro=self.usuario,
-            )
-            abono.full_clean()
+        abono = Abono(
+            venta=self.venta,
+            monto_abonado=Decimal('20.00'),
+            metodo_pago=Abono.MetodoPago.EFECTIVO,
+            usuario_registro=self.usuario,
+        )
+        abono.full_clean()
 
 
 class VentaSerializerTest(TestCase):
@@ -408,7 +407,7 @@ class VentaSerializerTest(TestCase):
         self.assertEqual(venta.saldo_pendiente, Decimal('70.00'))
         self.assertEqual(venta.estado_pago, Venta.EstadoPago.PARCIAL)
 
-    def test_abono_create_serializer_rechaza_venta_no_terminada(self):
+    def test_abono_create_serializer_permite_venta_pendiente(self):
         venta = Venta.objects.create(
             cliente=self.cliente,
             subtotal=Decimal('100.00'),
@@ -424,8 +423,13 @@ class VentaSerializerTest(TestCase):
             'usuario_registro': self.usuario.id,
         })
 
-        self.assertFalse(serializer.is_valid())
-        self.assertIn('venta', serializer.errors)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+        venta.refresh_from_db()
+
+        self.assertEqual(venta.total_abonado, Decimal('10.00'))
+        self.assertEqual(venta.saldo_pendiente, Decimal('90.00'))
+        self.assertEqual(venta.estado_pago, Venta.EstadoPago.PARCIAL)
 
 
 class VentaServiceTest(TestCase):

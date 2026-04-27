@@ -105,17 +105,13 @@ export default function ProveedorForm({
     : 'Nuevo proveedor';
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+    <div className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
       <SectionShell
         eyebrow={isEdit ? 'Actualizacion' : 'Alta de suministro'}
         title={title}
         description="Registra identidad legal, contacto, productos suministrados y condiciones de pago del proveedor."
         actions={
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
-          >
+          <button type="button" onClick={onBack} className="app-button-secondary min-h-11">
             <ArrowLeft className="h-4 w-4" />
             Volver
           </button>
@@ -177,10 +173,8 @@ export default function ProveedorForm({
             />
           </div>
 
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
-            <div className="mb-4 text-[11px] uppercase tracking-[0.24em] text-slate-500">
-              Contacto
-            </div>
+          <div className="surface-subtle p-5">
+            <div className="mb-4 eyebrow">Contacto</div>
             <div className="grid gap-4 lg:grid-cols-2">
               <InputField
                 label="Correo"
@@ -242,41 +236,35 @@ export default function ProveedorForm({
             </div>
           </div>
 
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
-            <div className="mb-4 text-[11px] uppercase tracking-[0.24em] text-slate-500">
-              Catalogo suministrado
-            </div>
-            <label className="space-y-2">
-              <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                Tipo de productos
-              </span>
+          <div className="surface-subtle p-5">
+            <div className="mb-4 eyebrow">Catalogo suministrado</div>
+            <label className="app-field">
+              <span className="app-field-label">Tipo de productos</span>
               <textarea
                 rows="5"
                 value={form.tipo_productos}
                 onChange={(event) => setField('tipo_productos', event.target.value)}
                 onBlur={() => handleBlur('tipo_productos')}
-                className={`w-full rounded-2xl border bg-white/5 px-4 py-3 text-white outline-none transition ${
+                className={`app-textarea ${
                   visibleErrors.tipo_productos
-                    ? 'border-rose-400/40 focus:border-rose-400/60'
-                    : 'border-white/10 focus:border-emerald-400/50'
+                    ? 'border-[rgba(159,47,45,0.28)] focus:border-[rgba(159,47,45,0.42)] focus:shadow-none'
+                    : ''
                 }`}
               />
               {visibleErrors.tipo_productos && (
-                <div className="text-sm text-rose-200">
+                <div className="text-[12px] text-[var(--danger-text)]">
                   {visibleErrors.tipo_productos}
                 </div>
               )}
             </label>
 
-            <label className="mt-4 block space-y-2">
-              <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                Observaciones
-              </span>
+            <label className="mt-4 block app-field">
+              <span className="app-field-label">Observaciones</span>
               <textarea
                 rows="4"
                 value={form.observaciones}
                 onChange={(event) => setField('observaciones', event.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none transition focus:border-emerald-400/50"
+                className="app-textarea"
               />
             </label>
 
@@ -317,13 +305,13 @@ export default function ProveedorForm({
           </div>
 
           {submitError && (
-            <div className="mt-5 rounded-[20px] border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            <div className="mt-5 rounded-xl border border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger-text)]">
               {submitError}
             </div>
           )}
 
           {!canSubmit && (
-            <div className="mt-5 rounded-[20px] border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            <div className="mt-5 rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-4 py-3 text-sm text-[var(--warning-text)]">
               Corrige los campos marcados antes de guardar.
             </div>
           )}
@@ -333,7 +321,7 @@ export default function ProveedorForm({
               type="button"
               onClick={handleSubmit}
               disabled={isSubmitting || !canSubmit}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+              className="app-button-primary min-h-11"
             >
               {isSubmitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -361,28 +349,30 @@ function InputField({
   type = 'text',
 }) {
   return (
-    <label className="space-y-2">
-      <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </span>
+    <label className="app-field">
+      <span className="app-field-label">{label}</span>
       <div className="relative">
         {Icon && (
-          <Icon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
         )}
         <input
           type={type}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onBlur={onBlur}
-          className={`min-h-12 w-full rounded-2xl border bg-white/5 px-4 text-white outline-none transition ${
+          className={`app-input min-h-11 ${Icon ? 'pl-10' : ''} ${
             error
-              ? 'border-rose-400/40 focus:border-rose-400/60'
-              : 'border-white/10 focus:border-emerald-400/50'
-          } ${Icon ? 'pl-11' : ''}`}
+              ? 'border-[rgba(159,47,45,0.28)] focus:border-[rgba(159,47,45,0.42)] focus:shadow-none'
+              : ''
+          }`}
         />
       </div>
       {(error || helper) && (
-        <div className={`text-sm ${error ? 'text-rose-200' : 'text-slate-400'}`}>
+        <div
+          className={`text-[12px] ${
+            error ? 'text-[var(--danger-text)]' : 'text-soft'
+          }`}
+        >
           {error || helper}
         </div>
       )}
@@ -392,14 +382,12 @@ function InputField({
 
 function SelectField({ label, value, onChange, options }) {
   return (
-    <label className="space-y-2">
-      <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </span>
+    <label className="app-field">
+      <span className="app-field-label">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/50"
+        className="app-select min-h-11"
       >
         {options.map(([text, optionValue]) => (
           <option key={`${label}-${optionValue}`} value={optionValue}>
@@ -413,20 +401,20 @@ function SelectField({ label, value, onChange, options }) {
 
 function ToggleRow({ label, checked, onChange }) {
   return (
-    <label className="flex min-h-12 items-center justify-between gap-4 rounded-[20px] border border-white/10 bg-white/[0.03] px-4 py-3">
-      <span className="text-sm font-semibold text-white">{label}</span>
+    <label className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-app bg-white/72 px-4 py-3">
+      <span className="text-sm font-semibold text-main">{label}</span>
       <button
         type="button"
         onClick={() => onChange(!checked)}
         className={`inline-flex h-7 w-14 items-center rounded-full border px-1 transition ${
           checked
-            ? 'border-emerald-400/40 bg-emerald-400/20'
-            : 'border-white/10 bg-white/10'
+            ? 'border-[var(--accent-line)] bg-[var(--accent-soft)]'
+            : 'border-app bg-[var(--panel-soft)]'
         }`}
         aria-pressed={checked}
       >
         <span
-          className={`h-5 w-5 rounded-full bg-white transition ${
+          className={`h-5 w-5 rounded-full bg-[var(--text-main)] transition ${
             checked ? 'translate-x-7' : 'translate-x-0'
           }`}
         />
@@ -437,11 +425,9 @@ function ToggleRow({ label, checked, onChange }) {
 
 function SummaryRow({ label, value }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-4">
-      <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-        {label}
-      </div>
-      <div className="text-right text-sm font-semibold text-white">{value}</div>
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-app bg-white/72 px-4 py-4">
+      <div className="eyebrow">{label}</div>
+      <div className="text-right text-sm font-semibold text-main">{value}</div>
     </div>
   );
 }

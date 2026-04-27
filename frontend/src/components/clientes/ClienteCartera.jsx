@@ -74,10 +74,10 @@ export default function ClienteCartera({
         />
       </div>
 
-      <div className="overflow-hidden rounded-[24px] border border-white/10">
+      <div className="overflow-hidden rounded-xl border border-app bg-white/72">
         {carteraQuery.isLoading && (
           <div className="flex min-h-[220px] items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+            <Loader2 className="h-5 w-5 animate-spin text-soft" />
           </div>
         )}
 
@@ -98,20 +98,20 @@ export default function ClienteCartera({
                 description="Este cliente no tiene ventas con saldo abierto."
               />
             ) : (
-              <div className="divide-y divide-white/10">
+              <div className="divide-y divide-[var(--line)]">
                 {rows.map((venta) => {
                   const overdueDays = calculateDaysPastDue(venta, diasPlazo);
 
                   return (
                     <article
                       key={venta.id}
-                      className="grid gap-4 px-5 py-5 transition hover:bg-white/[0.04] xl:grid-cols-[1fr_1fr_0.9fr_0.8fr_auto] xl:items-center"
+                      className="grid gap-4 px-5 py-5 transition hover:bg-[var(--panel-soft)] xl:grid-cols-[1fr_1fr_0.9fr_0.8fr_auto] xl:items-center"
                     >
                       <div>
-                        <div className="font-display text-lg text-white">
+                        <div className="font-display text-lg text-main">
                           {venta.numero_venta}
                         </div>
-                        <div className="mt-1 text-sm text-slate-400">
+                        <div className="mt-1 text-sm text-soft">
                           {formatDateTime(venta.fecha_venta)}
                         </div>
                       </div>
@@ -121,19 +121,19 @@ export default function ClienteCartera({
                           diasPlazo={diasPlazo}
                           overdueDays={overdueDays}
                         />
-                        <div className="mt-2 text-sm text-slate-400">
+                        <div className="mt-2 text-sm text-soft">
                           Metodo {venta.metodo_pago}
                         </div>
                       </div>
                       <div>
-                        <div className="font-display text-lg text-white">
+                        <div className="font-display text-lg text-main">
                           {formatCurrency(venta.saldo_pendiente)}
                         </div>
-                        <div className="mt-1 text-sm text-slate-400">
+                        <div className="mt-1 text-sm text-soft">
                           Total {formatCurrency(venta.total)}
                         </div>
                       </div>
-                      <div className="text-sm text-slate-400">
+                      <div className="text-sm text-soft">
                         {overdueDays > 0
                           ? `${overdueDays} dias de mora`
                           : 'Dentro del plazo'}
@@ -142,7 +142,7 @@ export default function ClienteCartera({
                         <button
                           type="button"
                           onClick={() => onAbonarVenta?.(venta)}
-                          className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-emerald-400 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300"
+                          className="app-button-primary min-h-11"
                         >
                           <CreditCard className="h-4 w-4" />
                           Abonar
@@ -150,7 +150,7 @@ export default function ClienteCartera({
                         <button
                           type="button"
                           onClick={() => onOpenVenta?.(venta)}
-                          className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/10"
+                          className="app-button-secondary min-h-11"
                         >
                           Ver venta
                         </button>

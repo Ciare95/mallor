@@ -74,7 +74,7 @@ export default function ClienteDetail({
     return (
       <SectionShell title="Detalle de cliente">
         <div className="flex min-h-[320px] items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          <Loader2 className="h-5 w-5 animate-spin text-soft" />
         </div>
       </SectionShell>
     );
@@ -95,7 +95,7 @@ export default function ClienteDetail({
             <button
               type="button"
               onClick={onBack}
-              className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
+              className="app-button-secondary min-h-10"
             >
               <ArrowLeft className="h-4 w-4" />
               Volver
@@ -128,7 +128,7 @@ export default function ClienteDetail({
           <button
             type="button"
             onClick={onBack}
-            className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
+            className="app-button-secondary min-h-10"
           >
             <ArrowLeft className="h-4 w-4" />
             Volver
@@ -136,7 +136,7 @@ export default function ClienteDetail({
           <button
             type="button"
             onClick={() => onEdit(cliente)}
-            className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
+            className="app-button-secondary min-h-10"
           >
             <FilePenLine className="h-4 w-4" />
             Editar
@@ -144,7 +144,7 @@ export default function ClienteDetail({
           <button
             type="button"
             onClick={() => onToggleActive(cliente)}
-            className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
+            className="app-button-secondary min-h-10"
           >
             {cliente.activo ? (
               <ShieldOff className="h-4 w-4" />
@@ -156,7 +156,7 @@ export default function ClienteDetail({
           <button
             type="button"
             onClick={() => onDelete(cliente)}
-            className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-5 py-3 font-semibold text-rose-100 transition hover:bg-rose-500/20"
+            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] px-4 py-2 text-[12px] font-semibold text-[var(--danger-text)] transition hover:bg-[rgba(253,235,236,0.9)]"
           >
             <Trash2 className="h-4 w-4" />
             Eliminar
@@ -194,17 +194,17 @@ export default function ClienteDetail({
 
         <CustomerMetaGrid cliente={cliente} />
 
-        <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
+        <div className="rounded-xl border border-app bg-white/76 p-5">
           <div className="mb-4 flex flex-wrap gap-2">
             {tabs.map(([key, label]) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => setDetalleTab(key)}
-                className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                className={`rounded-full border px-4 py-2 text-[12px] font-semibold transition ${
                   detalleTab === key
-                    ? 'border-emerald-400/40 bg-emerald-400/12 text-emerald-100'
-                    : 'border-white/10 bg-white/5 text-slate-300'
+                    ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                    : 'border-app bg-white/72 text-main'
                 }`}
               >
                 {label}
@@ -239,11 +239,11 @@ export default function ClienteDetail({
                 <TrendPanel data={chartData} />
               </div>
 
-              <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-5">
-                <div className="mb-3 text-[11px] uppercase tracking-[0.24em] text-slate-500">
+              <div className="rounded-xl border border-app bg-white/72 p-5">
+                <div className="mb-3 text-[10px] uppercase tracking-[0.24em] text-muted">
                   Observaciones
                 </div>
-                <div className="text-sm leading-7 text-slate-300">
+                <div className="text-[13px] leading-7 text-soft">
                   {cliente.observaciones || 'Sin observaciones registradas.'}
                 </div>
               </div>
@@ -275,8 +275,8 @@ export default function ClienteDetail({
 function TrendPanel({ data }) {
   if (!data.length) {
     return (
-      <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-5">
-        <div className="flex items-center gap-2 text-sm text-slate-400">
+      <div className="rounded-xl border border-app bg-white/72 p-5">
+        <div className="flex items-center gap-2 text-[13px] text-soft">
           <Wallet className="h-4 w-4" />
           Sin compras suficientes para graficar la evolucion.
         </div>
@@ -287,24 +287,24 @@ function TrendPanel({ data }) {
   const maxValue = Math.max(...data.map((item) => item.value), 1);
 
   return (
-    <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-5">
-      <div className="mb-4 text-[11px] uppercase tracking-[0.24em] text-slate-500">
+    <div className="rounded-xl border border-app bg-white/72 p-5">
+      <div className="mb-4 text-[10px] uppercase tracking-[0.24em] text-muted">
         Compras en el tiempo
       </div>
       <div className="grid h-[220px] grid-cols-3 gap-4 md:grid-cols-6">
         {data.map((item) => (
           <div key={item.label} className="flex flex-col justify-end gap-3">
-            <div className="relative flex-1 overflow-hidden rounded-[18px] border border-white/10 bg-app/70">
+            <div className="relative flex-1 overflow-hidden rounded-xl border border-app bg-[var(--panel-soft)]">
               <div
-                className="absolute inset-x-2 bottom-2 rounded-[14px] bg-[linear-gradient(180deg,rgba(56,189,248,0.35),rgba(56,189,248,0.95))]"
+                className="absolute inset-x-2 bottom-2 rounded-lg bg-[linear-gradient(180deg,rgba(31,108,159,0.25),rgba(31,108,159,0.95))]"
                 style={{
                   height: `${Math.max((item.value / maxValue) * 100, 8)}%`,
                 }}
               />
             </div>
             <div className="text-center">
-              <div className="text-xs text-slate-500">{item.label}</div>
-              <div className="text-xs font-semibold text-white">
+              <div className="text-xs text-muted">{item.label}</div>
+              <div className="text-xs font-semibold text-main">
                 {formatCurrency(item.value)}
               </div>
             </div>

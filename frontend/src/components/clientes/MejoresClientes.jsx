@@ -67,8 +67,8 @@ export default function MejoresClientes({ onOpenCliente }) {
       description="Cruza aporte historico y presion de cobro para priorizar seguimiento comercial."
     >
       {loading ? (
-        <div className="flex min-h-[260px] items-center justify-center rounded-[24px] border border-white/10 bg-white/[0.04]">
-          <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+        <div className="flex min-h-[260px] items-center justify-center rounded-xl border border-app bg-white/70">
+          <Loader2 className="h-5 w-5 animate-spin text-muted" />
         </div>
       ) : hasError ? (
         <EmptyState
@@ -109,17 +109,17 @@ export default function MejoresClientes({ onOpenCliente }) {
             />
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
+          <div className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
+            <div className="rounded-xl border border-app bg-white/74 p-5">
               <div className="mb-5 flex items-center gap-3">
-                <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-amber-100">
+                <div className="rounded-lg border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] p-3 text-[var(--warning-text)]">
                   <Crown className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="font-display text-2xl text-white">
+                  <div className="font-display text-[1.85rem] leading-none text-main">
                     Ranking de clientes
                   </div>
-                  <div className="mt-1 text-sm text-slate-400">
+                  <div className="mt-1 text-[13px] text-soft">
                     Ordenado por compras historicas.
                   </div>
                 </div>
@@ -131,26 +131,24 @@ export default function MejoresClientes({ onOpenCliente }) {
                     key={cliente.id}
                     type="button"
                     onClick={() => onOpenCliente?.(cliente)}
-                    className="w-full rounded-[22px] border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-emerald-400/30 hover:bg-white/[0.06]"
+                    className="tab-card w-full"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-xs uppercase tracking-[0.24em] text-slate-500">
-                          #{index + 1}
-                        </div>
-                        <div className="mt-2 font-display text-xl text-white">
+                        <div className="eyebrow">#{index + 1}</div>
+                        <div className="mt-2 font-display text-[1.5rem] leading-none text-main">
                           {getClienteNombre(cliente)}
                         </div>
-                        <div className="mt-1 text-sm text-slate-400">
+                        <div className="mt-2 text-[13px] text-soft">
                           Ultima compra {formatShortDate(cliente.ultima_compra)}
                         </div>
                       </div>
                       <ClienteStatusBadge cliente={cliente} />
                     </div>
 
-                    <div className="mt-4 overflow-hidden rounded-full border border-white/10 bg-app/70">
+                    <div className="mt-4 overflow-hidden rounded-full border border-app bg-[var(--panel-soft)]">
                       <div
-                        className="h-2 rounded-full bg-[linear-gradient(90deg,rgba(34,197,94,0.7),rgba(16,185,129,1))]"
+                        className="h-2 rounded-full bg-[var(--accent)]"
                         style={{
                           width: `${Math.max(cliente.ratio * 100, 12)}%`,
                         }}
@@ -176,16 +174,16 @@ export default function MejoresClientes({ onOpenCliente }) {
               </div>
             </div>
 
-            <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
+            <div className="rounded-xl border border-app bg-white/74 p-5">
               <div className="mb-5 flex items-center gap-3">
-                <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-3 text-rose-100">
+                <div className="rounded-lg border border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] p-3 text-[var(--danger-text)]">
                   <ShieldAlert className="h-5 w-5" />
                 </div>
                 <div>
-                  <div className="font-display text-2xl text-white">
+                  <div className="font-display text-[1.85rem] leading-none text-main">
                     Riesgo de mora
                   </div>
-                  <div className="mt-1 text-sm text-slate-400">
+                  <div className="mt-1 text-[13px] text-soft">
                     Clientes con saldo vencido para seguimiento.
                   </div>
                 </div>
@@ -204,14 +202,14 @@ export default function MejoresClientes({ onOpenCliente }) {
                       key={item.cliente.id}
                       type="button"
                       onClick={() => onOpenCliente?.(item.cliente)}
-                      className="w-full rounded-[22px] border border-white/10 bg-white/[0.03] p-4 text-left transition hover:border-amber-400/30 hover:bg-white/[0.06]"
+                      className="tab-card w-full"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <div className="font-semibold text-white">
+                          <div className="text-sm font-semibold text-main">
                             {getClienteNombre(item.cliente)}
                           </div>
-                          <div className="mt-1 text-sm text-slate-400">
+                          <div className="mt-1 text-[13px] text-soft">
                             {item.cantidad_ventas_vencidas} ventas vencidas
                           </div>
                         </div>
@@ -241,11 +239,9 @@ export default function MejoresClientes({ onOpenCliente }) {
 
 function MetricInline({ label, value }) {
   return (
-    <div className="rounded-[18px] border border-white/10 bg-white/[0.04] px-3 py-3">
-      <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-        {label}
-      </div>
-      <div className="mt-2 text-sm font-semibold text-white">{value}</div>
+    <div className="rounded-xl border border-app bg-white/72 px-3 py-3">
+      <div className="eyebrow">{label}</div>
+      <div className="mt-2 text-sm font-semibold text-main">{value}</div>
     </div>
   );
 }

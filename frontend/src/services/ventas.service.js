@@ -2,17 +2,58 @@ import api from './api';
 import { obtenerProductosMasVendidos } from './inventario.service';
 import { registrarAbonoVenta } from './abonos.service';
 import {
+  calculateVentaTotals,
   CONSUMIDOR_FINAL,
   buildVentaPayload,
   createTemporaryClient,
   normalizeCollection,
 } from '../utils/ventas';
 
+const normalizeDateParam = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return value;
+  }
+
+  const normalized = String(value).trim();
+  if (!normalized) {
+    return '';
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return normalized;
+  }
+
+  const slashMatch = normalized.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, first, second, year] = slashMatch;
+    const firstNumber = Number(first);
+    const secondNumber = Number(second);
+
+    const month =
+      firstNumber > 12 && secondNumber <= 12 ? secondNumber : firstNumber;
+    const day =
+      firstNumber > 12 && secondNumber <= 12 ? firstNumber : secondNumber;
+
+    return [
+      year,
+      String(month).padStart(2, '0'),
+      String(day).padStart(2, '0'),
+    ].join('-');
+  }
+
+  return normalized;
+};
+
 const cleanParams = (params = {}) =>
   Object.fromEntries(
-    Object.entries(params).filter(
-      ([, value]) => value !== undefined && value !== null && value !== '',
-    ),
+    Object.entries(params)
+      .map(([key, value]) => [
+        key,
+        key === 'fecha_inicio' || key === 'fecha_fin'
+          ? normalizeDateParam(value)
+          : value,
+      ])
+      .filter(([, value]) => value !== undefined && value !== null && value !== ''),
   );
 
 const normalizeClients = (payload) => {
@@ -50,7 +91,23 @@ export const crearVenta = async (datos) => {
 
 export const crearVentaCompleta = async (draft) => {
   const payload = buildVentaPayload(draft);
+  const totals = calculateVentaTotals(draft);
   const venta = await crearVenta(payload);
+
+  if (
+    draft.metodoPago === 'EFECTIVO' &&
+    draft.estado === 'TERMINADA' &&
+    Number(totals.total || 0) > 0
+  ) {
+    await registrarAbonoVenta(venta.id, {
+      monto_abonado: Number(totals.total).toFixed(2),
+      metodo_pago: 'EFECTIVO',
+      referencia_pago: '',
+      observaciones: 'Pago total registrado automaticamente desde el POS',
+    });
+
+    return obtenerVenta(venta.id);
+  }
 
   if (
     draft.metodoPago === 'CREDITO' &&

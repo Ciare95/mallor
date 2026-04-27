@@ -19,7 +19,7 @@ export function ProveedorStatusBadge({ proveedor }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${meta.classes}`}
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${meta.classes}`}
     >
       {meta.label}
     </span>
@@ -31,7 +31,7 @@ export function FacturaCompraStatusBadge({ factura }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${meta.classes}`}
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${meta.classes}`}
     >
       {FACTURA_ESTADO_LABELS[factura?.estado] || meta.label}
     </span>
@@ -46,25 +46,23 @@ export function MetricTile({
   compact = false,
 }) {
   const toneMap = {
-    neutral: 'border-white/10 bg-white/[0.04]',
-    success: 'border-emerald-500/20 bg-emerald-500/10',
-    accent: 'border-cyan-500/20 bg-cyan-500/10',
-    warning: 'border-amber-500/20 bg-amber-500/10',
+    neutral: 'border-app bg-white/70',
+    success: 'border-[var(--accent-line)] bg-[var(--accent-soft)]',
+    accent: 'border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)]',
+    warning: 'border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)]',
   };
 
   return (
-    <div className={`rounded-[22px] border p-4 ${toneMap[tone]}`}>
-      <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </div>
+    <div className={`rounded-xl border p-4 ${toneMap[tone]}`}>
+      <div className="eyebrow">{label}</div>
       <div
-        className={`mt-3 text-white ${
-          compact ? 'text-lg font-semibold' : 'font-display text-3xl'
+        className={`mt-2 text-main ${
+          compact ? 'text-base font-semibold' : 'font-display text-[2rem]'
         }`}
       >
         {value}
       </div>
-      {note && <div className="mt-2 text-sm text-slate-400">{note}</div>}
+      {note && <div className="mt-2 text-[12px] text-soft">{note}</div>}
     </div>
   );
 }
@@ -92,12 +90,10 @@ export function SupplierMetaGrid({ proveedor }) {
       {rows.map(([label, value]) => (
         <div
           key={label}
-          className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-4"
+          className="rounded-xl border border-app bg-white/70 px-4 py-4"
         >
-          <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-            {label}
-          </div>
-          <div className="mt-2 text-sm font-semibold text-white">{value}</div>
+          <div className="eyebrow">{label}</div>
+          <div className="mt-2 text-[13px] font-semibold text-main">{value}</div>
         </div>
       ))}
     </div>
@@ -106,7 +102,7 @@ export function SupplierMetaGrid({ proveedor }) {
 
 export function HelperPanel() {
   return (
-    <div className="rounded-[20px] border border-cyan-500/20 bg-cyan-500/10 px-4 py-4 text-sm text-cyan-100">
+    <div className="rounded-xl border border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] px-4 py-4 text-[13px] text-[var(--info-text)]">
       <div className="flex items-start gap-3">
         <ShieldCheck className="mt-0.5 h-4 w-4" />
         <span>
@@ -120,13 +116,13 @@ export function HelperPanel() {
 
 export function PurchaseQuickMeta({ factura }) {
   return (
-    <div className="flex flex-wrap gap-3 text-sm text-slate-400">
+    <div className="flex flex-wrap gap-3 text-[13px] text-soft">
       <span className="inline-flex items-center gap-2">
-        <FileClock className="h-4 w-4 text-slate-500" />
+        <FileClock className="h-4 w-4 text-muted" />
         {factura?.detalles?.length || 0} items
       </span>
       <span className="inline-flex items-center gap-2">
-        <Landmark className="h-4 w-4 text-slate-500" />
+        <Landmark className="h-4 w-4 text-muted" />
         {FORMA_PAGO_PROVEEDOR_LABELS[factura?.proveedor?.forma_pago] || 'Compra'}
       </span>
     </div>

@@ -18,6 +18,7 @@ import {
 } from '../../utils/formatters';
 import {
   downloadSpreadsheet,
+  getVentaPaymentDisplayStatus,
   normalizeCollection,
   printVentasDocument,
 } from '../../utils/ventas';
@@ -60,7 +61,7 @@ export default function VentasList({
       Fecha: formatDateTime(venta.fecha_venta),
       Cliente: venta.cliente_nombre || 'Consumidor Final',
       Estado: venta.estado,
-      Pago: venta.estado_pago,
+      Pago: getVentaPaymentDisplayStatus(venta),
       Metodo: venta.metodo_pago,
       Total: Number(venta.total || 0).toFixed(2),
       Saldo: Number(venta.saldo_pendiente || 0).toFixed(2),
@@ -74,7 +75,7 @@ export default function VentasList({
       Numero: venta.numero_venta,
       Cliente: venta.cliente_nombre || 'Consumidor Final',
       Estado: venta.estado,
-      Pago: venta.estado_pago,
+      Pago: getVentaPaymentDisplayStatus(venta),
       Total: formatCurrency(venta.total),
       Saldo: formatCurrency(venta.saldo_pendiente),
     }));
@@ -94,6 +95,15 @@ export default function VentasList({
             ),
           ),
         },
+        {
+          label: 'Saldo visible',
+          value: formatCurrency(
+            data.results.reduce(
+              (acc, venta) => acc + Number(venta.saldo_pendiente || 0),
+              0,
+            ),
+          ),
+        },
       ],
     });
   };
@@ -108,7 +118,7 @@ export default function VentasList({
           <button
             type="button"
             onClick={onCreate}
-            className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300"
+            className="app-button-primary min-h-10"
           >
             <CreditCard className="h-4 w-4" />
             Nueva venta
@@ -116,7 +126,7 @@ export default function VentasList({
           <button
             type="button"
             onClick={handleExportSheet}
-            className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
+            className="app-button-secondary min-h-10"
           >
             <FileOutput className="h-4 w-4" />
             Exportar Excel
@@ -124,7 +134,7 @@ export default function VentasList({
           <button
             type="button"
             onClick={handlePrint}
-            className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
+            className="app-button-secondary min-h-10"
           >
             <ReceiptText className="h-4 w-4" />
             Exportar PDF
@@ -188,8 +198,8 @@ export default function VentasList({
         />
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-[24px] border border-white/10">
-        <div className="hidden grid-cols-[1.1fr_1.3fr_0.7fr_0.7fr_0.8fr_1fr] gap-3 bg-white/[0.06] px-5 py-4 text-[11px] uppercase tracking-[0.28em] text-slate-500 lg:grid">
+      <div className="table-shell mt-6">
+        <div className="table-header hidden grid-cols-[1.1fr_1.3fr_0.7fr_0.7fr_0.8fr_1fr] gap-3 px-5 py-3.5 lg:grid">
           <span>Venta</span>
           <span>Cliente</span>
           <span>Estado</span>
@@ -200,7 +210,7 @@ export default function VentasList({
 
         {ventasQuery.isLoading && (
           <div className="flex min-h-[220px] items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+            <Loader2 className="h-5 w-5 animate-spin text-soft" />
           </div>
         )}
 
@@ -223,7 +233,7 @@ export default function VentasList({
                   <button
                     type="button"
                     onClick={onCreate}
-                    className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-emerald-400 px-4 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300"
+                    className="app-button-primary min-h-10"
                   >
                     <CreditCard className="h-4 w-4" />
                     Abrir POS
@@ -231,25 +241,25 @@ export default function VentasList({
                 }
               />
             ) : (
-              <div className="divide-y divide-white/10">
+              <div className="divide-y divide-[var(--line)]">
                 {data.results.map((venta) => (
                   <article
                     key={venta.id}
-                    className="grid gap-4 px-5 py-5 transition hover:bg-white/[0.04] lg:grid-cols-[1.1fr_1.3fr_0.7fr_0.7fr_0.8fr_1fr] lg:items-center"
+                    className="table-row grid gap-4 px-5 py-4 lg:grid-cols-[1.1fr_1.3fr_0.7fr_0.7fr_0.8fr_1fr] lg:items-center"
                   >
                     <div>
-                      <div className="font-display text-lg text-white">
+                      <div className="font-display text-[1.35rem] leading-none text-main">
                         {venta.numero_venta}
                       </div>
-                      <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">
+                      <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted">
                         {formatDateTime(venta.fecha_venta)}
                       </div>
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-white">
+                      <div className="text-[13px] font-semibold text-main">
                         {venta.cliente_nombre || 'Consumidor Final'}
                       </div>
-                      <div className="mt-1 text-sm text-slate-400">
+                      <div className="mt-1 text-[12px] text-soft">
                         {venta.detalles_count} items · {venta.metodo_pago}
                       </div>
                     </div>
@@ -257,13 +267,13 @@ export default function VentasList({
                       <StatusBadge status={venta.estado} />
                     </div>
                     <div>
-                      <StatusBadge status={venta.estado_pago} />
+                      <StatusBadge status={getVentaPaymentDisplayStatus(venta)} />
                     </div>
                     <div>
-                      <div className="font-display text-lg text-white">
+                      <div className="font-display text-[1.35rem] leading-none text-main">
                         {formatCurrency(venta.total)}
                       </div>
-                      <div className="mt-1 text-sm text-slate-400">
+                      <div className="mt-1 text-[12px] text-soft">
                         Saldo {formatCurrency(venta.saldo_pendiente)}
                       </div>
                     </div>
@@ -283,7 +293,10 @@ export default function VentasList({
                         icon={CreditCard}
                         label="Abonar"
                         onClick={() => onAbonar(venta)}
-                        disabled={venta.estado === 'CANCELADA'}
+                        disabled={
+                          venta.estado === 'CANCELADA' ||
+                          venta.estado_pago === 'PAGADA'
+                        }
                       />
                       <ActionButton
                         icon={Slash}
@@ -327,22 +340,18 @@ function FilterInput({
   placeholder,
 }) {
   return (
-    <label className="space-y-2">
-      <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </span>
+    <label className="app-field">
+      <span className="app-field-label">{label}</span>
       <div className="relative">
         {Icon && (
-          <Icon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <Icon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
         )}
         <input
           type={type}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
-          className={`min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/50 ${
-            Icon ? 'pl-11' : ''
-          }`}
+          className={`app-input min-h-10 ${Icon ? 'pl-10' : ''}`}
         />
       </div>
     </label>
@@ -351,14 +360,12 @@ function FilterInput({
 
 function FilterSelect({ label, value, onChange, options }) {
   return (
-    <label className="space-y-2">
-      <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </span>
+    <label className="app-field">
+      <span className="app-field-label">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/50"
+        className="app-select min-h-10"
       >
         {options.map(([text, optionValue]) => (
           <option key={text} value={optionValue}>
@@ -378,9 +385,9 @@ function ActionButton({ icon, label, onClick, disabled = false }) {
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className="inline-flex min-h-10 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+      className="inline-flex min-h-9 items-center gap-2 rounded-md border border-app bg-white/75 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-soft transition hover:bg-white hover:text-main disabled:cursor-not-allowed disabled:opacity-40"
     >
-      <IconComponent className="h-4 w-4" />
+      <IconComponent className="h-3.5 w-3.5" />
       {label}
     </button>
   );

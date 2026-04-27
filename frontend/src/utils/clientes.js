@@ -102,27 +102,27 @@ export const getClienteStatusMeta = (cliente) => {
   if (!activo) {
     return {
       label: 'Inactivo',
-      classes: 'border-slate-500/20 bg-slate-500/10 text-slate-200',
+      classes: 'border-app bg-white/70 text-soft',
     };
   }
 
   if (saldo > 0) {
     return {
       label: 'Moroso',
-      classes: 'border-amber-500/30 bg-amber-500/12 text-amber-100',
+      classes: 'border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] text-[var(--warning-text)]',
     };
   }
 
   if (total > 0) {
     return {
       label: 'Buen cliente',
-      classes: 'border-cyan-500/30 bg-cyan-500/12 text-cyan-100',
+      classes: 'border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] text-[var(--info-text)]',
     };
   }
 
   return {
     label: 'Nuevo',
-    classes: 'border-emerald-500/30 bg-emerald-500/12 text-emerald-100',
+    classes: 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]',
   };
 };
 

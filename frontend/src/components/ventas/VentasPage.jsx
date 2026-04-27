@@ -48,6 +48,7 @@ export default function VentasPage() {
     registrarClienteTemporal,
   } = useVentasStore();
   const [abonoError, setAbonoError] = useState(null);
+  const [posFocusSignal, setPosFocusSignal] = useState(0);
 
   const invalidateVentas = () => {
     queryClient.invalidateQueries({ queryKey: ['ventas'] });
@@ -64,9 +65,10 @@ export default function VentasPage() {
         printVentaTicket(venta);
       }
       resetDraft();
-      setVentaSeleccionada(venta);
+      setVentaSeleccionada(null);
+      setPosFocusSignal((current) => current + 1);
       startTransition(() => {
-        openVentaDetail(venta, VENTA_DETALLE_TABS.RESUMEN);
+        setVistaActual(VENTAS_VISTAS.POS);
       });
     },
     onError: (error) => {
@@ -81,8 +83,10 @@ export default function VentasPage() {
       const refreshed = await obtenerVenta(venta.id);
       toast.success(`Venta ${refreshed.numero_venta} actualizada`);
       resetDraft();
+      setVentaSeleccionada(null);
+      setPosFocusSignal((current) => current + 1);
       startTransition(() => {
-        openVentaDetail(refreshed, VENTA_DETALLE_TABS.RESUMEN);
+        setVistaActual(VENTAS_VISTAS.POS);
       });
     },
     onError: (error) => {
@@ -232,53 +236,37 @@ export default function VentasPage() {
 
   return (
     <div className="space-y-6">
-      <section className="surface rounded-[28px] p-5 sm:p-6 xl:p-7">
-        <div className="grid gap-5 xl:grid-cols-[1.2fr_0.8fr] xl:items-end">
-          <div className="space-y-3">
-            <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">
-              Modulo de ventas
-            </div>
-            <h2 className="font-display text-3xl text-white sm:text-4xl">
-              Punto de venta, cartera y reporte operacional en una misma vista.
-            </h2>
-            <p className="max-w-3xl text-sm leading-7 text-slate-400">
-              La interfaz privilegia velocidad de caja y trazabilidad: crear,
-              editar, consultar, cobrar y revisar el historial sin salir del
-              flujo principal.
-            </p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const active = vistaActual === tab.key;
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => setVistaActual(tab.key)}
-                  className={`rounded-[24px] border px-4 py-4 text-left transition ${
-                    active
-                      ? 'border-emerald-400/30 bg-emerald-400/12'
-                      : 'border-white/10 bg-white/[0.04] hover:bg-white/[0.06]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <Icon
-                      className={`h-5 w-5 ${
-                        active ? 'text-emerald-100' : 'text-slate-400'
-                      }`}
-                    />
-                    <span className="text-[10px] uppercase tracking-[0.24em] text-slate-500">
-                      {tab.note}
-                    </span>
-                  </div>
-                  <div className="mt-4 font-display text-xl text-white">
-                    {tab.label}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+      <section className="surface p-3">
+        <div className="mb-2 text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
+          Modulo de ventas
+        </div>
+        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const active = vistaActual === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setVistaActual(tab.key)}
+                className={`tab-card min-h-[68px] px-3 py-2.5 ${active ? 'tab-card-active' : ''}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <Icon
+                    className={`h-3.5 w-3.5 ${
+                      active ? 'text-[var(--accent)]' : 'text-soft'
+                    }`}
+                  />
+                  <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
+                    {tab.note}
+                  </span>
+                </div>
+                <div className="mt-2.5 font-display text-[1.15rem] leading-none text-main">
+                  {tab.label}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </section>
 
@@ -310,6 +298,7 @@ export default function VentasPage() {
           onCreateQuickClient={registrarClienteTemporal}
           onReset={handleOpenPos}
           onSubmit={handleSubmitVenta}
+          focusSignal={posFocusSignal}
         />
       )}
 

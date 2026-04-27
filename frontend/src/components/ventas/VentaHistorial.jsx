@@ -14,7 +14,7 @@ export default function VentaHistorial({ ventaId }) {
   if (historialQuery.isLoading) {
     return (
       <div className="flex min-h-[180px] items-center justify-center">
-        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+        <Loader2 className="h-5 w-5 animate-spin text-soft" />
       </div>
     );
   }
@@ -46,32 +46,32 @@ export default function VentaHistorial({ ventaId }) {
       {movimientos.map((movimiento) => (
         <article
           key={movimiento.id}
-          className="grid gap-3 rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-4 sm:grid-cols-[1.3fr_0.7fr_0.7fr]"
+          className="grid gap-4 rounded-xl border border-app bg-white/72 px-4 py-4 sm:grid-cols-[1.4fr_0.7fr_0.7fr]"
         >
           <div>
-            <div className="text-sm font-semibold text-white">
+            <div className="text-[13px] font-semibold text-main">
               {movimiento.producto?.nombre || 'Producto'}
             </div>
-            <div className="mt-1 text-sm text-slate-400">
+            <div className="mt-1 text-[13px] text-soft">
               {movimiento.motivo || 'Movimiento de inventario'}
             </div>
-            <div className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-500">
+            <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted">
               {formatDateTime(movimiento.fecha || movimiento.created_at)}
             </div>
           </div>
-          <div className="text-sm text-slate-300">
-            <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
+          <div className="rounded-xl border border-app bg-white/72 px-4 py-3 text-[13px] text-soft">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-muted">
               Cantidad
             </div>
-            <div className="mt-2 font-display text-lg text-white">
-              {movimiento.cantidad}
+            <div className="mt-2 font-display text-[1.2rem] leading-none text-main">
+              {Math.abs(Number(movimiento.cantidad || 0))}
             </div>
           </div>
-          <div className="text-sm text-slate-300">
-            <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
+          <div className="rounded-xl border border-app bg-white/72 px-4 py-3 text-[13px] text-soft">
+            <div className="text-[10px] uppercase tracking-[0.2em] text-muted">
               Precio
             </div>
-            <div className="mt-2 font-display text-lg text-white">
+            <div className="mt-2 font-display text-[1.2rem] leading-none text-main">
               {formatCurrency(movimiento.precio_unitario)}
             </div>
           </div>

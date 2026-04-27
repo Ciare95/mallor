@@ -96,13 +96,11 @@ export default function ReportesVentas() {
       description="Lectura rapida del periodo, comportamiento de cobro y mezcla de pagos, sin depender de una libreria pesada de graficos."
     >
       <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
-        <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-            Periodo
-          </div>
+        <div className="rounded-xl border border-app bg-white/76 p-5">
+          <div className="eyebrow">Periodo</div>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="space-y-2 sm:col-span-2">
-              <span className="text-sm font-semibold text-slate-200">
+            <label className="app-field sm:col-span-2">
+              <span className="text-[13px] font-semibold text-main">
                 Ventana de analisis
               </span>
               <select
@@ -113,7 +111,7 @@ export default function ReportesVentas() {
                     periodo: event.target.value,
                   }))
                 }
-                className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/50"
+                className="app-select min-h-10"
               >
                 <option value="hoy">Hoy</option>
                 <option value="semana">Semana</option>
@@ -125,8 +123,8 @@ export default function ReportesVentas() {
 
             {filtro.periodo === 'personalizado' && (
               <>
-                <label className="space-y-2">
-                  <span className="text-sm font-semibold text-slate-200">
+                <label className="app-field">
+                  <span className="text-[13px] font-semibold text-main">
                     Fecha inicio
                   </span>
                   <input
@@ -138,11 +136,11 @@ export default function ReportesVentas() {
                         fecha_inicio: event.target.value,
                       }))
                     }
-                    className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/50"
+                    className="app-input min-h-10"
                   />
                 </label>
-                <label className="space-y-2">
-                  <span className="text-sm font-semibold text-slate-200">
+                <label className="app-field">
+                  <span className="text-[13px] font-semibold text-main">
                     Fecha fin
                   </span>
                   <input
@@ -154,7 +152,7 @@ export default function ReportesVentas() {
                         fecha_fin: event.target.value,
                       }))
                     }
-                    className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/50"
+                    className="app-input min-h-10"
                   />
                 </label>
               </>
@@ -163,8 +161,8 @@ export default function ReportesVentas() {
         </div>
 
         {loading ? (
-          <div className="flex min-h-[220px] items-center justify-center rounded-[24px] border border-white/10 bg-white/[0.04]">
-            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          <div className="flex min-h-[220px] items-center justify-center rounded-xl border border-app bg-white/76">
+            <Loader2 className="h-5 w-5 animate-spin text-soft" />
           </div>
         ) : hasError ? (
           <EmptyState
@@ -279,35 +277,31 @@ function MetricCard({ label, value, icon }) {
   const IconComponent = icon;
 
   return (
-    <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
+    <div className="rounded-xl border border-app bg-white/76 p-5">
       <div className="flex items-center justify-between gap-4">
-        <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-          {label}
-        </div>
-        <IconComponent className="h-4 w-4 text-emerald-200" />
+        <div className="eyebrow">{label}</div>
+        <IconComponent className="h-4 w-4 text-[var(--accent)]" />
       </div>
-      <div className="mt-4 font-display text-3xl text-white">{value}</div>
+      <div className="mt-4 font-display text-3xl text-main">{value}</div>
     </div>
   );
 }
 
 function MetricMini({ label, value }) {
   return (
-    <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-4">
-      <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </div>
-      <div className="mt-3 font-display text-2xl text-white">{value}</div>
+    <div className="rounded-xl border border-app bg-white/72 px-4 py-4">
+      <div className="eyebrow">{label}</div>
+      <div className="mt-3 font-display text-2xl text-main">{value}</div>
     </div>
   );
 }
 
 function ChartPanel({ title, subtitle, children, className = '' }) {
   return (
-    <div className={`rounded-[24px] border border-white/10 bg-white/[0.04] p-5 ${className}`}>
+    <div className={`rounded-xl border border-app bg-white/76 p-5 ${className}`}>
       <div className="mb-5">
-        <div className="font-display text-xl text-white">{title}</div>
-        <div className="mt-1 text-sm text-slate-400">{subtitle}</div>
+        <div className="font-display text-xl text-main">{title}</div>
+        <div className="mt-1 text-[13px] text-soft">{subtitle}</div>
       </div>
       {children}
     </div>
@@ -331,17 +325,17 @@ function LineBars({ data }) {
     <div className="grid h-[260px] grid-cols-2 gap-4 md:grid-cols-4 xl:grid-cols-6">
       {data.map((item) => (
         <div key={item.label} className="flex flex-col justify-end gap-3">
-          <div className="relative flex-1 overflow-hidden rounded-[18px] border border-white/10 bg-app/70">
+          <div className="relative flex-1 overflow-hidden rounded-xl border border-app bg-[var(--panel-soft)]">
             <div
-              className="absolute inset-x-2 bottom-2 rounded-[14px] bg-[linear-gradient(180deg,rgba(34,197,94,0.35),rgba(34,197,94,0.95))]"
+              className="absolute inset-x-2 bottom-2 rounded-lg bg-[linear-gradient(180deg,rgba(47,106,82,0.25),rgba(47,106,82,0.95))]"
               style={{
                 height: `${Math.max((item.value / max) * 100, 6)}%`,
               }}
             />
           </div>
           <div className="space-y-1 text-center">
-            <div className="text-xs text-slate-500">{item.label}</div>
-            <div className="font-display text-sm text-white">
+            <div className="text-xs text-muted">{item.label}</div>
+            <div className="font-display text-sm text-main">
               {formatCurrency(item.value)}
             </div>
           </div>
@@ -363,7 +357,7 @@ function DonutBreakdown({ data }) {
   }
 
   const total = data.reduce((acc, item) => acc + item.value, 0) || 1;
-  const colors = ['#22c55e', '#38bdf8', '#f59e0b', '#f43f5e', '#c084fc'];
+  const colors = ['#2f6a52', '#1f6c9f', '#956400', '#9f2f2d', '#7a6c5d'];
   const percentages = data.map((item) => (item.value / total) * 100);
   const segments = data
     .map((item, index) => {
@@ -383,12 +377,12 @@ function DonutBreakdown({ data }) {
           background: `conic-gradient(${segments})`,
         }}
       >
-        <div className="flex h-32 w-32 items-center justify-center rounded-full bg-app">
+        <div className="flex h-32 w-32 items-center justify-center rounded-full bg-[var(--app-bg)]">
           <div className="text-center">
-            <div className="font-display text-3xl text-white">
+            <div className="font-display text-3xl text-main">
               {formatCurrency(total)}
             </div>
-            <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">
+            <div className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
               Movido
             </div>
           </div>
@@ -398,16 +392,16 @@ function DonutBreakdown({ data }) {
         {data.map((item, index) => (
           <div
             key={item.label}
-            className="flex items-center justify-between gap-4 rounded-[18px] border border-white/10 bg-white/[0.04] px-4 py-3"
+            className="flex items-center justify-between gap-4 rounded-xl border border-app bg-white/72 px-4 py-3"
           >
             <div className="flex items-center gap-3">
               <span
                 className="h-3 w-3 rounded-full"
                 style={{ backgroundColor: colors[index % colors.length] }}
               />
-              <span className="text-sm text-slate-200">{item.label}</span>
+              <span className="text-[13px] text-main">{item.label}</span>
             </div>
-            <span className="font-display text-sm text-white">
+            <span className="font-display text-sm text-main">
               {formatCurrency(item.value)}
             </span>
           </div>
@@ -433,15 +427,15 @@ function RankingList({ items }) {
       {items.map((item, index) => (
         <div
           key={`${item.label}-${index}`}
-          className="flex items-center justify-between gap-4 rounded-[18px] border border-white/10 bg-white/[0.04] px-4 py-4"
+          className="flex items-center justify-between gap-4 rounded-xl border border-app bg-white/72 px-4 py-4"
         >
           <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-xs font-semibold text-slate-300">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-app bg-white text-xs font-semibold text-soft">
               {index + 1}
             </div>
-            <div className="text-sm font-semibold text-white">{item.label}</div>
+            <div className="text-[13px] font-semibold text-main">{item.label}</div>
           </div>
-          <div className="font-display text-sm text-slate-200">{item.value}</div>
+          <div className="font-display text-sm text-main">{item.value}</div>
         </div>
       ))}
     </div>

@@ -14,6 +14,7 @@ import {
   formatDateTime,
   formatNumber,
 } from '../../utils/formatters';
+import { getVentaPaymentDisplayStatus } from '../../utils/ventas';
 import { useVentasStore } from '../../store/useVentasStore';
 import { VENTA_DETALLE_TABS } from '../../store/useVentasStore';
 import { EmptyState, SectionShell, StatusBadge } from './shared';
@@ -46,7 +47,7 @@ export default function VentaDetail({
     return (
       <SectionShell title="Detalle de venta">
         <div className="flex min-h-[320px] items-center justify-center">
-          <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+          <Loader2 className="h-5 w-5 animate-spin text-soft" />
         </div>
       </SectionShell>
     );
@@ -62,7 +63,7 @@ export default function VentaDetail({
             <button
               type="button"
               onClick={onBack}
-              className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
+              className="app-button-secondary min-h-10"
             >
               <ArrowLeft className="h-4 w-4" />
               Volver
@@ -74,6 +75,7 @@ export default function VentaDetail({
   }
 
   const venta = ventaQuery.data;
+  const paymentDisplayStatus = getVentaPaymentDisplayStatus(venta);
   const tabs = [
     [VENTA_DETALLE_TABS.RESUMEN, 'Resumen'],
     [VENTA_DETALLE_TABS.ABONOS, 'Abonos'],
@@ -91,7 +93,7 @@ export default function VentaDetail({
             <button
               type="button"
               onClick={onBack}
-              className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
+              className="app-button-secondary min-h-10"
             >
               <ArrowLeft className="h-4 w-4" />
               Volver
@@ -100,7 +102,7 @@ export default function VentaDetail({
               type="button"
               onClick={() => onEdit(venta)}
               disabled={venta.estado === 'CANCELADA'}
-              className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+              className="app-button-secondary min-h-10 disabled:opacity-40"
             >
               <FilePenLine className="h-4 w-4" />
               Editar
@@ -111,8 +113,11 @@ export default function VentaDetail({
                 setDetalleTab(VENTA_DETALLE_TABS.ABONOS);
                 setShowAbonoForm(true);
               }}
-              disabled={venta.estado === 'CANCELADA'}
-              className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
+              disabled={
+                venta.estado === 'CANCELADA' ||
+                venta.estado_pago === 'PAGADA'
+              }
+              className="app-button-primary min-h-10 disabled:opacity-40"
             >
               <CreditCard className="h-4 w-4" />
               Abonar
@@ -124,7 +129,7 @@ export default function VentaDetail({
                 venta.estado === 'CANCELADA' ||
                 Number(venta.total_abonado || 0) > 0
               }
-              className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-5 py-3 font-semibold text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex min-h-10 items-center gap-2 rounded-md border border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] px-4 py-2 text-[12px] font-semibold text-[var(--danger-text)] transition hover:bg-[rgba(253,235,236,0.9)] disabled:opacity-40"
             >
               <Slash className="h-4 w-4" />
               Cancelar
@@ -132,7 +137,7 @@ export default function VentaDetail({
             <button
               type="button"
               onClick={() => onFacturar(venta)}
-              className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
+              className="app-button-secondary min-h-10"
             >
               <ReceiptText className="h-4 w-4" />
               Facturar
@@ -143,28 +148,28 @@ export default function VentaDetail({
         <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr_0.9fr_0.9fr]">
           <SummaryCard label="Cliente" value={venta.cliente?.nombre_completo || 'Consumidor Final'} />
           <SummaryCard label="Estado" value={<StatusBadge status={venta.estado} />} />
-          <SummaryCard label="Pago" value={<StatusBadge status={venta.estado_pago} />} />
+          <SummaryCard label="Pago" value={<StatusBadge status={paymentDisplayStatus} />} />
           <SummaryCard label="Total" value={formatCurrency(venta.total)} />
         </div>
 
-        <div className="mt-6 rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
+        <div className="mt-6 rounded-xl border border-app bg-white/76 p-5">
           <div className="grid gap-4 lg:grid-cols-4">
             <Metric label="Subtotal" value={formatCurrency(venta.subtotal)} />
             <Metric label="Impuestos" value={formatCurrency(venta.impuestos)} />
             <Metric label="Abonado" value={formatCurrency(venta.total_abonado)} />
             <Metric label="Saldo" value={formatCurrency(venta.saldo_pendiente)} />
           </div>
-          <div className="mt-5 border-t border-white/10 pt-5">
+          <div className="mt-5 border-t border-app pt-5">
             <div className="mb-4 flex flex-wrap gap-2">
               {tabs.map(([key, label]) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => setDetalleTab(key)}
-                  className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                  className={`rounded-full border px-4 py-2 text-[12px] font-semibold transition ${
                     detalleTab === key
-                      ? 'border-emerald-400/40 bg-emerald-400/12 text-emerald-100'
-                      : 'border-white/10 bg-white/5 text-slate-300'
+                      ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                      : 'border-app bg-white/72 text-main'
                   }`}
                 >
                   {label}
@@ -178,13 +183,13 @@ export default function VentaDetail({
                   {(venta.detalles || []).map((detalle) => (
                     <div
                       key={detalle.id}
-                      className="grid gap-3 rounded-[22px] border border-white/10 bg-white/[0.04] px-4 py-4 lg:grid-cols-[1.4fr_0.5fr_0.7fr_0.7fr]"
+                      className="grid gap-3 rounded-xl border border-app bg-white/72 px-4 py-4 lg:grid-cols-[1.4fr_0.5fr_0.7fr_0.7fr]"
                     >
                       <div>
-                        <div className="text-sm font-semibold text-white">
+                        <div className="text-[13px] font-semibold text-main">
                           {detalle.producto?.nombre}
                         </div>
-                        <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">
+                        <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted">
                           {detalle.producto?.codigo_interno || 'Sin codigo'}
                         </div>
                       </div>
@@ -206,7 +211,7 @@ export default function VentaDetail({
                     </div>
                   ))}
                 </div>
-                <div className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-4 text-sm text-slate-300">
+                <div className="rounded-xl border border-app bg-white/72 px-4 py-4 text-[13px] text-soft">
                   {venta.observaciones || 'Sin observaciones registradas.'}
                 </div>
               </div>
@@ -234,11 +239,9 @@ export default function VentaDetail({
 
 function SummaryCard({ label, value }) {
   return (
-    <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
-      <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </div>
-      <div className="mt-3 text-sm font-semibold text-white">{value}</div>
+    <div className="rounded-xl border border-app bg-white/76 p-4">
+      <div className="eyebrow">{label}</div>
+      <div className="mt-3 text-[13px] font-semibold text-main">{value}</div>
     </div>
   );
 }
@@ -246,11 +249,11 @@ function SummaryCard({ label, value }) {
 function Metric({ label, value, compact = false }) {
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+      <div className="text-[10px] uppercase tracking-[0.2em] text-muted">
         {label}
       </div>
       <div
-        className={`mt-2 ${compact ? 'text-base font-semibold text-white' : 'font-display text-2xl text-white'}`}
+        className={`mt-2 ${compact ? 'text-base font-semibold text-main' : 'font-display text-2xl text-main'}`}
       >
         {value}
       </div>

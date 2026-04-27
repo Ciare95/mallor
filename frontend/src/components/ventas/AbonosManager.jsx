@@ -35,6 +35,7 @@ export default function AbonosManager({
 
     return Math.min(abonado / total, 1);
   }, [venta?.total, venta?.total_abonado]);
+  const isFullyPaid = progreso >= 1 || Number(venta?.saldo_pendiente || 0) <= 0;
 
   const handleClose = () => setOpen(false);
 
@@ -45,30 +46,30 @@ export default function AbonosManager({
 
   return (
     <div className="grid gap-5 xl:grid-cols-[0.8fr_1.2fr]">
-      <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
-        <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">
+      <div className="rounded-xl border border-app bg-white/76 p-5">
+        <div className="eyebrow">
           Progreso de cobro
         </div>
         <div className="mt-5 flex items-center gap-5">
           <div
-            className="relative flex h-28 w-28 items-center justify-center rounded-full"
+            className="relative flex h-28 w-28 items-center justify-center rounded-full border border-[var(--accent-line)]"
             style={{
-              background: `conic-gradient(#22c55e ${progreso * 360}deg, rgba(255,255,255,0.08) 0deg)`,
+              background: `conic-gradient(var(--accent) ${progreso * 360}deg, rgba(132, 148, 123, 0.12) 0deg)`,
             }}
           >
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-app text-center">
+            <div className="flex h-20 w-20 items-center justify-center rounded-full border border-app bg-[rgba(255,255,255,0.92)] text-center">
               <div>
-                <div className="font-display text-xl text-white">
+                <div className="font-display text-[1.35rem] text-main">
                   {Math.round(progreso * 100)}%
                 </div>
-                <div className="text-[10px] uppercase tracking-[0.2em] text-slate-500">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-muted">
                   Cobrado
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="space-y-3 text-sm">
+          <div className="grid flex-1 gap-3 sm:grid-cols-2">
             <Metric label="Total" value={formatCurrency(venta?.total)} />
             <Metric
               label="Abonado"
@@ -85,20 +86,21 @@ export default function AbonosManager({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300"
+          disabled={isFullyPaid}
+          className="app-button-primary mt-6 min-h-11 w-full justify-center disabled:opacity-40"
         >
           <Wallet className="h-4 w-4" />
           Registrar nuevo abono
         </button>
       </div>
 
-      <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
+      <div className="rounded-xl border border-app bg-white/76 p-5">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">
+            <div className="eyebrow">
               Historial de pagos
             </div>
-            <div className="mt-2 font-display text-xl text-white">
+            <div className="mt-2 font-display text-[1.75rem] leading-none text-main">
               {venta?.numero_venta}
             </div>
           </div>
@@ -106,7 +108,7 @@ export default function AbonosManager({
 
         {abonosQuery.isLoading && (
           <div className="flex min-h-[180px] items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+            <Loader2 className="h-5 w-5 animate-spin text-soft" />
           </div>
         )}
 
@@ -131,27 +133,29 @@ export default function AbonosManager({
                 {abonosQuery.data.map((abono) => (
                   <div
                     key={abono.id}
-                    className="grid gap-3 rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-4 sm:grid-cols-[1fr_0.7fr_0.8fr]"
+                    className="grid gap-3 rounded-xl border border-app bg-white/72 px-4 py-4 sm:grid-cols-[1fr_0.7fr_0.8fr]"
                   >
                     <div>
-                      <div className="text-sm font-semibold text-white">
+                      <div className="font-display text-[1.35rem] leading-none text-main">
                         {formatCurrency(abono.monto_abonado)}
                       </div>
-                      <div className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-500">
+                      <div className="mt-2 text-[10px] uppercase tracking-[0.2em] text-muted">
                         {formatDateTime(abono.fecha_abono)}
                       </div>
                     </div>
-                    <div className="text-sm text-slate-300">
-                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                    <div className="text-[13px] text-soft">
+                      <div className="text-[10px] uppercase tracking-[0.2em] text-muted">
                         Metodo
                       </div>
-                      <div className="mt-2">{abono.metodo_pago}</div>
+                      <div className="mt-2 font-semibold text-main">
+                        {abono.metodo_pago}
+                      </div>
                     </div>
-                    <div className="text-sm text-slate-300">
-                      <div className="text-xs uppercase tracking-[0.2em] text-slate-500">
+                    <div className="text-[13px] text-soft">
+                      <div className="text-[10px] uppercase tracking-[0.2em] text-muted">
                         Referencia
                       </div>
-                      <div className="mt-2 break-all">
+                      <div className="mt-2 break-all text-main">
                         {abono.referencia_pago || 'Sin referencia'}
                       </div>
                     </div>
@@ -178,11 +182,13 @@ export default function AbonosManager({
 
 function Metric({ label, value }) {
   return (
-    <div>
-      <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
+    <div className="rounded-xl border border-app bg-white/72 px-4 py-3">
+      <div className="text-[10px] uppercase tracking-[0.2em] text-muted">
         {label}
       </div>
-      <div className="mt-1 text-base font-semibold text-white">{value}</div>
+      <div className="mt-2 font-display text-[1.2rem] leading-none text-main">
+        {value}
+      </div>
     </div>
   );
 }

@@ -1,25 +1,36 @@
 import { useQuery } from '@tanstack/react-query';
-import { Activity, ArrowDownLeft, ArrowUpRight, Loader2, SlidersHorizontal } from 'lucide-react';
+import {
+  Activity,
+  ArrowDownLeft,
+  ArrowUpRight,
+  Loader2,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { obtenerHistorialProducto } from '../../services/inventario.service';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 
 const movimientoStyles = {
   ENTRADA: {
     icon: <ArrowUpRight className="h-4 w-4" />,
-    badge: 'bg-emerald-100 text-emerald-800',
-    line: 'border-emerald-200',
+    badge:
+      'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]',
+    card: 'border-[var(--accent-line)]',
   },
   SALIDA: {
     icon: <ArrowDownLeft className="h-4 w-4" />,
-    badge: 'bg-red-100 text-red-800',
-    line: 'border-red-200',
+    badge:
+      'border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] text-[var(--danger-text)]',
+    card: 'border-[rgba(159,47,45,0.18)]',
   },
   AJUSTE: {
     icon: <SlidersHorizontal className="h-4 w-4" />,
-    badge: 'bg-amber-100 text-amber-800',
-    line: 'border-amber-200',
+    badge:
+      'border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] text-[var(--warning-text)]',
+    card: 'border-[rgba(149,100,0,0.18)]',
   },
 };
+
+const getResults = (data) => data?.results || data || [];
 
 const ProductoHistorial = ({ productoId }) => {
   const { data, isLoading, isError, error } = useQuery({
@@ -30,8 +41,8 @@ const ProductoHistorial = ({ productoId }) => {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 py-10 text-slate-600">
-        <Loader2 className="mr-2 h-5 w-5 animate-spin text-emerald-600" />
+      <div className="flex items-center justify-center rounded-xl border border-app bg-[var(--panel-soft)] py-10 text-soft">
+        <Loader2 className="mr-2 h-5 w-5 animate-spin text-muted" />
         Cargando historial...
       </div>
     );
@@ -39,20 +50,24 @@ const ProductoHistorial = ({ productoId }) => {
 
   if (isError) {
     return (
-      <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-800">
+      <div className="rounded-xl border border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger-text)]">
         {error?.message || 'No fue posible cargar el historial'}
       </div>
     );
   }
 
-  const movimientos = data || [];
+  const movimientos = getResults(data);
 
   if (movimientos.length === 0) {
     return (
-      <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center">
-        <Activity className="mx-auto mb-3 h-10 w-10 text-slate-300" />
-        <p className="font-semibold text-slate-800">Sin movimientos registrados</p>
-        <p className="mt-1 text-sm text-slate-500">Las entradas, salidas y ajustes aparecerán aquí.</p>
+      <div className="empty-state">
+        <Activity className="mb-3 h-10 w-10 text-muted" />
+        <p className="text-sm font-semibold text-main">
+          Sin movimientos registrados
+        </p>
+        <p className="mt-1 text-[13px] text-soft">
+          Las entradas, salidas y ajustes apareceran aqui.
+        </p>
       </div>
     );
   }
@@ -60,33 +75,47 @@ const ProductoHistorial = ({ productoId }) => {
   return (
     <div className="space-y-3">
       {movimientos.map((movimiento) => {
-        const style = movimientoStyles[movimiento.tipo_movimiento] || movimientoStyles.AJUSTE;
+        const style =
+          movimientoStyles[movimiento.tipo_movimiento] || movimientoStyles.AJUSTE;
         return (
           <article
             key={movimiento.id}
-            className={`rounded-2xl border bg-white p-4 shadow-sm ${style.line}`}
+            className={`rounded-xl border bg-white/74 p-4 ${style.card}`}
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex items-start gap-3">
-                <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-black ${style.badge}`}>
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${style.badge}`}
+                >
                   {style.icon}
                   {movimiento.tipo_movimiento_display || movimiento.tipo_movimiento}
                 </span>
                 <div>
-                  <h4 className="font-bold text-slate-950">{movimiento.motivo}</h4>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {formatDateTime(movimiento.fecha)} por {movimiento.usuario_nombre || 'Sistema'}
+                  <h4 className="text-sm font-semibold text-main">
+                    {movimiento.motivo}
+                  </h4>
+                  <p className="mt-1 text-[13px] text-soft">
+                    {formatDateTime(movimiento.fecha)} por{' '}
+                    {movimiento.usuario_nombre || 'Sistema'}
                   </p>
                   {movimiento.observaciones && (
-                    <p className="mt-2 text-sm text-slate-600">{movimiento.observaciones}</p>
+                    <p className="mt-2 text-[13px] leading-6 text-soft">
+                      {movimiento.observaciones}
+                    </p>
                   )}
                 </div>
               </div>
               <div className="text-left sm:text-right">
-                <p className="text-lg font-black text-slate-950">{Number(movimiento.cantidad)}</p>
-                <p className="text-sm text-slate-500">{formatCurrency(Number(movimiento.precio_unitario || 0))}</p>
+                <p className="text-sm font-semibold text-main">
+                  {Number(movimiento.cantidad)}
+                </p>
+                <p className="mt-1 text-[13px] text-soft">
+                  {formatCurrency(Number(movimiento.precio_unitario || 0))}
+                </p>
                 {movimiento.factura_numero && (
-                  <p className="mt-1 text-xs font-semibold text-emerald-700">Factura {movimiento.factura_numero}</p>
+                  <p className="mt-1 text-[12px] font-semibold text-[var(--accent)]">
+                    Factura {movimiento.factura_numero}
+                  </p>
                 )}
               </div>
             </div>

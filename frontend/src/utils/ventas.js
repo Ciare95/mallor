@@ -127,12 +127,30 @@ export const calculateVentaTotals = (draft) => {
   const descuentoLineas = roundMoney(
     lines.reduce((acc, item) => acc + item.descuento, 0),
   );
-  const descuentoGlobal = roundMoney(draft?.descuentoGlobal || 0);
-  const total = Math.max(
-    roundMoney(subtotal + impuestos - descuentoLineas - descuentoGlobal),
+  const baseAntesDescuentoGlobal = Math.max(
+    roundMoney(subtotal + impuestos - descuentoLineas),
     0,
   );
-  const efectivoRecibido = roundMoney(draft?.efectivoRecibido || 0);
+  const descuentoGlobalPercent = Math.min(
+    Math.max(roundMoney(draft?.descuentoGlobal || 0), 0),
+    100,
+  );
+  const descuentoGlobal = roundMoney(
+    baseAntesDescuentoGlobal * (descuentoGlobalPercent / 100),
+  );
+  const total = Math.max(
+    roundMoney(baseAntesDescuentoGlobal - descuentoGlobal),
+    0,
+  );
+  const efectivoRecibidoDefault = Math.round(total);
+  const efectivoRecibido =
+    draft?.efectivoRecibido === '' ||
+    draft?.efectivoRecibido === null ||
+    draft?.efectivoRecibido === undefined
+      ? draft?.metodoPago === 'EFECTIVO' && draft?.estado === 'TERMINADA'
+        ? efectivoRecibidoDefault
+        : 0
+      : roundMoney(draft?.efectivoRecibido || 0);
   const abonoInicial = Math.min(
     roundMoney(draft?.abonoInicial || 0),
     total,
@@ -145,6 +163,7 @@ export const calculateVentaTotals = (draft) => {
     subtotal,
     impuestos,
     descuentoLineas,
+    descuentoGlobalPercent,
     descuentoGlobal,
     total,
     efectivoRecibido,
@@ -161,7 +180,7 @@ export const createLineItem = (producto, overrides = {}) => ({
   producto,
   cantidad: overrides.cantidad ?? 1,
   precio_unitario:
-    overrides.precio_unitario ?? Number(producto?.precio_venta || 0),
+    overrides.precio_unitario ?? Math.round(Number(producto?.precio_venta || 0)),
   descuento: overrides.descuento ?? 0,
 });
 
@@ -194,7 +213,7 @@ export const buildVentaPayload = (draft) => {
     cliente: isPersistedClient(draft?.clienteSeleccionado)
       ? draft.clienteSeleccionado.id
       : undefined,
-    descuento: toDecimalString(draft?.descuentoGlobal || 0),
+    descuento: toDecimalString(totals.descuentoGlobal || 0),
     estado: draft?.estado || 'TERMINADA',
     metodo_pago: draft?.metodoPago || 'EFECTIVO',
     factura_electronica: Boolean(draft?.facturaElectronica),
@@ -206,6 +225,75 @@ export const buildVentaPayload = (draft) => {
       descuento: toDecimalString(item.descuento || 0),
     })),
   };
+};
+
+export const inferVentaDiscountPercent = (venta) => {
+  const detalles = venta?.detalles || [];
+  const base = roundMoney(
+    detalles.reduce((acc, detalle) => {
+      const line = calculateLine(detalle);
+      return acc + line.subtotal + line.impuestos - line.descuento;
+    }, 0),
+  );
+  const descuento = roundMoney(venta?.descuento || 0);
+
+  if (base <= 0 || descuento <= 0) {
+    return 0;
+  }
+
+  return roundMoney((descuento / base) * 100);
+};
+
+const nextMultiple = (value, step, strict = false) => {
+  const normalized = Math.max(Math.round(Number(value) || 0), 0);
+  let candidate = Math.ceil(normalized / step) * step;
+
+  if (strict && candidate <= normalized) {
+    candidate += step;
+  }
+
+  return candidate;
+};
+
+export const getSuggestedCashAmounts = (total) => {
+  const normalizedTotal = Math.max(Math.round(Number(total) || 0), 0);
+
+  if (!normalizedTotal) {
+    return [];
+  }
+
+  const nextFiveThousand =
+    normalizedTotal < 50000
+      ? nextMultiple(normalizedTotal, 5000, true)
+      : null;
+
+  let nextTenThousand = nextMultiple(normalizedTotal, 10000, true);
+  if (
+    nextFiveThousand !== null &&
+    nextTenThousand <= nextFiveThousand
+  ) {
+    nextTenThousand += 10000;
+  }
+
+  const nextHundredThousand = nextMultiple(normalizedTotal, 100000);
+  const suggestions = [
+    nextFiveThousand,
+    nextTenThousand <= nextHundredThousand ? nextTenThousand : null,
+    nextMultiple(normalizedTotal, 50000),
+    nextHundredThousand,
+  ]
+    .filter((value) => Number.isFinite(value) && value >= normalizedTotal)
+    .sort((a, b) => a - b);
+
+  return [...new Set(suggestions)].slice(0, 4);
+};
+
+export const getVentaPaymentDisplayStatus = (venta) => {
+  if (venta?.estado === 'CANCELADA') {
+    return 'NO APLICA';
+  }
+
+  return venta?.estado_pago || 'PENDIENTE';
 };
 
 export const getVentaEstadoTone = (estado) => {
@@ -221,11 +309,11 @@ export const getVentaEstadoTone = (estado) => {
 
 export const getToneClasses = (tone) => {
   const map = {
-    success: 'border-emerald-500/30 bg-emerald-500/12 text-emerald-200',
-    warning: 'border-amber-500/30 bg-amber-500/12 text-amber-200',
-    danger: 'border-rose-500/30 bg-rose-500/12 text-rose-200',
-    accent: 'border-cyan-500/30 bg-cyan-500/12 text-cyan-200',
-    neutral: 'border-white/10 bg-white/5 text-slate-200',
+    success: 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]',
+    warning: 'border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] text-[var(--warning-text)]',
+    danger: 'border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] text-[var(--danger-text)]',
+    accent: 'border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] text-[var(--info-text)]',
+    neutral: 'border-app bg-white/70 text-soft',
   };
   return map[tone] || map.neutral;
 };

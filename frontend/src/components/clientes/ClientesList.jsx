@@ -81,7 +81,7 @@ export default function ClientesList({
           <button
             type="button"
             onClick={onCreate}
-            className="inline-flex min-h-12 items-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300"
+            className="app-button-primary min-h-10"
           >
             <Plus className="h-4 w-4" />
             Nuevo cliente
@@ -89,7 +89,7 @@ export default function ClientesList({
           <button
             type="button"
             onClick={onOpenDashboard}
-            className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
+            className="app-button-secondary min-h-10"
           >
             <Wallet className="h-4 w-4" />
             Ver dashboard
@@ -165,8 +165,8 @@ export default function ClientesList({
         />
       </div>
 
-      <div className="mt-6 overflow-hidden rounded-[24px] border border-white/10">
-        <div className="hidden grid-cols-[1.35fr_1.05fr_0.8fr_0.8fr_0.9fr_1fr] gap-3 bg-white/[0.06] px-5 py-4 text-[11px] uppercase tracking-[0.28em] text-slate-500 xl:grid">
+      <div className="table-shell mt-6">
+        <div className="table-header hidden grid-cols-[1.35fr_1.05fr_0.8fr_0.8fr_0.9fr_1fr] gap-3 px-5 py-4 xl:grid">
           <span>Cliente</span>
           <span>Documento</span>
           <span>Segmento</span>
@@ -177,7 +177,7 @@ export default function ClientesList({
 
         {clientesQuery.isLoading && (
           <div className="flex min-h-[240px] items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+            <Loader2 className="h-5 w-5 animate-spin text-soft" />
           </div>
         )}
 
@@ -200,7 +200,7 @@ export default function ClientesList({
                   <button
                     type="button"
                     onClick={onCreate}
-                    className="inline-flex min-h-11 items-center gap-2 rounded-2xl bg-emerald-400 px-4 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300"
+                    className="app-button-primary min-h-10"
                   >
                     <Plus className="h-4 w-4" />
                     Crear cliente
@@ -208,38 +208,38 @@ export default function ClientesList({
                 }
               />
             ) : (
-              <div className="divide-y divide-white/10">
+              <div className="divide-y divide-[var(--line)]">
                 {data.results.map((cliente) => (
                   <article
                     key={cliente.id}
-                    className="grid gap-4 px-5 py-5 transition hover:bg-white/[0.04] xl:grid-cols-[1.35fr_1.05fr_0.8fr_0.8fr_0.9fr_1fr] xl:items-center"
+                    className="table-row grid gap-4 px-5 py-5 xl:grid-cols-[1.35fr_1.05fr_0.8fr_0.8fr_0.9fr_1fr] xl:items-center"
                   >
                     <div>
-                      <div className="font-display text-lg text-white">
+                      <div className="font-display text-[1.35rem] text-main">
                         {getClienteNombre(cliente)}
                       </div>
-                      <div className="mt-1 text-sm text-slate-400">
+                      <div className="mt-1 text-[12px] text-soft">
                         {cliente.ciudad || '--'} · {cliente.telefono || '--'}
                       </div>
                     </div>
 
                     <div>
-                      <div className="text-sm font-semibold text-white">
+                      <div className="text-[13px] font-semibold text-main">
                         {DOCUMENTO_LABELS[cliente.tipo_documento] ||
                           cliente.tipo_documento}{' '}
                         {cliente.numero_documento}
                       </div>
-                      <div className="mt-1 text-sm text-slate-400">
+                      <div className="mt-1 text-[12px] text-soft">
                         Ultima compra {formatDate(cliente.ultima_compra)}
                       </div>
                     </div>
 
                     <div>
-                      <div className="text-sm font-semibold text-white">
+                      <div className="text-[13px] font-semibold text-main">
                         {TIPO_CLIENTE_LABELS[cliente.tipo_cliente] ||
                           cliente.tipo_cliente}
                       </div>
-                      <div className="mt-1 text-sm text-slate-400">
+                      <div className="mt-1 text-[12px] text-soft">
                         {formatNumber(cliente.cantidad_compras)} compras
                       </div>
                     </div>
@@ -249,10 +249,10 @@ export default function ClientesList({
                     </div>
 
                     <div>
-                      <div className="font-display text-lg text-white">
+                      <div className="font-display text-[1.35rem] text-main">
                         {formatCurrency(cliente.total_compras)}
                       </div>
-                      <div className="mt-1 text-sm text-slate-400">
+                      <div className="mt-1 text-[12px] text-soft">
                         Saldo {formatCurrency(cliente.saldo_pendiente)}
                       </div>
                     </div>
@@ -298,18 +298,16 @@ export default function ClientesList({
 
 function MetricCard({ label, value, note, tone = 'neutral' }) {
   const toneMap = {
-    neutral: 'border-white/10 bg-white/[0.04]',
-    success: 'border-emerald-500/20 bg-emerald-500/10',
-    warning: 'border-amber-500/20 bg-amber-500/10',
+    neutral: 'border-app bg-white/76',
+    success: 'border-[var(--accent-line)] bg-[var(--accent-soft)]',
+    warning: 'border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)]',
   };
 
   return (
-    <div className={`rounded-[22px] border px-5 py-5 ${toneMap[tone]}`}>
-      <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </div>
-      <div className="mt-3 font-display text-3xl text-white">{value}</div>
-      <div className="mt-2 text-sm text-slate-400">{note}</div>
+    <div className={`rounded-xl border px-5 py-5 ${toneMap[tone]}`}>
+      <div className="eyebrow">{label}</div>
+      <div className="mt-3 font-display text-[2rem] text-main">{value}</div>
+      <div className="mt-2 text-[12px] text-soft">{note}</div>
     </div>
   );
 }
@@ -317,15 +315,15 @@ function MetricCard({ label, value, note, tone = 'neutral' }) {
 function ActionButton({ icon, label, onClick, tone = 'neutral' }) {
   const toneClasses =
     tone === 'danger'
-      ? 'border-rose-500/20 bg-rose-500/10 text-rose-100 hover:bg-rose-500/20'
-      : 'border-white/10 bg-white/5 text-slate-100 hover:bg-white/10';
+      ? 'border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] text-[var(--danger-text)] hover:bg-[rgba(253,235,236,0.9)]'
+      : 'border-app bg-white/72 text-main hover:bg-white';
   const iconNode = icon ? createElement(icon, { className: 'h-4 w-4' }) : null;
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex min-h-11 items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-semibold transition ${toneClasses}`}
+      className={`inline-flex min-h-10 items-center gap-2 rounded-md border px-4 py-2 text-[12px] font-semibold transition ${toneClasses}`}
     >
       {iconNode}
       {label}
@@ -344,15 +342,13 @@ function FilterField({
   const iconNode = icon
     ? createElement(icon, {
         className:
-          'pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500',
+          'pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted',
       })
     : null;
 
   return (
-    <label className="space-y-2">
-      <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </span>
+    <label className="app-field">
+      <span className="app-field-label">{label}</span>
       <div className="relative">
         {iconNode}
         <input
@@ -360,9 +356,7 @@ function FilterField({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           placeholder={placeholder}
-          className={`min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/50 ${
-            icon ? 'pl-11' : ''
-          }`}
+          className={`app-input min-h-10 px-4 ${icon ? 'pl-11' : ''}`}
         />
       </div>
     </label>
@@ -371,14 +365,12 @@ function FilterField({
 
 function FilterSelect({ label, value, onChange, options }) {
   return (
-    <label className="space-y-2">
-      <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </span>
+    <label className="app-field">
+      <span className="app-field-label">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/50"
+        className="app-select min-h-10"
       >
         {options.map(([text, optionValue]) => (
           <option key={text} value={optionValue}>

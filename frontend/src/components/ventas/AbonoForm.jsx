@@ -47,27 +47,25 @@ export default function AbonoForm({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/70 px-4 py-8 backdrop-blur-md">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/40 px-4 py-8 backdrop-blur-sm">
       <form
         onSubmit={handleSubmit}
-        className="surface w-full max-w-lg rounded-[28px] p-6"
+        className="surface w-full max-w-lg p-6"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">
-              Nuevo abono
-            </div>
-            <h3 className="mt-2 font-display text-2xl text-white">
+            <div className="eyebrow">Nuevo abono</div>
+            <h3 className="mt-2 font-display text-2xl text-main">
               {venta.numero_venta}
             </h3>
-            <div className="mt-2 text-sm text-slate-400">
+            <div className="mt-2 text-[13px] text-soft">
               Saldo pendiente: {formatCurrency(venta.saldo_pendiente)}
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-2xl border border-white/10 bg-white/5 p-3 text-slate-300 transition hover:bg-white/10"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-app bg-white/72 text-main transition hover:bg-white"
             aria-label="Cerrar modal"
           >
             <X className="h-4 w-4" />
@@ -76,7 +74,7 @@ export default function AbonoForm({
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
           <label className="space-y-2 md:col-span-2">
-            <span className="text-sm font-semibold text-slate-200">
+            <span className="text-[13px] font-semibold text-main">
               Monto abonado
             </span>
             <input
@@ -87,12 +85,12 @@ export default function AbonoForm({
               onChange={(event) =>
                 handleChange('monto_abonado', event.target.value)
               }
-              className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/60"
+              className="app-input min-h-10"
             />
           </label>
 
           <label className="space-y-2">
-            <span className="text-sm font-semibold text-slate-200">
+            <span className="text-[13px] font-semibold text-main">
               Metodo de pago
             </span>
             <select
@@ -100,7 +98,7 @@ export default function AbonoForm({
               onChange={(event) =>
                 handleChange('metodo_pago', event.target.value)
               }
-              className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/60"
+              className="app-select min-h-10"
             >
               <option value="EFECTIVO">Efectivo</option>
               <option value="TARJETA">Tarjeta</option>
@@ -109,7 +107,7 @@ export default function AbonoForm({
           </label>
 
           <label className="space-y-2">
-            <span className="text-sm font-semibold text-slate-200">
+            <span className="text-[13px] font-semibold text-main">
               Referencia
             </span>
             <input
@@ -118,12 +116,12 @@ export default function AbonoForm({
               onChange={(event) =>
                 handleChange('referencia_pago', event.target.value)
               }
-              className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/60"
+              className="app-input min-h-10"
             />
           </label>
 
           <label className="space-y-2 md:col-span-2">
-            <span className="text-sm font-semibold text-slate-200">
+            <span className="text-[13px] font-semibold text-main">
               Observaciones
             </span>
             <textarea
@@ -132,19 +130,19 @@ export default function AbonoForm({
               onChange={(event) =>
                 handleChange('observaciones', event.target.value)
               }
-              className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none transition focus:border-emerald-400/60"
+              className="app-textarea"
             />
           </label>
         </div>
 
         {isInvalid && (
-          <div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          <div className="mt-4 rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-4 py-3 text-[13px] text-[var(--warning-text)]">
             El monto debe ser mayor que cero y no puede superar el saldo.
           </div>
         )}
 
         {error && (
-          <div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+          <div className="mt-4 rounded-xl border border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] px-4 py-3 text-[13px] text-[var(--danger-text)]">
             {error}
           </div>
         )}
@@ -153,14 +151,14 @@ export default function AbonoForm({
           <button
             type="button"
             onClick={onClose}
-            className="min-h-12 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
+            className="app-button-secondary min-h-10"
           >
             Cancelar
           </button>
           <button
             type="submit"
             disabled={isLoading || isInvalid}
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+            className="app-button-primary min-h-10 disabled:opacity-50"
           >
             {isLoading ? (
               <Loader2 className="h-4 w-4 animate-spin" />

@@ -102,10 +102,10 @@ export default function ClienteHistorial({
         </>
       )}
 
-      <div className="overflow-hidden rounded-[24px] border border-white/10">
+      <div className="overflow-hidden rounded-xl border border-app bg-white/72">
         {historialQuery.isLoading && (
           <div className="flex min-h-[220px] items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+            <Loader2 className="h-5 w-5 animate-spin text-soft" />
           </div>
         )}
 
@@ -126,25 +126,25 @@ export default function ClienteHistorial({
                 description="No hay ventas para el rango seleccionado."
               />
             ) : (
-              <div className="divide-y divide-white/10">
+              <div className="divide-y divide-[var(--line)]">
                 {data.results.map((venta) => (
                   <article
                     key={venta.id}
-                    className="grid gap-4 px-5 py-5 transition hover:bg-white/[0.04] xl:grid-cols-[1fr_1fr_0.8fr_0.8fr_auto] xl:items-center"
+                    className="grid gap-4 px-5 py-5 transition hover:bg-[var(--panel-soft)] xl:grid-cols-[1fr_1fr_0.8fr_0.8fr_auto] xl:items-center"
                   >
                     <div>
-                      <div className="font-display text-lg text-white">
+                      <div className="font-display text-lg text-main">
                         {venta.numero_venta}
                       </div>
-                      <div className="mt-1 text-sm text-slate-400">
+                      <div className="mt-1 text-sm text-soft">
                         {formatDateTime(venta.fecha_venta)}
                       </div>
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-white">
+                      <div className="text-sm font-semibold text-main">
                         {venta.metodo_pago}
                       </div>
-                      <div className="mt-1 text-sm text-slate-400">
+                      <div className="mt-1 text-sm text-soft">
                         {venta.detalles_count} lineas
                       </div>
                     </div>
@@ -156,10 +156,10 @@ export default function ClienteHistorial({
                       />
                     </div>
                     <div>
-                      <div className="font-display text-lg text-white">
+                      <div className="font-display text-lg text-main">
                         {formatCurrency(venta.total)}
                       </div>
-                      <div className="mt-1 text-sm text-slate-400">
+                      <div className="mt-1 text-sm text-soft">
                         Saldo {formatCurrency(venta.saldo_pendiente)}
                       </div>
                     </div>
@@ -168,7 +168,7 @@ export default function ClienteHistorial({
                         <button
                           type="button"
                           onClick={() => onOpenVenta(venta)}
-                          className="inline-flex min-h-11 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-slate-100 transition hover:bg-white/10"
+                          className="app-button-secondary min-h-11"
                         >
                           Ver venta
                         </button>
@@ -194,15 +194,15 @@ export default function ClienteHistorial({
 
 function FilterField({ label, value, onChange, type = 'text' }) {
   return (
-    <label className="space-y-2">
-      <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+    <label className="app-field">
+      <span className="app-field-label">
         {label}
       </span>
       <input
         type={type}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/50"
+        className="app-input min-h-11"
       />
     </label>
   );
@@ -210,14 +210,14 @@ function FilterField({ label, value, onChange, type = 'text' }) {
 
 function FilterSelect({ label, value, onChange, options }) {
   return (
-    <label className="space-y-2">
-      <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+    <label className="app-field">
+      <span className="app-field-label">
         {label}
       </span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/50"
+        className="app-select min-h-11"
       >
         {options.map(([text, optionValue]) => (
           <option key={`${label}-${optionValue}`} value={optionValue}>
@@ -232,8 +232,8 @@ function FilterSelect({ label, value, onChange, options }) {
 function MiniTrendChart({ data }) {
   if (!data.length) {
     return (
-      <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-5">
-        <div className="flex items-center gap-2 text-sm text-slate-400">
+      <div className="rounded-xl border border-app bg-white/72 p-5">
+        <div className="flex items-center gap-2 text-sm text-soft">
           <CalendarRange className="h-4 w-4" />
           Sin puntos suficientes para graficar la frecuencia.
         </div>
@@ -244,24 +244,24 @@ function MiniTrendChart({ data }) {
   const maxValue = Math.max(...data.map((item) => item.value), 1);
 
   return (
-    <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-5">
-      <div className="mb-4 text-[11px] uppercase tracking-[0.24em] text-slate-500">
+    <div className="rounded-xl border border-app bg-white/72 p-5">
+      <div className="mb-4 text-[10px] uppercase tracking-[0.24em] text-muted">
         Compras en el tiempo
       </div>
       <div className="grid h-[180px] grid-cols-3 gap-3 md:grid-cols-6">
         {data.map((item) => (
           <div key={item.label} className="flex flex-col justify-end gap-2">
-            <div className="relative flex-1 overflow-hidden rounded-[16px] border border-white/10 bg-app/70">
+            <div className="relative flex-1 overflow-hidden rounded-xl border border-app bg-[var(--panel-soft)]">
               <div
-                className="absolute inset-x-2 bottom-2 rounded-[14px] bg-[linear-gradient(180deg,rgba(34,197,94,0.35),rgba(34,197,94,0.95))]"
+                className="absolute inset-x-2 bottom-2 rounded-lg bg-[linear-gradient(180deg,rgba(87,181,132,0.22),rgba(64,198,112,0.92))]"
                 style={{
                   height: `${Math.max((item.value / maxValue) * 100, 8)}%`,
                 }}
               />
             </div>
             <div className="text-center">
-              <div className="text-xs text-slate-500">{item.label}</div>
-              <div className="text-xs font-semibold text-white">
+              <div className="text-xs text-muted">{item.label}</div>
+              <div className="text-xs font-semibold text-main">
                 {formatCurrency(item.value)}
               </div>
             </div>

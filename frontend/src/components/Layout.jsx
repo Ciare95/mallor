@@ -35,35 +35,35 @@ export default function Layout() {
     )?.label || 'Mallor';
 
   return (
-    <div className="min-h-screen bg-app">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.18),transparent_28%),radial-gradient(circle_at_top_right,rgba(251,191,36,0.1),transparent_24%),linear-gradient(180deg,rgba(15,23,42,0.92),rgba(2,6,23,0.98))]" />
+    <div className="min-h-screen bg-app text-main">
+      <div className="pointer-events-none absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(24,23,22,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(24,23,22,0.03)_1px,transparent_1px)] [background-size:32px_32px]" />
       <div className="relative flex min-h-screen">
         <aside
-          className={`hidden border-r border-white/10 bg-panel/90 backdrop-blur xl:flex xl:flex-col ${
-            sidebarOpen ? 'xl:w-72' : 'xl:w-24'
+          className={`hidden border-r border-app bg-panel/90 backdrop-blur xl:flex xl:flex-col ${
+            sidebarOpen ? 'xl:w-64' : 'xl:w-20'
           }`}
         >
-          <div className="border-b border-white/10 px-5 py-6">
+          <div className="border-b border-app px-4 py-5">
             <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500/18 text-emerald-300">
-                <Activity className="h-5 w-5" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-app bg-[var(--accent-soft)] text-[var(--accent)]">
+                <Activity className="h-4 w-4" />
               </div>
               {sidebarOpen && (
                 <div>
-                  <div className="font-display text-xl text-white">Mallor</div>
-                  <div className="text-xs uppercase tracking-[0.24em] text-slate-500">
-                    Centro operativo
+                  <div className="font-display text-[1.55rem] text-main">
+                    Mallor
                   </div>
+                  <div className="eyebrow">consola operativa</div>
                 </div>
               )}
             </div>
           </div>
 
-          <nav className="flex-1 px-4 py-5">
-            <div className="mb-3 px-2 text-[10px] uppercase tracking-[0.28em] text-slate-500">
-              {sidebarOpen ? 'Modulos' : 'Nav'}
+          <nav className="flex-1 px-3 py-4">
+            <div className="mb-3 px-2 text-[10px] uppercase tracking-[0.28em] text-muted">
+              {sidebarOpen ? 'Modulos' : 'Menu'}
             </div>
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -72,17 +72,19 @@ export default function Layout() {
                     to={item.path}
                     end={item.end}
                     className={({ isActive }) =>
-                      `group flex min-h-12 items-center gap-3 rounded-2xl px-3 py-3 transition ${
+                      `group flex min-h-11 items-center gap-3 rounded-lg border px-3 py-2.5 transition ${
                         isActive
-                          ? 'bg-white text-slate-950 shadow-[0_18px_50px_rgba(15,23,42,0.28)]'
-                          : 'text-slate-400 hover:bg-white/6 hover:text-white'
+                          ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-main'
+                          : 'border-transparent text-soft hover:border-app hover:bg-white/60 hover:text-main'
                       }`
                     }
                     title={item.label}
                   >
-                    <Icon className="h-5 w-5" />
+                    <Icon className="h-4 w-4" />
                     {sidebarOpen && (
-                      <span className="text-sm font-semibold">{item.label}</span>
+                      <span className="text-[13px] font-semibold">
+                        {item.label}
+                      </span>
                     )}
                   </NavLink>
                 );
@@ -90,50 +92,46 @@ export default function Layout() {
             </div>
           </nav>
 
-          <div className="border-t border-white/10 px-4 py-5">
+          <div className="border-t border-app px-3 py-4">
             <button
               type="button"
               onClick={toggleSidebar}
-              className="flex min-h-11 w-full items-center justify-center rounded-2xl border border-white/10 bg-white/5 px-3 text-sm font-semibold text-slate-200 transition hover:bg-white/10"
+              className="app-button-secondary flex min-h-10 w-full"
             >
-              {sidebarOpen ? 'Compactar panel' : 'Expandir'}
+              {sidebarOpen ? 'Compactar' : 'Expandir'}
             </button>
           </div>
         </aside>
 
         <div className="relative flex min-h-screen flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b border-white/10 bg-app/92 backdrop-blur">
-            <div className="mx-auto flex w-full max-w-[1680px] items-center justify-between gap-4 px-4 py-4 sm:px-6 xl:px-10">
+          <header className="sticky top-0 z-30 border-b border-app bg-app/90 backdrop-blur">
+            <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6 xl:px-8">
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={toggleSidebar}
-                  className="hidden h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-slate-200 transition hover:bg-white/10 xl:flex"
+                  className="hidden h-10 w-10 items-center justify-center rounded-lg border border-app bg-white/60 text-soft transition hover:bg-white xl:flex"
                   aria-label="Alternar panel"
                 >
                   <Settings className="h-4 w-4" />
                 </button>
                 <div>
-                  <div className="text-[11px] uppercase tracking-[0.32em] text-slate-500">
-                    Mallor workspace
-                  </div>
-                  <h1 className="font-display text-2xl text-white">
+                  <div className="eyebrow">Mallor workspace</div>
+                  <h1 className="font-display text-[1.85rem] leading-none text-main">
                     {pageTitle}
                   </h1>
                 </div>
               </div>
 
               <div className="hidden items-center gap-3 md:flex">
-                <div className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-200">
+                <div className="app-pill border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]">
                   Backend conectado
                 </div>
-                <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-semibold text-slate-300">
-                  React + DRF
-                </div>
+                <div className="app-pill">React + DRF</div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2 overflow-x-auto border-t border-white/10 px-4 py-3 xl:hidden">
+            <div className="flex items-center gap-2 overflow-x-auto border-t border-app px-4 py-2.5 xl:hidden">
               {navItems.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -142,10 +140,10 @@ export default function Layout() {
                     to={item.path}
                     end={item.end}
                     className={({ isActive }) =>
-                      `inline-flex min-h-11 items-center gap-2 whitespace-nowrap rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                      `inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-2 text-[12px] font-semibold transition ${
                         isActive
-                          ? 'border-emerald-400/50 bg-emerald-400/14 text-emerald-100'
-                          : 'border-white/10 bg-white/5 text-slate-400'
+                          ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                          : 'border-app bg-white/60 text-soft'
                       }`
                     }
                   >
@@ -157,7 +155,7 @@ export default function Layout() {
             </div>
           </header>
 
-          <main className="mx-auto flex w-full max-w-[1680px] flex-1 flex-col px-4 py-6 sm:px-6 xl:px-10 xl:py-8">
+          <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 py-5 sm:px-6 xl:px-8 xl:py-6">
             <Outlet />
           </main>
         </div>

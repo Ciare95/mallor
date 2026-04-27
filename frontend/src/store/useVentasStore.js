@@ -3,6 +3,7 @@ import {
   CONSUMIDOR_FINAL,
   createLineItem,
   createTemporaryClient,
+  inferVentaDiscountPercent,
 } from '../utils/ventas';
 
 export const VENTAS_VISTAS = {
@@ -88,11 +89,11 @@ export const useVentasStore = create((set) => ({
         items: (venta.detalles || []).map((detalle) => ({
           id: `line-${detalle.id}`,
           producto: detalle.producto,
-          cantidad: Number(detalle.cantidad || 0),
-          precio_unitario: Number(detalle.precio_unitario || 0),
-          descuento: Number(detalle.descuento || 0),
+          cantidad: Math.round(Number(detalle.cantidad || 0)),
+          precio_unitario: Math.round(Number(detalle.precio_unitario || 0)),
+          descuento: Math.round(Number(detalle.descuento || 0)),
         })),
-        descuentoGlobal: Number(venta.descuento || 0),
+        descuentoGlobal: inferVentaDiscountPercent(venta),
         metodoPago: venta.metodo_pago || 'EFECTIVO',
         estado: venta.estado || 'TERMINADA',
         facturaElectronica: Boolean(venta.factura_electronica),

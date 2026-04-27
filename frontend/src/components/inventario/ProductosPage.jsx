@@ -167,7 +167,7 @@ const ProductosPage = () => {
 
       {vistaActual === INVENTARIO_VISTAS.PROCESAR_FACTURA && (
         <ProcesarFacturaForm
-          onProcess={(facturaId) => procesarFacturaMutation.mutate(facturaId)}
+          onProcess={(payload) => procesarFacturaMutation.mutate(payload)}
           onCancel={goList}
           onCreateProduct={() => { setProductoSeleccionado(null); setVistaActual(INVENTARIO_VISTAS.CREAR); }}
           isLoading={procesarFacturaMutation.isPending}

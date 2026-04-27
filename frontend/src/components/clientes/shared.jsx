@@ -18,7 +18,7 @@ export function ClienteStatusBadge({ cliente }) {
 
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${meta.classes}`}
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${meta.classes}`}
     >
       {meta.label}
     </span>
@@ -28,7 +28,7 @@ export function ClienteStatusBadge({ cliente }) {
 export function ClienteRiskBadge({ venta, diasPlazo = 0, overdueDays = 0 }) {
   if (Number(venta?.saldo_pendiente || 0) <= 0) {
     return (
-      <span className="inline-flex items-center gap-2 rounded-full border border-emerald-500/30 bg-emerald-500/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100">
+      <span className="inline-flex items-center gap-2 rounded-full border border-[var(--accent-line)] bg-[var(--accent-soft)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">
         <ShieldCheck className="h-3.5 w-3.5" />
         Al dia
       </span>
@@ -37,7 +37,7 @@ export function ClienteRiskBadge({ venta, diasPlazo = 0, overdueDays = 0 }) {
 
   if (overdueDays > 0) {
     return (
-      <span className="inline-flex items-center gap-2 rounded-full border border-amber-500/30 bg-amber-500/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-100">
+      <span className="inline-flex items-center gap-2 rounded-full border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--warning-text)]">
         <ShieldAlert className="h-3.5 w-3.5" />
         {overdueDays} dias mora
       </span>
@@ -45,7 +45,7 @@ export function ClienteRiskBadge({ venta, diasPlazo = 0, overdueDays = 0 }) {
   }
 
   return (
-    <span className="inline-flex items-center gap-2 rounded-full border border-cyan-500/30 bg-cyan-500/12 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100">
+    <span className="inline-flex items-center gap-2 rounded-full border border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--info-text)]">
       <AlertTriangle className="h-3.5 w-3.5" />
       Plazo {diasPlazo} dias
     </span>
@@ -60,25 +60,23 @@ export function MetricTile({
   compact = false,
 }) {
   const toneMap = {
-    neutral: 'border-white/10 bg-white/[0.04]',
-    success: 'border-emerald-500/20 bg-emerald-500/10',
-    accent: 'border-cyan-500/20 bg-cyan-500/10',
-    warning: 'border-amber-500/20 bg-amber-500/10',
+    neutral: 'border-app bg-white/70',
+    success: 'border-[var(--accent-line)] bg-[var(--accent-soft)]',
+    accent: 'border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)]',
+    warning: 'border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)]',
   };
 
   return (
-    <div className={`rounded-[22px] border p-4 ${toneMap[tone]}`}>
-      <div className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </div>
+    <div className={`rounded-xl border p-4 ${toneMap[tone]}`}>
+      <div className="eyebrow">{label}</div>
       <div
-        className={`mt-3 text-white ${
-          compact ? 'text-lg font-semibold' : 'font-display text-3xl'
+        className={`mt-2 text-main ${
+          compact ? 'text-base font-semibold' : 'font-display text-[2rem]'
         }`}
       >
         {value}
       </div>
-      {note && <div className="mt-2 text-sm text-slate-400">{note}</div>}
+      {note && <div className="mt-2 text-[12px] text-soft">{note}</div>}
     </div>
   );
 }
@@ -100,12 +98,10 @@ export function CustomerMetaGrid({ cliente }) {
       {rows.map(([label, value]) => (
         <div
           key={label}
-          className="rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-4"
+          className="rounded-xl border border-app bg-white/70 px-4 py-4"
         >
-          <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-            {label}
-          </div>
-          <div className="mt-2 text-sm font-semibold text-white">{value}</div>
+          <div className="eyebrow">{label}</div>
+          <div className="mt-2 text-[13px] font-semibold text-main">{value}</div>
         </div>
       ))}
     </div>

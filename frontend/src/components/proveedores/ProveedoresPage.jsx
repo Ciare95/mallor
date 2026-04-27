@@ -159,57 +159,44 @@ export default function ProveedoresPage() {
 
   return (
     <div className="space-y-6">
-      <section className="surface rounded-[28px] p-5 sm:p-6 xl:p-7">
-        <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr] xl:items-end">
-          <div className="space-y-3">
-            <div className="text-[11px] uppercase tracking-[0.28em] text-slate-500">
-              Modulo de proveedores
-            </div>
-            <h2 className="font-display text-3xl text-white sm:text-4xl">
-              Red de abastecimiento, contacto y trazabilidad de compras en una misma consola.
-            </h2>
-            <p className="max-w-3xl text-sm leading-7 text-slate-400">
-              La vista prioriza lectura rapida del proveedor, su volumen de compra
-              y la calidad operativa de la relacion comercial.
-            </p>
-          </div>
+      <section className="surface p-3">
+        <div className="mb-2 text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
+          Modulo de proveedores
+        </div>
+        <div className="grid gap-2.5 sm:grid-cols-2">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const active = vistaActual === tab.key;
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const active = vistaActual === tab.key;
-
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => handleTabChange(tab.key)}
-                  className={`rounded-[24px] border px-4 py-4 text-left transition ${
-                    active
-                      ? 'border-emerald-400/30 bg-emerald-400/12 shadow-[0_20px_60px_rgba(16,185,129,0.15)]'
-                      : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.05]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <Icon
-                      className={`h-5 w-5 ${
-                        active ? 'text-emerald-100' : 'text-slate-400'
-                      }`}
-                    />
-                    {tab.key === PROVEEDORES_VISTAS.FORMULARIO && (
-                      <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                        {modoFormulario === 'edit' ? 'edicion' : 'alta'}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-4 font-display text-xl text-white">
-                    {tab.label}
-                  </div>
-                  <div className="mt-1 text-sm text-slate-400">{tab.note}</div>
-                </button>
-              );
-            })}
-          </div>
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => handleTabChange(tab.key)}
+                className={`tab-card min-h-[68px] px-3 py-2.5 ${active ? 'tab-card-active' : ''}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <Icon
+                    className={`h-3.5 w-3.5 ${
+                      active ? 'text-[var(--accent)]' : 'text-soft'
+                    }`}
+                  />
+                  {tab.key === PROVEEDORES_VISTAS.FORMULARIO ? (
+                    <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      {modoFormulario === 'edit' ? 'edicion' : 'alta'}
+                    </span>
+                  ) : (
+                    <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
+                      {tab.note}
+                    </span>
+                  )}
+                </div>
+                <div className="mt-2.5 font-display text-[1.15rem] leading-none text-main">
+                  {tab.label}
+                </div>
+              </button>
+            );
+          })}
         </div>
       </section>
 

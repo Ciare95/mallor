@@ -615,6 +615,14 @@ class DetalleFacturaCompra(models.Model):
         help_text=_('Precio unitario al que se compró el producto')
     )
     
+    precio_venta_sugerido = models.DecimalField(
+        _('precio de venta sugerido'),
+        max_digits=12,
+        decimal_places=2,
+        blank=True,
+        null=True,
+        help_text=_('Precio de venta que se aplicara al procesar la factura')
+    )
     iva = models.DecimalField(
         _('IVA'),
         max_digits=5,
@@ -710,6 +718,16 @@ class DetalleFacturaCompra(models.Model):
         if self.precio_unitario <= 0:
             raise ValidationError({
                 'precio_unitario': _('El precio unitario debe ser mayor que cero')
+            })
+
+        if (
+            self.precio_venta_sugerido is not None and
+            self.precio_venta_sugerido <= 0
+        ):
+            raise ValidationError({
+                'precio_venta_sugerido': _(
+                    'El precio de venta sugerido debe ser mayor que cero'
+                )
             })
         
         # Validar que IVA esté entre 0 y 100
@@ -921,4 +939,5 @@ class HistorialInventario(models.Model):
         """
         self.full_clean()
         super().save(*args, **kwargs)
+
 

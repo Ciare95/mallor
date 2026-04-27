@@ -615,13 +615,6 @@ class Abono(models.Model):
                 ),
             })
 
-        if self.venta.estado != Venta.Estado.TERMINADA:
-            raise ValidationError({
-                'venta': _(
-                    'Solo se pueden registrar abonos a ventas terminadas.'
-                ),
-            })
-
         total_existente = self.venta.abonos.exclude(
             pk=self.pk,
         ).aggregate(total=Sum('monto_abonado'))['total'] or Decimal('0.00')

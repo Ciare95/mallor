@@ -1,7 +1,8 @@
 from collections import defaultdict
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
@@ -30,6 +31,20 @@ from ventas.models import Abono, DetalleVenta, Venta
 
 
 QUANTIZER = Decimal('0.01')
+BUSINESS_TIMEZONE = ZoneInfo('America/Bogota')
+
+
+def _local_day_start_utc(target_date: date) -> datetime:
+    local_start = datetime.combine(
+        target_date,
+        time.min,
+        tzinfo=BUSINESS_TIMEZONE,
+    )
+    return local_start.astimezone(dt_timezone.utc)
+
+
+def _next_local_day_start_utc(target_date: date) -> datetime:
+    return _local_day_start_utc(target_date + timedelta(days=1))
 
 
 class _VentaInventarioService:
@@ -412,10 +427,14 @@ class VentaService:
         q_objects = Q()
 
         if filtros.get('fecha_desde'):
-            q_objects &= Q(fecha_venta__date__gte=filtros['fecha_desde'])
+            q_objects &= Q(
+                fecha_venta__gte=_local_day_start_utc(filtros['fecha_desde']),
+            )
 
         if filtros.get('fecha_hasta'):
-            q_objects &= Q(fecha_venta__date__lte=filtros['fecha_hasta'])
+            q_objects &= Q(
+                fecha_venta__lt=_next_local_day_start_utc(filtros['fecha_hasta']),
+            )
 
         if filtros.get('cliente_id'):
             q_objects &= Q(cliente_id=filtros['cliente_id'])

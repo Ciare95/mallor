@@ -112,17 +112,13 @@ export default function ClienteForm({
     : 'Nuevo cliente';
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+    <div className="grid gap-6 xl:grid-cols-[1.18fr_0.82fr]">
       <SectionShell
         eyebrow={isEdit ? 'Actualizacion' : 'Alta comercial'}
         title={title}
         description="Completa identidad, contacto y politica de credito del cliente. La validacion responde en tiempo real sobre documento y cartera."
         actions={
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex min-h-12 items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 font-semibold text-slate-100 transition hover:bg-white/10"
-          >
+          <button type="button" onClick={onBack} className="app-button-secondary min-h-11">
             <ArrowLeft className="h-4 w-4" />
             Volver
           </button>
@@ -201,10 +197,8 @@ export default function ClienteForm({
             </div>
           )}
 
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
-            <div className="mb-4 text-[11px] uppercase tracking-[0.24em] text-slate-500">
-              Contacto
-            </div>
+          <div className="surface-subtle p-5">
+            <div className="mb-4 eyebrow">Contacto</div>
             <div className="grid gap-4 lg:grid-cols-2">
               <InputField
                 label="Telefono"
@@ -261,10 +255,8 @@ export default function ClienteForm({
             </div>
           </div>
 
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
-            <div className="mb-4 text-[11px] uppercase tracking-[0.24em] text-slate-500">
-              Credito y condiciones
-            </div>
+          <div className="surface-subtle p-5">
+            <div className="mb-4 eyebrow">Credito y condiciones</div>
             <div className="grid gap-4 lg:grid-cols-2">
               <InputField
                 label="Limite de credito"
@@ -301,15 +293,13 @@ export default function ClienteForm({
               />
             </div>
 
-            <label className="mt-4 block space-y-2">
-              <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-                Observaciones
-              </span>
+            <label className="mt-4 block app-field">
+              <span className="app-field-label">Observaciones</span>
               <textarea
                 rows="4"
                 value={form.observaciones}
                 onChange={(event) => setField('observaciones', event.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none transition focus:border-emerald-400/50"
+                className="app-textarea"
               />
             </label>
           </div>
@@ -353,13 +343,13 @@ export default function ClienteForm({
           </div>
 
           {submitError && (
-            <div className="mt-5 rounded-[20px] border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            <div className="mt-5 rounded-xl border border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger-text)]">
               {submitError}
             </div>
           )}
 
           {!canSubmit && (
-            <div className="mt-5 rounded-[20px] border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            <div className="mt-5 rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-4 py-3 text-sm text-[var(--warning-text)]">
               Corrige los campos marcados antes de guardar.
             </div>
           )}
@@ -369,7 +359,7 @@ export default function ClienteForm({
               type="button"
               onClick={handleSubmit}
               disabled={isSubmitting || !canSubmit}
-              className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-50"
+              className="app-button-primary min-h-11"
             >
               {isSubmitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -378,7 +368,7 @@ export default function ClienteForm({
               )}
               {isEdit ? 'Guardar cambios' : 'Crear cliente'}
             </button>
-            <div className="rounded-[20px] border border-cyan-500/20 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
+            <div className="rounded-xl border border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] px-4 py-3 text-sm text-[var(--info-text)]">
               <div className="flex items-start gap-3">
                 <ShieldCheck className="mt-0.5 h-4 w-4" />
                 <span>
@@ -409,15 +399,13 @@ function InputField({
   const iconNode = icon
     ? createElement(icon, {
         className:
-          'pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500',
+          'pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted',
       })
     : null;
 
   return (
-    <label className="space-y-2">
-      <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </span>
+    <label className="app-field">
+      <span className="app-field-label">{label}</span>
       <div className="relative">
         {iconNode}
         <input
@@ -427,15 +415,19 @@ function InputField({
           onBlur={onBlur}
           min={min}
           step={step}
-          className={`min-h-12 w-full rounded-2xl border bg-white/5 px-4 text-white outline-none transition ${
+          className={`app-input min-h-11 ${icon ? 'pl-10' : ''} ${
             error
-              ? 'border-rose-400/40 focus:border-rose-400/60'
-              : 'border-white/10 focus:border-emerald-400/50'
-          } ${icon ? 'pl-11' : ''}`}
+              ? 'border-[rgba(159,47,45,0.28)] focus:border-[rgba(159,47,45,0.42)] focus:shadow-none'
+              : ''
+          }`}
         />
       </div>
       {(error || helper) && (
-        <div className={`text-sm ${error ? 'text-rose-200' : 'text-slate-400'}`}>
+        <div
+          className={`text-[12px] ${
+            error ? 'text-[var(--danger-text)]' : 'text-soft'
+          }`}
+        >
           {error || helper}
         </div>
       )}
@@ -445,14 +437,12 @@ function InputField({
 
 function SelectField({ label, value, onChange, options }) {
   return (
-    <label className="space-y-2">
-      <span className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
-        {label}
-      </span>
+    <label className="app-field">
+      <span className="app-field-label">{label}</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="min-h-12 w-full rounded-2xl border border-white/10 bg-white/5 px-4 text-white outline-none transition focus:border-emerald-400/50"
+        className="app-select min-h-11"
       >
         {options.map(([text, optionValue]) => (
           <option key={`${label}-${optionValue}`} value={optionValue}>
@@ -466,20 +456,20 @@ function SelectField({ label, value, onChange, options }) {
 
 function ToggleRow({ label, checked, onChange }) {
   return (
-    <label className="flex min-h-12 items-center justify-between gap-4 rounded-[20px] border border-white/10 bg-white/[0.03] px-4 py-3">
-      <span className="text-sm font-semibold text-white">{label}</span>
+    <label className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-app bg-white/72 px-4 py-3">
+      <span className="text-sm font-semibold text-main">{label}</span>
       <button
         type="button"
         onClick={() => onChange(!checked)}
         className={`inline-flex h-7 w-14 items-center rounded-full border px-1 transition ${
           checked
-            ? 'border-emerald-400/40 bg-emerald-400/20'
-            : 'border-white/10 bg-white/10'
+            ? 'border-[var(--accent-line)] bg-[var(--accent-soft)]'
+            : 'border-app bg-[var(--panel-soft)]'
         }`}
         aria-pressed={checked}
       >
         <span
-          className={`h-5 w-5 rounded-full bg-white transition ${
+          className={`h-5 w-5 rounded-full bg-[var(--text-main)] transition ${
             checked ? 'translate-x-7' : 'translate-x-0'
           }`}
         />
@@ -490,12 +480,10 @@ function ToggleRow({ label, checked, onChange }) {
 
 function SummaryRow({ label, value, featured = false }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-4">
-      <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-        {label}
-      </div>
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-app bg-white/72 px-4 py-4">
+      <div className="eyebrow">{label}</div>
       <div
-        className={`text-right text-white ${
+        className={`text-right text-main ${
           featured ? 'font-display text-2xl' : 'text-sm font-semibold'
         }`}
       >
