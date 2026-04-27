@@ -6,44 +6,16 @@ from django.db.models import Sum
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from .utils import (
+    calcular_costo_por_unidad_destino,
+    convertir_unidad,
+    validar_compatibilidad_unidades,
+)
+
 ZERO = Decimal('0.00')
 ZERO_QUANTITY = Decimal('0.0000')
 COST_QUANTIZER = Decimal('0.0001')
 PERCENTAGE_QUANTIZER = Decimal('0.01')
-
-UNIDAD_CONVERSIONES = {
-    ('LITROS', 'MILILITROS'): Decimal('1000'),
-    ('MILILITROS', 'LITROS'): Decimal('0.001'),
-    ('KILOGRAMOS', 'GRAMOS'): Decimal('1000'),
-    ('GRAMOS', 'KILOGRAMOS'): Decimal('0.001'),
-}
-
-
-def convertir_cantidad_unidad(cantidad, unidad_origen, unidad_destino):
-    """
-    Convierte una cantidad entre unidades compatibles.
-    """
-    if unidad_origen == unidad_destino:
-        return Decimal(cantidad).quantize(COST_QUANTIZER)
-
-    factor = UNIDAD_CONVERSIONES.get((unidad_origen, unidad_destino))
-    if factor is None:
-        raise ValueError(
-            'No existe una conversion configurada entre las unidades '
-            f'{unidad_origen} y {unidad_destino}.'
-        )
-
-    return (Decimal(cantidad) * factor).quantize(COST_QUANTIZER)
-
-
-def unidades_compatibles(unidad_origen, unidad_destino):
-    """
-    Determina si dos unidades pueden convertirse entre si.
-    """
-    return (
-        unidad_origen == unidad_destino or
-        (unidad_origen, unidad_destino) in UNIDAD_CONVERSIONES
-    )
 
 
 class Ingrediente(models.Model):
@@ -52,10 +24,14 @@ class Ingrediente(models.Model):
     """
 
     class UnidadMedida(models.TextChoices):
+        GALONES = 'GALONES', _('Galones')
         LITROS = 'LITROS', _('Litros')
         MILILITROS = 'MILILITROS', _('Mililitros')
+        ONZAS_LIQUIDAS = 'ONZAS_LIQUIDAS', _('Onzas liquidas')
         KILOGRAMOS = 'KILOGRAMOS', _('Kilogramos')
         GRAMOS = 'GRAMOS', _('Gramos')
+        LIBRAS = 'LIBRAS', _('Libras')
+        ONZAS = 'ONZAS', _('Onzas')
         UNIDADES = 'UNIDADES', _('Unidades')
 
     id = models.AutoField(primary_key=True)
@@ -315,10 +291,14 @@ class ProductoFabricado(models.Model):
     """
 
     class UnidadMedida(models.TextChoices):
+        GALONES = 'GALONES', _('Galones')
         LITROS = 'LITROS', _('Litros')
         MILILITROS = 'MILILITROS', _('Mililitros')
+        ONZAS_LIQUIDAS = 'ONZAS_LIQUIDAS', _('Onzas liquidas')
         KILOGRAMOS = 'KILOGRAMOS', _('Kilogramos')
         GRAMOS = 'GRAMOS', _('Gramos')
+        LIBRAS = 'LIBRAS', _('Libras')
+        ONZAS = 'ONZAS', _('Onzas')
         UNIDADES = 'UNIDADES', _('Unidades')
 
     id = models.AutoField(primary_key=True)
@@ -479,7 +459,7 @@ class ProductoFabricado(models.Model):
         for ingrediente_producto in self.receta.select_related(
             'ingrediente',
         ):
-            cantidad_requerida = convertir_cantidad_unidad(
+            cantidad_requerida = convertir_unidad(
                 ingrediente_producto.cantidad_necesaria,
                 ingrediente_producto.unidad_medida,
                 ingrediente_producto.ingrediente.unidad_medida,
@@ -618,13 +598,13 @@ class IngredientesProducto(models.Model):
         """
         Calcula el costo del ingrediente dentro del lote.
         """
-        cantidad_base = convertir_cantidad_unidad(
-            self.cantidad_necesaria,
-            self.unidad_medida,
+        costo_destino = calcular_costo_por_unidad_destino(
+            self.ingrediente.precio_por_unidad,
             self.ingrediente.unidad_medida,
+            self.unidad_medida,
         )
         self.costo_ingrediente = (
-            cantidad_base * self.ingrediente.precio_por_unidad
+            self.cantidad_necesaria * costo_destino
         ).quantize(COST_QUANTIZER)
         return self.costo_ingrediente
 
@@ -638,7 +618,7 @@ class IngredientesProducto(models.Model):
 
         if (
             self.ingrediente_id and
-            not unidades_compatibles(
+            not validar_compatibilidad_unidades(
                 self.unidad_medida,
                 self.ingrediente.unidad_medida,
             )
