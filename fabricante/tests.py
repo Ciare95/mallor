@@ -2,7 +2,17 @@ from decimal import Decimal
 
 from django.test import SimpleTestCase, TestCase
 
+from core.exceptions import ProduccionNoPermitidaError
+from inventario.models import Producto
+from proveedor.models import Proveedor
+from usuario.models import Usuario
+
 from fabricante.models import Ingrediente, IngredientesProducto, ProductoFabricado
+from fabricante.serializers import (
+    IngredienteSerializer,
+    ProductoFabricadoDetailSerializer,
+)
+from fabricante.services import IngredienteService, ProductoFabricadoService
 from fabricante.utils import (
     calcular_costo_por_unidad_destino,
     convertir_unidad,
@@ -165,3 +175,287 @@ class IngredientesProductoConversionTest(TestCase):
         self.assertFalse(
             self.producto_fabricado.validar_disponibilidad_ingredientes()
         )
+
+
+class FabricanteSerializerTest(TestCase):
+    """
+    Pruebas para serializers del modulo fabricante.
+    """
+
+    def setUp(self):
+        self.proveedor = Proveedor.objects.create(
+            numero_documento='900100200',
+            razon_social='Proveedor Lacteos SAS',
+            nombre_contacto='Ana Proveedor',
+            email='proveedor@mallor.test',
+            telefono='3000000000',
+            direccion='Calle 1 # 2-3',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_productos='Lacteos',
+        )
+        self.ingrediente = Ingrediente.objects.create(
+            nombre='Leche',
+            descripcion='Leche entera',
+            unidad_medida=Ingrediente.UnidadMedida.GALONES,
+            precio_por_unidad=Decimal('10000'),
+            proveedor=self.proveedor,
+            stock_actual=Decimal('2.0000'),
+            stock_minimo=Decimal('0.5000'),
+        )
+        self.producto_fabricado = ProductoFabricado.objects.create(
+            nombre='Batido de vainilla',
+            descripcion='Producto de prueba',
+            unidad_medida=ProductoFabricado.UnidadMedida.UNIDADES,
+            cantidad_producida=Decimal('10'),
+            precio_venta_sugerido=Decimal('2500'),
+            precio_venta=Decimal('2500'),
+            tiempo_produccion=30,
+        )
+        self.receta = IngredientesProducto.objects.create(
+            producto_fabricado=self.producto_fabricado,
+            ingrediente=self.ingrediente,
+            cantidad_necesaria=Decimal('500'),
+            unidad_medida=Ingrediente.UnidadMedida.MILILITROS,
+        )
+
+    def test_ingrediente_serializer_expone_proveedor_y_stock(self):
+        serializer = IngredienteSerializer(instance=self.ingrediente)
+
+        self.assertEqual(serializer.data['proveedor_nombre'], self.proveedor.nombre_completo)
+        self.assertFalse(serializer.data['stock_bajo_minimo'])
+
+    def test_producto_fabricado_detail_serializer_incluye_receta(self):
+        serializer = ProductoFabricadoDetailSerializer(
+            instance=self.producto_fabricado,
+        )
+
+        self.assertEqual(len(serializer.data['receta']), 1)
+        self.assertEqual(
+            serializer.data['receta'][0]['ingrediente']['nombre'],
+            'Leche',
+        )
+
+
+class FabricanteServiceTest(TestCase):
+    """
+    Pruebas para los services del modulo fabricante.
+    """
+
+    def setUp(self):
+        self.usuario = Usuario.objects.create_user(
+            username='fabricante',
+            email='fabricante@mallor.test',
+            password='Password123',
+            first_name='Fab',
+            last_name='Ricante',
+        )
+        self.proveedor = Proveedor.objects.create(
+            numero_documento='900200300',
+            razon_social='Proveedor General SAS',
+            nombre_contacto='Luis Compra',
+            email='compras@mallor.test',
+            telefono='3110000000',
+            direccion='Carrera 7 # 10-11',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_productos='General',
+        )
+        self.ingrediente = Ingrediente.objects.create(
+            nombre='Leche descremada',
+            descripcion='Ingrediente principal',
+            unidad_medida=Ingrediente.UnidadMedida.GALONES,
+            precio_por_unidad=Decimal('10000'),
+            proveedor=self.proveedor,
+            stock_actual=Decimal('2.0000'),
+            stock_minimo=Decimal('0.5000'),
+        )
+
+    def test_crear_y_listar_ingredientes(self):
+        IngredienteService.crear_ingrediente({
+            'nombre': 'Azucar',
+            'descripcion': 'Azucar blanca',
+            'unidad_medida': Ingrediente.UnidadMedida.KILOGRAMOS,
+            'precio_por_unidad': Decimal('4500'),
+            'stock_actual': Decimal('5.0000'),
+            'stock_minimo': Decimal('1.0000'),
+        })
+
+        ingredientes = IngredienteService.listar_ingredientes({'q': 'azu'})
+        self.assertEqual(len(ingredientes), 1)
+        self.assertEqual(ingredientes[0].nombre, 'Azucar')
+
+    def test_crear_producto_fabricado_con_receta_calcula_costos(self):
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Yogur natural',
+                'descripcion': 'Lote de yogur natural',
+                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'cantidad_producida': Decimal('10'),
+                'precio_venta': Decimal('2500'),
+                'precio_venta_sugerido': Decimal('2500'),
+                'tiempo_produccion': 45,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('500'),
+                    'unidad_medida': Ingrediente.UnidadMedida.MILILITROS,
+                },
+            ],
+        )
+
+        self.assertEqual(producto.receta.count(), 1)
+        self.assertEqual(producto.costo_produccion, Decimal('1320.8500'))
+        self.assertEqual(producto.costo_unitario, Decimal('132.0850'))
+
+    def test_sugerir_precio_venta_por_margen(self):
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Kumis',
+                'descripcion': 'Kumis natural',
+                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'cantidad_producida': Decimal('10'),
+                'precio_venta': Decimal('0'),
+                'precio_venta_sugerido': Decimal('0'),
+                'tiempo_produccion': 35,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('500'),
+                    'unidad_medida': Ingrediente.UnidadMedida.MILILITROS,
+                },
+            ],
+        )
+
+        sugerido = ProductoFabricadoService.sugerir_precio_venta(
+            producto.id,
+            Decimal('50'),
+        )
+
+        self.assertEqual(sugerido, Decimal('198.13'))
+
+    def test_validar_produccion_detecta_faltantes(self):
+        self.ingrediente.stock_actual = Decimal('0.1000')
+        self.ingrediente.save(update_fields=['stock_actual', 'updated_at'])
+
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Yogur fresa',
+                'descripcion': 'Yogur de prueba',
+                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'cantidad_producida': Decimal('10'),
+                'precio_venta': Decimal('2500'),
+                'precio_venta_sugerido': Decimal('2500'),
+                'tiempo_produccion': 45,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('500'),
+                    'unidad_medida': Ingrediente.UnidadMedida.MILILITROS,
+                },
+            ],
+        )
+
+        resultado = ProductoFabricadoService.validar_produccion(
+            producto.id,
+            Decimal('1'),
+        )
+
+        self.assertFalse(resultado['es_valida'])
+        self.assertEqual(len(resultado['faltantes']), 1)
+
+    def test_producir_lote_descuenta_stock_y_actualiza_inventario(self):
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Avena',
+                'descripcion': 'Avena lista',
+                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'cantidad_producida': Decimal('10'),
+                'precio_venta': Decimal('2500'),
+                'precio_venta_sugerido': Decimal('2500'),
+                'tiempo_produccion': 40,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('500'),
+                    'unidad_medida': Ingrediente.UnidadMedida.MILILITROS,
+                },
+            ],
+        )
+        producto_inventario = ProductoFabricadoService.convertir_a_producto_inventario(
+            producto.id,
+        )
+
+        resultado = ProductoFabricadoService.producir_lote(
+            producto.id,
+            Decimal('1'),
+        )
+
+        self.ingrediente.refresh_from_db()
+        producto_inventario.refresh_from_db()
+
+        self.assertEqual(self.ingrediente.stock_actual, Decimal('1.8679'))
+        self.assertEqual(producto_inventario.existencias, Decimal('10.00'))
+        self.assertEqual(
+            resultado['cantidad_total_producida'],
+            Decimal('10.0000'),
+        )
+
+    def test_producir_lote_sin_stock_lanza_error(self):
+        self.ingrediente.stock_actual = Decimal('0.0500')
+        self.ingrediente.save(update_fields=['stock_actual', 'updated_at'])
+
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Leche saborizada',
+                'descripcion': 'Producto de prueba',
+                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'cantidad_producida': Decimal('10'),
+                'precio_venta': Decimal('2500'),
+                'precio_venta_sugerido': Decimal('2500'),
+                'tiempo_produccion': 20,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('500'),
+                    'unidad_medida': Ingrediente.UnidadMedida.MILILITROS,
+                },
+            ],
+        )
+
+        with self.assertRaises(ProduccionNoPermitidaError):
+            ProductoFabricadoService.producir_lote(producto.id, Decimal('1'))
+
+    def test_convertir_a_producto_inventario_crea_relacion(self):
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Queso crema',
+                'descripcion': 'Producto para inventario',
+                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'cantidad_producida': Decimal('8'),
+                'precio_venta': Decimal('4200'),
+                'precio_venta_sugerido': Decimal('4300'),
+                'tiempo_produccion': 50,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('500'),
+                    'unidad_medida': Ingrediente.UnidadMedida.MILILITROS,
+                },
+            ],
+        )
+
+        inventario_producto = ProductoFabricadoService.convertir_a_producto_inventario(
+            producto.id,
+        )
+        producto.refresh_from_db()
+
+        self.assertIsInstance(inventario_producto, Producto)
+        self.assertEqual(producto.producto_final_id, inventario_producto.id)
+        self.assertEqual(inventario_producto.precio_compra, Decimal('165.11'))

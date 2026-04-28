@@ -427,3 +427,60 @@ class ProveedorDuplicadoError(ProveedorError):
             },
             code="proveedor_duplicado",
         )
+
+
+class FabricanteError(MallorError):
+    """
+    Excepcion base para errores del modulo de fabricante.
+    """
+
+    def __init__(self, message: str, code: str = "fabricante_error"):
+        super().__init__(message, code)
+
+
+class IngredienteNoEncontradoError(FabricanteError):
+    """Excepcion cuando un ingrediente no existe."""
+
+    def __init__(self, ingrediente_id: int):
+        super().__init__(
+            message=_("Ingrediente con ID %(id)s no encontrado.") % {
+                'id': ingrediente_id,
+            },
+            code="ingrediente_no_encontrado",
+        )
+
+
+class ProductoFabricadoNoEncontradoError(FabricanteError):
+    """Excepcion cuando un producto fabricado no existe."""
+
+    def __init__(self, producto_id: int):
+        super().__init__(
+            message=_("Producto fabricado con ID %(id)s no encontrado.") % {
+                'id': producto_id,
+            },
+            code="producto_fabricado_no_encontrado",
+        )
+
+
+class RecetaInvalidaError(FabricanteError):
+    """Excepcion cuando la receta no cumple las reglas de negocio."""
+
+    def __init__(self, motivo: str):
+        super().__init__(
+            message=_("La receta del producto no es valida: %(motivo)s.") % {
+                'motivo': motivo,
+            },
+            code="receta_invalida",
+        )
+
+
+class ProduccionNoPermitidaError(FabricanteError):
+    """Excepcion cuando no se puede producir un lote."""
+
+    def __init__(self, motivo: str):
+        super().__init__(
+            message=_("No es posible producir el lote: %(motivo)s.") % {
+                'motivo': motivo,
+            },
+            code="produccion_no_permitida",
+        )
