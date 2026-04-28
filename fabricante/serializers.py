@@ -150,6 +150,8 @@ class IngredientesProductoSerializer(serializers.ModelSerializer):
         source='producto_fabricado',
         write_only=True,
         required=False,
+        allow_null=True,
+        default=None,
     )
 
     class Meta:

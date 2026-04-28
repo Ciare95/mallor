@@ -25,6 +25,7 @@ urlpatterns = [
     # API REST
     path('api/', include('usuario.urls')),
     path('api/inventario/', include('inventario.urls')),
+    path('api/fabricante/', include('fabricante.urls')),
     path('api/', include('ventas.urls')),
     path('api/', include('cliente.urls')),
     path('api/', include('proveedor.urls')),

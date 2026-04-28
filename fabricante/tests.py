@@ -1,6 +1,8 @@
 from decimal import Decimal
 
 from django.test import SimpleTestCase, TestCase
+from rest_framework import status
+from rest_framework.test import APIClient
 
 from core.exceptions import ProduccionNoPermitidaError
 from inventario.models import Producto
@@ -459,3 +461,309 @@ class FabricanteServiceTest(TestCase):
         self.assertIsInstance(inventario_producto, Producto)
         self.assertEqual(producto.producto_final_id, inventario_producto.id)
         self.assertEqual(inventario_producto.precio_compra, Decimal('165.11'))
+
+
+class FabricanteApiTest(TestCase):
+    """
+    Pruebas de API para vistas y endpoints del modulo fabricante.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+        self.admin_password = 'Password123'
+        self.empleado_password = 'Password123'
+        self.admin = Usuario.objects.create_user(
+            username='admin_fabricante',
+            email='admin.fabricante@mallor.test',
+            password=self.admin_password,
+            role=Usuario.Rol.ADMIN,
+        )
+        self.empleado = Usuario.objects.create_user(
+            username='empleado_fabricante',
+            email='empleado.fabricante@mallor.test',
+            password=self.empleado_password,
+            role=Usuario.Rol.EMPLEADO,
+        )
+        self.proveedor = Proveedor.objects.create(
+            numero_documento='900300400',
+            razon_social='Proveedor API SAS',
+            nombre_contacto='Maria API',
+            email='api@proveedor.test',
+            telefono='3200000000',
+            direccion='Calle API # 1-2',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_productos='Lacteos',
+        )
+        self.ingrediente = Ingrediente.objects.create(
+            nombre='Leche API',
+            descripcion='Ingrediente para pruebas API',
+            unidad_medida=Ingrediente.UnidadMedida.GALONES,
+            precio_por_unidad=Decimal('10000'),
+            proveedor=self.proveedor,
+            stock_actual=Decimal('2.0000'),
+            stock_minimo=Decimal('0.5000'),
+        )
+        self.ingrediente_secundario = Ingrediente.objects.create(
+            nombre='Azucar API',
+            descripcion='Ingrediente secundario',
+            unidad_medida=Ingrediente.UnidadMedida.KILOGRAMOS,
+            precio_por_unidad=Decimal('5000'),
+            stock_actual=Decimal('1.5000'),
+            stock_minimo=Decimal('0.2000'),
+        )
+
+    def test_endpoints_requieren_rol_admin(self):
+        self.client.login(
+            username=self.empleado.username,
+            password=self.empleado_password,
+        )
+
+        response = self.client.get('/api/fabricante/ingredientes/')
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_puede_hacer_crud_de_ingredientes(self):
+        self.client.login(
+            username=self.admin.username,
+            password=self.admin_password,
+        )
+
+        create_response = self.client.post(
+            '/api/fabricante/ingredientes/',
+            {
+                'nombre': 'Canela API',
+                'descripcion': 'Especia molida',
+                'unidad_medida': Ingrediente.UnidadMedida.GRAMOS,
+                'precio_por_unidad': '25.5000',
+                'proveedor_id': self.proveedor.id,
+                'stock_actual': '100.0000',
+                'stock_minimo': '10.0000',
+            },
+            format='json',
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        ingrediente_id = create_response.data['id']
+
+        list_response = self.client.get('/api/fabricante/ingredientes/')
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(list_response.data['count'], 1)
+
+        retrieve_response = self.client.get(
+            f'/api/fabricante/ingredientes/{ingrediente_id}/'
+        )
+        self.assertEqual(retrieve_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(retrieve_response.data['nombre'], 'Canela API')
+
+        update_response = self.client.put(
+            f'/api/fabricante/ingredientes/{ingrediente_id}/',
+            {
+                'nombre': 'Canela API',
+                'descripcion': 'Especia premium',
+                'unidad_medida': Ingrediente.UnidadMedida.GRAMOS,
+                'precio_por_unidad': '30.0000',
+                'proveedor_id': self.proveedor.id,
+                'stock_actual': '100.0000',
+                'stock_minimo': '5.0000',
+            },
+            format='json',
+        )
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data['stock_minimo'], '5.0000')
+
+        delete_response = self.client.delete(
+            f'/api/fabricante/ingredientes/{ingrediente_id}/'
+        )
+        self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_actualizar_stock_y_bajo_stock_funcionan(self):
+        self.client.login(
+            username=self.admin.username,
+            password=self.admin_password,
+        )
+
+        stock_response = self.client.post(
+            f'/api/fabricante/ingredientes/{self.ingrediente.id}/actualizar-stock/',
+            {'cantidad': '-1.6000'},
+            format='json',
+        )
+        self.assertEqual(stock_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(stock_response.data['stock_actual'], '0.4000')
+
+        bajo_stock_response = self.client.get(
+            '/api/fabricante/ingredientes/bajo-stock/'
+        )
+        self.assertEqual(bajo_stock_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(bajo_stock_response.data), 1)
+        self.assertEqual(
+            bajo_stock_response.data[0]['nombre'],
+            self.ingrediente.nombre,
+        )
+
+    def test_admin_puede_hacer_crud_de_productos_fabricados(self):
+        self.client.login(
+            username=self.admin.username,
+            password=self.admin_password,
+        )
+
+        create_response = self.client.post(
+            '/api/fabricante/productos/',
+            {
+                'nombre': 'Yogur API',
+                'descripcion': 'Producto fabricado desde API',
+                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'cantidad_producida': '10.0000',
+                'precio_venta_sugerido': '0.00',
+                'precio_venta': '2500.00',
+                'tiempo_produccion': 45,
+                'receta': [
+                    {
+                        'ingrediente_id': self.ingrediente.id,
+                        'cantidad_necesaria': '500.0000',
+                        'unidad_medida': Ingrediente.UnidadMedida.MILILITROS,
+                    },
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        producto_id = create_response.data['id']
+
+        retrieve_response = self.client.get(
+            f'/api/fabricante/productos/{producto_id}/'
+        )
+        self.assertEqual(retrieve_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(retrieve_response.data['receta']), 1)
+
+        update_response = self.client.put(
+            f'/api/fabricante/productos/{producto_id}/',
+            {
+                'nombre': 'Yogur API Editado',
+                'descripcion': 'Producto actualizado',
+                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'cantidad_producida': '12.0000',
+                'precio_venta_sugerido': '2600.00',
+                'precio_venta': '2700.00',
+                'tiempo_produccion': 50,
+            },
+            format='json',
+        )
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data['nombre'], 'Yogur API Editado')
+
+        delete_response = self.client.delete(
+            f'/api/fabricante/productos/{producto_id}/'
+        )
+        self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_costos_precio_produccion_y_conversion_funcionan(self):
+        self.client.login(
+            username=self.admin.username,
+            password=self.admin_password,
+        )
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Kumis API',
+                'descripcion': 'Producto para acciones especiales',
+                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'cantidad_producida': Decimal('10'),
+                'precio_venta': Decimal('0'),
+                'precio_venta_sugerido': Decimal('0'),
+                'tiempo_produccion': 40,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('500'),
+                    'unidad_medida': Ingrediente.UnidadMedida.MILILITROS,
+                },
+            ],
+        )
+
+        costos_response = self.client.get(
+            f'/api/fabricante/productos/{producto.id}/costos/'
+        )
+        self.assertEqual(costos_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            costos_response.data['costo_produccion'],
+            '1320.8500',
+        )
+
+        precio_response = self.client.post(
+            f'/api/fabricante/productos/{producto.id}/calcular-precio/',
+            {'margen_deseado': '50'},
+            format='json',
+        )
+        self.assertEqual(precio_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            precio_response.data['precio_venta_sugerido'],
+            '198.13',
+        )
+
+        inventario_response = self.client.post(
+            f'/api/fabricante/productos/{producto.id}/convertir-inventario/',
+            {},
+            format='json',
+        )
+        self.assertEqual(inventario_response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(
+            inventario_response.data['producto_inventario']['id']
+        )
+
+        producir_response = self.client.post(
+            f'/api/fabricante/productos/{producto.id}/producir/',
+            {'cantidad_lotes': '1'},
+            format='json',
+        )
+        self.assertEqual(producir_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            producir_response.data['cantidad_total_producida'],
+            '10.0000',
+        )
+
+    def test_endpoints_de_receta_funcionan(self):
+        self.client.login(
+            username=self.admin.username,
+            password=self.admin_password,
+        )
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Avena API',
+                'descripcion': 'Producto para probar receta',
+                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'cantidad_producida': Decimal('8'),
+                'precio_venta': Decimal('2200'),
+                'precio_venta_sugerido': Decimal('2300'),
+                'tiempo_produccion': 35,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('500'),
+                    'unidad_medida': Ingrediente.UnidadMedida.MILILITROS,
+                },
+            ],
+        )
+
+        list_response = self.client.get(
+            f'/api/fabricante/productos/{producto.id}/receta/'
+        )
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(list_response.data), 1)
+
+        add_response = self.client.post(
+            f'/api/fabricante/productos/{producto.id}/receta/',
+            {
+                'ingrediente_id': self.ingrediente_secundario.id,
+                'cantidad_necesaria': '0.2500',
+                'unidad_medida': Ingrediente.UnidadMedida.KILOGRAMOS,
+            },
+            format='json',
+        )
+        self.assertEqual(add_response.status_code, status.HTTP_201_CREATED)
+
+        delete_response = self.client.delete(
+            f'/api/fabricante/productos/{producto.id}/receta/'
+            f'{self.ingrediente_secundario.id}/'
+        )
+        self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)

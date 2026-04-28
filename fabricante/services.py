@@ -68,6 +68,26 @@ class IngredienteService:
         return Ingrediente.objects.create(**datos)
 
     @staticmethod
+    @transaction.atomic
+    def actualizar_ingrediente(
+        ingrediente_id: int,
+        data: Dict[str, Any],
+    ) -> Ingrediente:
+        ingrediente = IngredienteService.obtener_ingrediente(ingrediente_id)
+
+        for campo, valor in data.items():
+            setattr(ingrediente, campo, valor)
+
+        ingrediente.save()
+        return ingrediente
+
+    @staticmethod
+    @transaction.atomic
+    def eliminar_ingrediente(ingrediente_id: int) -> None:
+        ingrediente = IngredienteService.obtener_ingrediente(ingrediente_id)
+        ingrediente.delete()
+
+    @staticmethod
     def listar_ingredientes(
         filtros: Optional[Dict[str, Any]] = None,
     ) -> List[Ingrediente]:
@@ -185,6 +205,59 @@ class ProductoFabricadoService:
             raise ProductoFabricadoNoEncontradoError(producto_id) from exc
 
     @staticmethod
+    def obtener_producto(producto_id: int) -> ProductoFabricado:
+        return ProductoFabricadoService._obtener_producto(producto_id)
+
+    @staticmethod
+    def listar_productos(
+        filtros: Optional[Dict[str, Any]] = None,
+    ) -> List[ProductoFabricado]:
+        queryset = ProductoFabricadoService._base_queryset()
+
+        if not filtros:
+            return list(queryset.order_by('nombre', 'id'))
+
+        q_objects = Q()
+
+        if filtros.get('q'):
+            termino = filtros['q']
+            q_objects &= (
+                Q(nombre__icontains=termino) |
+                Q(descripcion__icontains=termino)
+            )
+
+        if filtros.get('unidad_medida'):
+            q_objects &= Q(unidad_medida=filtros['unidad_medida'])
+
+        if filtros.get('producto_final_id'):
+            q_objects &= Q(producto_final_id=filtros['producto_final_id'])
+
+        if filtros.get('con_producto_final') is True:
+            q_objects &= Q(producto_final__isnull=False)
+
+        if filtros.get('con_producto_final') is False:
+            q_objects &= Q(producto_final__isnull=True)
+
+        if q_objects:
+            queryset = queryset.filter(q_objects)
+
+        ordering = filtros.get('ordering', 'nombre')
+        ordering_permitido = {
+            'nombre',
+            '-nombre',
+            'costo_unitario',
+            '-costo_unitario',
+            'precio_venta',
+            '-precio_venta',
+            'created_at',
+            '-created_at',
+        }
+        if ordering not in ordering_permitido:
+            ordering = 'nombre'
+
+        return list(queryset.order_by(ordering, 'id'))
+
+    @staticmethod
     def _validar_receta(receta: List[Dict[str, Any]]) -> None:
         if not receta:
             raise RecetaInvalidaError(
@@ -243,10 +316,106 @@ class ProductoFabricadoService:
 
     @staticmethod
     @transaction.atomic
+    def actualizar_producto(
+        producto_id: int,
+        data: Dict[str, Any],
+    ) -> ProductoFabricado:
+        producto = ProductoFabricadoService._obtener_producto(producto_id)
+
+        for campo, valor in data.items():
+            setattr(producto, campo, valor)
+
+        producto.save()
+        return ProductoFabricadoService._obtener_producto(producto.id)
+
+    @staticmethod
+    @transaction.atomic
+    def eliminar_producto(producto_id: int) -> None:
+        producto = ProductoFabricadoService._obtener_producto(producto_id)
+        producto.delete()
+
+    @staticmethod
+    @transaction.atomic
     def calcular_costos_producto(producto_id: int) -> ProductoFabricado:
         producto = ProductoFabricadoService._obtener_producto(producto_id)
         producto.save()
         return ProductoFabricadoService._obtener_producto(producto.id)
+
+    @staticmethod
+    def obtener_receta(producto_id: int) -> List[IngredientesProducto]:
+        producto = ProductoFabricadoService._obtener_producto(producto_id)
+        return list(producto.receta.all())
+
+    @staticmethod
+    @transaction.atomic
+    def agregar_ingrediente_receta(
+        producto_id: int,
+        data: Dict[str, Any],
+    ) -> IngredientesProducto:
+        producto = ProductoFabricadoService._obtener_producto(producto_id)
+        ingrediente = ProductoFabricadoService._obtener_ingrediente_desde_item(
+            data,
+        )
+
+        if producto.receta.filter(ingrediente=ingrediente).exists():
+            raise RecetaInvalidaError(
+                'El ingrediente ya esta asociado a este producto.'
+            )
+
+        receta = IngredientesProducto.objects.create(
+            producto_fabricado=producto,
+            ingrediente=ingrediente,
+            cantidad_necesaria=ProductoFabricadoService._to_decimal(
+                data.get('cantidad_necesaria'),
+                'cantidad_necesaria',
+            ),
+            unidad_medida=data.get('unidad_medida'),
+        )
+        return IngredientesProducto.objects.select_related(
+            'ingrediente',
+            'producto_fabricado',
+        ).get(pk=receta.pk)
+
+    @staticmethod
+    @transaction.atomic
+    def eliminar_ingrediente_receta(
+        producto_id: int,
+        ingrediente_id: int,
+    ) -> None:
+        producto = ProductoFabricadoService._obtener_producto(producto_id)
+        receta = producto.receta.filter(ingrediente_id=ingrediente_id).first()
+
+        if receta is None:
+            raise RecetaInvalidaError(
+                'El ingrediente indicado no pertenece a la receta.'
+            )
+
+        receta.delete()
+
+    @staticmethod
+    def obtener_desglose_costos(producto_id: int) -> Dict[str, Any]:
+        producto = ProductoFabricadoService.calcular_costos_producto(producto_id)
+        ingredientes = []
+
+        for item in producto.receta.all():
+            ingredientes.append({
+                'ingrediente_id': item.ingrediente_id,
+                'ingrediente_nombre': item.ingrediente.nombre,
+                'cantidad_necesaria': item.cantidad_necesaria,
+                'unidad_medida': item.unidad_medida,
+                'unidad_base_ingrediente': item.ingrediente.unidad_medida,
+                'precio_por_unidad': item.ingrediente.precio_por_unidad,
+                'costo_ingrediente': item.costo_ingrediente,
+            })
+
+        return {
+            'producto': producto,
+            'ingredientes': ingredientes,
+            'costo_produccion': producto.costo_produccion,
+            'costo_unitario': producto.costo_unitario,
+            'margen_utilidad': producto.margen_utilidad,
+            'porcentaje_utilidad': producto.porcentaje_utilidad,
+        }
 
     @staticmethod
     @transaction.atomic
@@ -434,6 +603,20 @@ def listar_ingredientes(
     return IngredienteService.listar_ingredientes(filtros)
 
 
+def actualizar_ingrediente(
+    ingrediente_id: int,
+    data: Dict[str, Any],
+) -> Ingrediente:
+    return IngredienteService.actualizar_ingrediente(
+        ingrediente_id,
+        data,
+    )
+
+
+def eliminar_ingrediente(ingrediente_id: int) -> None:
+    IngredienteService.eliminar_ingrediente(ingrediente_id)
+
+
 def actualizar_stock_ingrediente(
     ingrediente_id: int,
     cantidad: Any,
@@ -455,8 +638,36 @@ def crear_producto_fabricado(
     return ProductoFabricadoService.crear_producto_fabricado(data, receta)
 
 
+def listar_productos_fabricados(
+    filtros: Optional[Dict[str, Any]] = None,
+) -> List[ProductoFabricado]:
+    return ProductoFabricadoService.listar_productos(filtros)
+
+
+def obtener_producto_fabricado(producto_id: int) -> ProductoFabricado:
+    return ProductoFabricadoService.obtener_producto(producto_id)
+
+
+def actualizar_producto_fabricado(
+    producto_id: int,
+    data: Dict[str, Any],
+) -> ProductoFabricado:
+    return ProductoFabricadoService.actualizar_producto(
+        producto_id,
+        data,
+    )
+
+
+def eliminar_producto_fabricado(producto_id: int) -> None:
+    ProductoFabricadoService.eliminar_producto(producto_id)
+
+
 def calcular_costos_producto(producto_id: int) -> ProductoFabricado:
     return ProductoFabricadoService.calcular_costos_producto(producto_id)
+
+
+def obtener_desglose_costos_producto(producto_id: int) -> Dict[str, Any]:
+    return ProductoFabricadoService.obtener_desglose_costos(producto_id)
 
 
 def sugerir_precio_venta(
@@ -494,4 +705,30 @@ def convertir_a_producto_inventario(
 ) -> Producto:
     return ProductoFabricadoService.convertir_a_producto_inventario(
         producto_fabricado_id,
+    )
+
+
+def obtener_receta_producto(
+    producto_id: int,
+) -> List[IngredientesProducto]:
+    return ProductoFabricadoService.obtener_receta(producto_id)
+
+
+def agregar_ingrediente_a_receta(
+    producto_id: int,
+    data: Dict[str, Any],
+) -> IngredientesProducto:
+    return ProductoFabricadoService.agregar_ingrediente_receta(
+        producto_id,
+        data,
+    )
+
+
+def eliminar_ingrediente_de_receta(
+    producto_id: int,
+    ingrediente_id: int,
+) -> None:
+    ProductoFabricadoService.eliminar_ingrediente_receta(
+        producto_id,
+        ingrediente_id,
     )
