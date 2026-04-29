@@ -9,6 +9,8 @@ from fabricante.models import (
     Ingrediente,
     IngredientesProducto,
     InventarioIngredientes,
+    MovimientoEmpaquePresentacion,
+    PresentacionProductoFabricado,
     ProductoFabricado,
 )
 
@@ -181,7 +183,127 @@ class IngredientesProductoSerializer(serializers.ModelSerializer):
         return value
 
 
+class PresentacionProductoFabricadoSerializer(serializers.ModelSerializer):
+    producto_inventario_detalle = ProductoListSerializer(
+        source='producto_inventario',
+        read_only=True,
+    )
+    producto_inventario_id = serializers.PrimaryKeyRelatedField(
+        queryset=Producto.objects.all(),
+        source='producto_inventario',
+        write_only=True,
+        allow_null=True,
+        required=False,
+    )
+    producto_fabricado_id = serializers.PrimaryKeyRelatedField(
+        queryset=ProductoFabricado.objects.all(),
+        source='producto_fabricado',
+        write_only=True,
+        required=False,
+        allow_null=True,
+        default=None,
+    )
+
+    class Meta:
+        model = PresentacionProductoFabricado
+        fields = [
+            'id',
+            'producto_fabricado',
+            'producto_fabricado_id',
+            'nombre',
+            'cantidad_por_unidad',
+            'unidad_medida',
+            'costo_unitario_presentacion',
+            'precio_venta_sugerido',
+            'precio_venta',
+            'margen_utilidad',
+            'porcentaje_utilidad',
+            'producto_inventario',
+            'producto_inventario_id',
+            'producto_inventario_detalle',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'producto_fabricado',
+            'costo_unitario_presentacion',
+            'margen_utilidad',
+            'porcentaje_utilidad',
+            'producto_inventario',
+            'producto_inventario_detalle',
+            'created_at',
+            'updated_at',
+        ]
+
+    def validate_nombre(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError(
+                'El nombre de la presentacion es obligatorio.'
+            )
+        return value
+
+    def validate_cantidad_por_unidad(self, value):
+        if value <= 0:
+            raise serializers.ValidationError(
+                'La cantidad por unidad debe ser mayor que cero.'
+            )
+        return value
+
+    def validate_precio_venta_sugerido(self, value):
+        if value < 0:
+            raise serializers.ValidationError(
+                'El precio de venta sugerido no puede ser negativo.'
+            )
+        return value
+
+    def validate_precio_venta(self, value):
+        if value < 0:
+            raise serializers.ValidationError(
+                'El precio de venta no puede ser negativo.'
+            )
+        return value
+
+
+class MovimientoEmpaquePresentacionSerializer(serializers.ModelSerializer):
+    presentacion = PresentacionProductoFabricadoSerializer(read_only=True)
+    presentacion_id = serializers.PrimaryKeyRelatedField(
+        queryset=PresentacionProductoFabricado.objects.all(),
+        source='presentacion',
+        write_only=True,
+    )
+    usuario_nombre = serializers.CharField(
+        source='usuario.get_full_name',
+        read_only=True,
+    )
+
+    class Meta:
+        model = MovimientoEmpaquePresentacion
+        fields = [
+            'id',
+            'presentacion',
+            'presentacion_id',
+            'cantidad_unidades',
+            'cantidad_consumida_lote',
+            'fecha_empaque',
+            'usuario',
+            'usuario_nombre',
+        ]
+        read_only_fields = [
+            'id',
+            'presentacion',
+            'cantidad_consumida_lote',
+            'usuario',
+            'usuario_nombre',
+        ]
+
+
 class ProductoFabricadoSerializer(serializers.ModelSerializer):
+    presentaciones = PresentacionProductoFabricadoSerializer(
+        many=True,
+        read_only=True,
+    )
     producto_final_detalle = ProductoListSerializer(
         source='producto_final',
         read_only=True,
@@ -198,6 +320,10 @@ class ProductoFabricadoSerializer(serializers.ModelSerializer):
         source='receta.count',
         read_only=True,
     )
+    presentaciones_count = serializers.IntegerField(
+        source='presentaciones.count',
+        read_only=True,
+    )
 
     class Meta:
         model = ProductoFabricado
@@ -207,6 +333,8 @@ class ProductoFabricadoSerializer(serializers.ModelSerializer):
             'descripcion',
             'unidad_medida',
             'cantidad_producida',
+            'stock_fabricado_disponible',
+            'total_producido_acumulado',
             'costo_produccion',
             'costo_unitario',
             'precio_venta_sugerido',
@@ -219,11 +347,15 @@ class ProductoFabricadoSerializer(serializers.ModelSerializer):
             'producto_final_detalle',
             'disponibilidad_ingredientes',
             'receta_count',
+            'presentaciones_count',
+            'presentaciones',
             'created_at',
             'updated_at',
         ]
         read_only_fields = [
             'id',
+            'stock_fabricado_disponible',
+            'total_producido_acumulado',
             'costo_produccion',
             'costo_unitario',
             'margen_utilidad',
@@ -232,6 +364,8 @@ class ProductoFabricadoSerializer(serializers.ModelSerializer):
             'producto_final_detalle',
             'disponibilidad_ingredientes',
             'receta_count',
+            'presentaciones_count',
+            'presentaciones',
             'created_at',
             'updated_at',
         ]
@@ -272,4 +406,6 @@ class ProductoFabricadoDetailSerializer(ProductoFabricadoSerializer):
     receta = IngredientesProductoSerializer(many=True, read_only=True)
 
     class Meta(ProductoFabricadoSerializer.Meta):
-        fields = ProductoFabricadoSerializer.Meta.fields + ['receta']
+        fields = ProductoFabricadoSerializer.Meta.fields + [
+            'receta',
+        ]

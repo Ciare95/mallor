@@ -4,6 +4,8 @@ from fabricante.models import (
     Ingrediente,
     IngredientesProducto,
     InventarioIngredientes,
+    MovimientoEmpaquePresentacion,
+    PresentacionProductoFabricado,
     ProductoFabricado,
 )
 
@@ -45,12 +47,20 @@ class IngredientesProductoInline(admin.TabularInline):
     autocomplete_fields = ('ingrediente',)
 
 
+class PresentacionProductoFabricadoInline(admin.TabularInline):
+    model = PresentacionProductoFabricado
+    extra = 1
+    autocomplete_fields = ('producto_inventario',)
+
+
 @admin.register(ProductoFabricado)
 class ProductoFabricadoAdmin(admin.ModelAdmin):
     list_display = (
         'nombre',
         'unidad_medida',
         'cantidad_producida',
+        'stock_fabricado_disponible',
+        'total_producido_acumulado',
         'costo_produccion',
         'costo_unitario',
         'precio_venta',
@@ -62,7 +72,7 @@ class ProductoFabricadoAdmin(admin.ModelAdmin):
     search_fields = ('nombre', 'descripcion', 'producto_final__nombre')
     autocomplete_fields = ('producto_final',)
     ordering = ('nombre',)
-    inlines = (IngredientesProductoInline,)
+    inlines = (IngredientesProductoInline, PresentacionProductoFabricadoInline)
 
 
 @admin.register(IngredientesProducto)
@@ -81,3 +91,39 @@ class IngredientesProductoAdmin(admin.ModelAdmin):
     )
     autocomplete_fields = ('producto_fabricado', 'ingrediente')
     ordering = ('producto_fabricado', 'ingrediente')
+
+
+@admin.register(PresentacionProductoFabricado)
+class PresentacionProductoFabricadoAdmin(admin.ModelAdmin):
+    list_display = (
+        'nombre',
+        'producto_fabricado',
+        'cantidad_por_unidad',
+        'unidad_medida',
+        'costo_unitario_presentacion',
+        'precio_venta',
+        'porcentaje_utilidad',
+        'producto_inventario',
+    )
+    list_filter = ('unidad_medida',)
+    search_fields = ('nombre', 'producto_fabricado__nombre')
+    autocomplete_fields = ('producto_fabricado', 'producto_inventario')
+    ordering = ('producto_fabricado', 'nombre')
+
+
+@admin.register(MovimientoEmpaquePresentacion)
+class MovimientoEmpaquePresentacionAdmin(admin.ModelAdmin):
+    list_display = (
+        'presentacion',
+        'cantidad_unidades',
+        'cantidad_consumida_lote',
+        'fecha_empaque',
+        'usuario',
+    )
+    list_filter = ('fecha_empaque',)
+    search_fields = (
+        'presentacion__nombre',
+        'presentacion__producto_fabricado__nombre',
+    )
+    autocomplete_fields = ('presentacion', 'usuario')
+    ordering = ('-fecha_empaque', '-id')

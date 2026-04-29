@@ -21,24 +21,31 @@ from usuario.utils import RolePermissionMixin
 from .serializers import (
     IngredienteSerializer,
     IngredientesProductoSerializer,
+    MovimientoEmpaquePresentacionSerializer,
+    PresentacionProductoFabricadoSerializer,
     ProductoFabricadoDetailSerializer,
     ProductoFabricadoSerializer,
 )
 from .services import (
     actualizar_ingrediente,
+    actualizar_presentacion_producto,
     actualizar_producto_fabricado,
     actualizar_stock_ingrediente,
     agregar_ingrediente_a_receta,
     calcular_costos_producto,
     convertir_a_producto_inventario,
     crear_ingrediente,
+    crear_presentacion_producto,
     crear_producto_fabricado,
+    eliminar_presentacion_producto,
     eliminar_ingrediente,
     eliminar_ingrediente_de_receta,
     eliminar_producto_fabricado,
+    empacar_presentacion_producto,
     ingredientes_bajo_stock,
     listar_ingredientes,
     listar_productos_fabricados,
+    obtener_presentaciones_producto,
     obtener_desglose_costos_producto,
     obtener_producto_fabricado,
     obtener_receta_producto,
@@ -355,6 +362,9 @@ class ProductoFabricadoViewSet(RolePermissionMixin, viewsets.ModelViewSet):
         'partial_update': ProductoFabricadoSerializer,
         'receta': IngredientesProductoSerializer,
         'eliminar_ingrediente_receta': IngredientesProductoSerializer,
+        'presentaciones': PresentacionProductoFabricadoSerializer,
+        'detalle_presentacion': PresentacionProductoFabricadoSerializer,
+        'empacar_presentacion': MovimientoEmpaquePresentacionSerializer,
     }
 
     def get_serializer_class(self):
@@ -397,6 +407,9 @@ class ProductoFabricadoViewSet(RolePermissionMixin, viewsets.ModelViewSet):
         try:
             data = request.data.copy()
             receta_data = _normalize_nested_data(data.pop('receta', None))
+            presentaciones_data = _normalize_nested_data(
+                data.pop('presentaciones', None),
+            )
             serializer = ProductoFabricadoSerializer(data=data)
             serializer.is_valid(raise_exception=True)
             receta_serializer = IngredientesProductoSerializer(
@@ -404,10 +417,16 @@ class ProductoFabricadoViewSet(RolePermissionMixin, viewsets.ModelViewSet):
                 many=True,
             )
             receta_serializer.is_valid(raise_exception=True)
+            presentaciones_serializer = PresentacionProductoFabricadoSerializer(
+                data=presentaciones_data,
+                many=True,
+            )
+            presentaciones_serializer.is_valid(raise_exception=True)
 
             producto = crear_producto_fabricado(
                 serializer.validated_data,
                 receta_serializer.validated_data,
+                presentaciones_serializer.validated_data,
             )
             response_serializer = ProductoFabricadoDetailSerializer(
                 producto,
@@ -725,6 +744,111 @@ class ProductoFabricadoViewSet(RolePermissionMixin, viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+    @action(detail=True, methods=['get', 'post'], url_path='presentaciones')
+    def presentaciones(self, request: Request, pk: int = None) -> Response:
+        if request.method.lower() == 'get':
+            return self._listar_presentaciones(request, pk)
+        return self._crear_presentacion(request, pk)
+
+    @action(
+        detail=True,
+        methods=['patch', 'delete'],
+        url_path=r'presentaciones/(?P<presentacion_id>[^/.]+)',
+    )
+    def detalle_presentacion(
+        self,
+        request: Request,
+        pk: int = None,
+        presentacion_id: int = None,
+    ) -> Response:
+        if request.method.lower() == 'delete':
+            return self._eliminar_presentacion(request, pk, presentacion_id)
+        return self._actualizar_presentacion(request, pk, presentacion_id)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path=(
+            r'presentaciones/(?P<presentacion_id>[^/.]+)/empacar'
+        ),
+    )
+    def empacar_presentacion(
+        self,
+        request: Request,
+        pk: int = None,
+        presentacion_id: int = None,
+    ) -> Response:
+        try:
+            cantidad_unidades = request.data.get('cantidad_unidades')
+            if cantidad_unidades is None:
+                return Response(
+                    {'error': _('El campo cantidad_unidades es requerido.')},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            resultado = empacar_presentacion_producto(
+                int(pk),
+                int(presentacion_id),
+                cantidad_unidades,
+                usuario=request.user,
+            )
+            movimiento_serializer = MovimientoEmpaquePresentacionSerializer(
+                resultado['movimiento'],
+                context={'request': request},
+            )
+            producto_serializer = ProductoFabricadoDetailSerializer(
+                resultado['producto'],
+                context={'request': request},
+            )
+            return Response({
+                'movimiento': movimiento_serializer.data,
+                'producto': producto_serializer.data,
+                'cantidad_unidades': str(resultado['cantidad_unidades']),
+                'cantidad_consumida_lote': str(
+                    resultado['cantidad_consumida_lote']
+                ),
+                'producto_inventario': {
+                    'id': resultado['producto_inventario'].id,
+                    'nombre': resultado['producto_inventario'].nombre,
+                    'existencias': str(
+                        resultado['producto_inventario'].existencias
+                    ),
+                },
+            })
+        except (
+            RecetaInvalidaError,
+            ProduccionNoPermitidaError,
+            ProductoFabricadoNoEncontradoError,
+        ) as exc:
+            status_code = (
+                status.HTTP_404_NOT_FOUND
+                if isinstance(exc, ProductoFabricadoNoEncontradoError)
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({'error': exc.message}, status=status_code)
+        except ProtectedError:
+            return Response(
+                {
+                    'error': _(
+                        'No se puede eliminar la presentacion porque ya tiene '
+                        'movimientos de empaque asociados.'
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except ValueError:
+            return Response(
+                {'error': _('IDs de producto o presentacion invalidos')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:
+            return Response(
+                {'error': _('Error al empacar presentacion: %(error)s') % {
+                    'error': str(exc),
+                }},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
     @action(detail=True, methods=['get', 'post'], url_path='receta')
     def receta(self, request: Request, pk: int = None) -> Response:
         if request.method.lower() == 'get':
@@ -763,6 +887,154 @@ class ProductoFabricadoViewSet(RolePermissionMixin, viewsets.ModelViewSet):
         except Exception as exc:
             return Response(
                 {'error': _('Error al eliminar ingrediente de receta: %(error)s') % {
+                    'error': str(exc),
+                }},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    def _listar_presentaciones(self, request: Request, pk: int) -> Response:
+        try:
+            presentaciones = obtener_presentaciones_producto(int(pk))
+            serializer = PresentacionProductoFabricadoSerializer(
+                presentaciones,
+                many=True,
+                context={'request': request},
+            )
+            return Response(serializer.data)
+        except ProductoFabricadoNoEncontradoError as exc:
+            return Response(
+                {'error': exc.message},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except ValueError:
+            return Response(
+                {'error': _('ID de producto fabricado invalido')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    def _crear_presentacion(self, request: Request, pk: int) -> Response:
+        try:
+            serializer = PresentacionProductoFabricadoSerializer(
+                data=request.data,
+            )
+            serializer.is_valid(raise_exception=True)
+            presentacion = crear_presentacion_producto(
+                int(pk),
+                serializer.validated_data,
+            )
+            response_serializer = PresentacionProductoFabricadoSerializer(
+                presentacion,
+                context={'request': request},
+            )
+            return Response(
+                response_serializer.data,
+                status=status.HTTP_201_CREATED,
+            )
+        except (
+            ProductoFabricadoNoEncontradoError,
+            RecetaInvalidaError,
+            ValidationError,
+            DRFValidationError,
+        ) as exc:
+            status_code = (
+                status.HTTP_404_NOT_FOUND
+                if isinstance(exc, ProductoFabricadoNoEncontradoError)
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response(
+                {'error': getattr(exc, 'message', str(exc))},
+                status=status_code,
+            )
+        except ValueError:
+            return Response(
+                {'error': _('ID de producto fabricado invalido')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:
+            return Response(
+                {'error': _('Error al crear presentacion: %(error)s') % {
+                    'error': str(exc),
+                }},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    def _actualizar_presentacion(
+        self,
+        request: Request,
+        pk: int,
+        presentacion_id: int,
+    ) -> Response:
+        try:
+            serializer = PresentacionProductoFabricadoSerializer(
+                data=request.data,
+                partial=True,
+            )
+            serializer.is_valid(raise_exception=True)
+            presentacion = actualizar_presentacion_producto(
+                int(pk),
+                int(presentacion_id),
+                serializer.validated_data,
+            )
+            response_serializer = PresentacionProductoFabricadoSerializer(
+                presentacion,
+                context={'request': request},
+            )
+            return Response(response_serializer.data)
+        except (
+            ProductoFabricadoNoEncontradoError,
+            RecetaInvalidaError,
+            ValidationError,
+            DRFValidationError,
+        ) as exc:
+            status_code = (
+                status.HTTP_404_NOT_FOUND
+                if isinstance(exc, ProductoFabricadoNoEncontradoError)
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response(
+                {'error': getattr(exc, 'message', str(exc))},
+                status=status_code,
+            )
+        except ValueError:
+            return Response(
+                {'error': _('IDs de producto o presentacion invalidos')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:
+            return Response(
+                {'error': _('Error al actualizar presentacion: %(error)s') % {
+                    'error': str(exc),
+                }},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+    def _eliminar_presentacion(
+        self,
+        request: Request,
+        pk: int,
+        presentacion_id: int,
+    ) -> Response:
+        try:
+            eliminar_presentacion_producto(int(pk), int(presentacion_id))
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except (
+            ProductoFabricadoNoEncontradoError,
+            RecetaInvalidaError,
+        ) as exc:
+            status_code = (
+                status.HTTP_404_NOT_FOUND
+                if isinstance(exc, ProductoFabricadoNoEncontradoError)
+                else status.HTTP_400_BAD_REQUEST
+            )
+            return Response({'error': exc.message}, status=status_code)
+        except ValueError:
+            return Response(
+                {'error': _('IDs de producto o presentacion invalidos')},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:
+            return Response(
+                {'error': _('Error al eliminar presentacion: %(error)s') % {
                     'error': str(exc),
                 }},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -15,6 +15,8 @@ from fabricante.models import (
     COST_QUANTIZER,
     Ingrediente,
     IngredientesProducto,
+    MovimientoEmpaquePresentacion,
+    PresentacionProductoFabricado,
     ProductoFabricado,
 )
 from fabricante.utils import convertir_unidad
@@ -185,7 +187,13 @@ class ProductoFabricadoService:
                 queryset=IngredientesProducto.objects.select_related(
                     'ingrediente',
                 ),
-            )
+            ),
+            Prefetch(
+                'presentaciones',
+                queryset=PresentacionProductoFabricado.objects.select_related(
+                    'producto_inventario',
+                ),
+            ),
         )
 
     @staticmethod
@@ -288,12 +296,73 @@ class ProductoFabricadoService:
         return IngredienteService.obtener_ingrediente(int(ingrediente_id))
 
     @staticmethod
+    def _normalizar_presentaciones(
+        presentaciones: Optional[List[Dict[str, Any]]],
+    ) -> List[Dict[str, Any]]:
+        if not presentaciones:
+            return []
+
+        nombres = set()
+        normalizadas = []
+        for item in presentaciones:
+            nombre = str(item.get('nombre', '')).strip()
+            if not nombre:
+                raise RecetaInvalidaError(
+                    'Cada presentacion debe incluir un nombre.'
+                )
+            nombre_normalizado = nombre.lower()
+            if nombre_normalizado in nombres:
+                raise RecetaInvalidaError(
+                    'No puede repetir presentaciones dentro del mismo '
+                    'producto fabricado.'
+                )
+            nombres.add(nombre_normalizado)
+            normalizadas.append({
+                **item,
+                'nombre': nombre,
+            })
+
+        return normalizadas
+
+    @staticmethod
+    def _sincronizar_precio_referencia_desde_presentaciones(
+        producto: ProductoFabricado,
+    ) -> None:
+        presentacion_referencia = producto.presentaciones.order_by(
+            'cantidad_por_unidad',
+            'id',
+        ).first()
+        if presentacion_referencia is None:
+            return
+
+        producto.precio_venta = presentacion_referencia.precio_venta
+        producto.precio_venta_sugerido = (
+            presentacion_referencia.precio_venta_sugerido
+        )
+        producto.save()
+
+    @staticmethod
+    def _construir_nombre_presentacion_inventario(
+        presentacion: PresentacionProductoFabricado,
+    ) -> str:
+        return (
+            f'{presentacion.producto_fabricado.nombre} - '
+            f'{presentacion.nombre}'
+        ).strip()
+
+    @staticmethod
     @transaction.atomic
     def crear_producto_fabricado(
         data: Dict[str, Any],
         receta: List[Dict[str, Any]],
+        presentaciones: Optional[List[Dict[str, Any]]] = None,
     ) -> ProductoFabricado:
         ProductoFabricadoService._validar_receta(receta)
+        presentaciones_normalizadas = (
+            ProductoFabricadoService._normalizar_presentaciones(
+                presentaciones,
+            )
+        )
 
         producto = ProductoFabricado.objects.create(**data)
 
@@ -311,7 +380,30 @@ class ProductoFabricadoService:
                 unidad_medida=item.get('unidad_medida'),
             )
 
+        for item in presentaciones_normalizadas:
+            PresentacionProductoFabricado.objects.create(
+                producto_fabricado=producto,
+                nombre=item.get('nombre'),
+                cantidad_por_unidad=ProductoFabricadoService._to_decimal(
+                    item.get('cantidad_por_unidad'),
+                    'cantidad_por_unidad',
+                ),
+                unidad_medida=item.get('unidad_medida'),
+                precio_venta_sugerido=ProductoFabricadoService._to_decimal(
+                    item.get('precio_venta_sugerido', ZERO),
+                    'precio_venta_sugerido',
+                ).quantize(INVENTORY_QUANTIZER),
+                precio_venta=ProductoFabricadoService._to_decimal(
+                    item.get('precio_venta', ZERO),
+                    'precio_venta',
+                ).quantize(INVENTORY_QUANTIZER),
+            )
+
         producto.save()
+        if presentaciones_normalizadas:
+            ProductoFabricadoService._sincronizar_precio_referencia_desde_presentaciones(
+                producto,
+            )
         return ProductoFabricadoService._obtener_producto(producto.id)
 
     @staticmethod
@@ -345,6 +437,117 @@ class ProductoFabricadoService:
     def obtener_receta(producto_id: int) -> List[IngredientesProducto]:
         producto = ProductoFabricadoService._obtener_producto(producto_id)
         return list(producto.receta.all())
+
+    @staticmethod
+    def obtener_presentaciones(
+        producto_id: int,
+    ) -> List[PresentacionProductoFabricado]:
+        producto = ProductoFabricadoService._obtener_producto(producto_id)
+        return list(producto.presentaciones.all())
+
+    @staticmethod
+    def _obtener_presentacion(
+        producto_id: int,
+        presentacion_id: int,
+    ) -> PresentacionProductoFabricado:
+        producto = ProductoFabricadoService._obtener_producto(producto_id)
+        presentacion = producto.presentaciones.filter(pk=presentacion_id).first()
+
+        if presentacion is None:
+            raise RecetaInvalidaError(
+                'La presentacion indicada no pertenece al producto fabricado.'
+            )
+
+        return presentacion
+
+    @staticmethod
+    @transaction.atomic
+    def crear_presentacion(
+        producto_id: int,
+        data: Dict[str, Any],
+    ) -> PresentacionProductoFabricado:
+        producto = ProductoFabricadoService._obtener_producto(producto_id)
+        nombre = str(data.get('nombre', '')).strip()
+
+        if producto.presentaciones.filter(nombre__iexact=nombre).exists():
+            raise RecetaInvalidaError(
+                'Ya existe una presentacion con ese nombre.'
+            )
+
+        presentacion = PresentacionProductoFabricado.objects.create(
+            producto_fabricado=producto,
+            nombre=nombre,
+            cantidad_por_unidad=ProductoFabricadoService._to_decimal(
+                data.get('cantidad_por_unidad'),
+                'cantidad_por_unidad',
+            ),
+            unidad_medida=data.get('unidad_medida'),
+            precio_venta_sugerido=ProductoFabricadoService._to_decimal(
+                data.get('precio_venta_sugerido', ZERO),
+                'precio_venta_sugerido',
+            ).quantize(INVENTORY_QUANTIZER),
+            precio_venta=ProductoFabricadoService._to_decimal(
+                data.get('precio_venta', ZERO),
+                'precio_venta',
+            ).quantize(INVENTORY_QUANTIZER),
+        )
+        ProductoFabricadoService._sincronizar_precio_referencia_desde_presentaciones(
+            producto,
+        )
+        return PresentacionProductoFabricado.objects.select_related(
+            'producto_fabricado',
+            'producto_inventario',
+        ).get(pk=presentacion.pk)
+
+    @staticmethod
+    @transaction.atomic
+    def actualizar_presentacion(
+        producto_id: int,
+        presentacion_id: int,
+        data: Dict[str, Any],
+    ) -> PresentacionProductoFabricado:
+        presentacion = ProductoFabricadoService._obtener_presentacion(
+            producto_id,
+            presentacion_id,
+        )
+
+        nombre = str(data.get('nombre', presentacion.nombre)).strip()
+        queryset = presentacion.producto_fabricado.presentaciones.exclude(
+            pk=presentacion.pk,
+        )
+        if queryset.filter(nombre__iexact=nombre).exists():
+            raise RecetaInvalidaError(
+                'Ya existe una presentacion con ese nombre.'
+            )
+
+        for campo, valor in data.items():
+            setattr(presentacion, campo, valor)
+
+        presentacion.nombre = nombre
+        presentacion.save()
+        ProductoFabricadoService._sincronizar_precio_referencia_desde_presentaciones(
+            presentacion.producto_fabricado,
+        )
+        return PresentacionProductoFabricado.objects.select_related(
+            'producto_fabricado',
+            'producto_inventario',
+        ).get(pk=presentacion.pk)
+
+    @staticmethod
+    @transaction.atomic
+    def eliminar_presentacion(
+        producto_id: int,
+        presentacion_id: int,
+    ) -> None:
+        presentacion = ProductoFabricadoService._obtener_presentacion(
+            producto_id,
+            presentacion_id,
+        )
+        producto = presentacion.producto_fabricado
+        presentacion.delete()
+        ProductoFabricadoService._sincronizar_precio_referencia_desde_presentaciones(
+            producto,
+        )
 
     @staticmethod
     @transaction.atomic
@@ -527,11 +730,26 @@ class ProductoFabricadoService:
             ).quantize(COST_QUANTIZER)
             ingrediente.save(update_fields=['stock_actual', 'updated_at'])
 
+        cantidad_producida = validacion['cantidad_total_producida']
+        producto.stock_fabricado_disponible = (
+            producto.stock_fabricado_disponible + cantidad_producida
+        ).quantize(COST_QUANTIZER)
+        producto.total_producido_acumulado = (
+            producto.total_producido_acumulado + cantidad_producida
+        ).quantize(COST_QUANTIZER)
+        producto.save(
+            update_fields=[
+                'stock_fabricado_disponible',
+                'total_producido_acumulado',
+                'updated_at',
+            ],
+        )
+
         producto_inventario = None
-        if producto.producto_final_id:
+        if producto.producto_final_id and not producto.presentaciones.exists():
             producto_inventario = producto.producto_final
             producto_inventario.actualizar_stock(
-                validacion['cantidad_total_producida'].quantize(
+                cantidad_producida.quantize(
                     INVENTORY_QUANTIZER,
                 )
             )
@@ -539,9 +757,77 @@ class ProductoFabricadoService:
         return {
             'producto': ProductoFabricadoService._obtener_producto(producto.id),
             'cantidad_lotes': validacion['cantidad_lotes'],
-            'cantidad_total_producida': validacion['cantidad_total_producida'],
+            'cantidad_total_producida': cantidad_producida,
             'ingredientes_consumidos': validacion['consumos'],
             'producto_inventario': producto_inventario,
+        }
+
+    @staticmethod
+    @transaction.atomic
+    def empacar_presentacion(
+        producto_id: int,
+        presentacion_id: int,
+        cantidad_unidades: Any,
+        usuario=None,
+    ) -> Dict[str, Any]:
+        presentacion = ProductoFabricadoService._obtener_presentacion(
+            producto_id,
+            presentacion_id,
+        )
+        producto = presentacion.producto_fabricado
+        unidades = ProductoFabricadoService._to_decimal(
+            cantidad_unidades,
+            'cantidad_unidades',
+        ).quantize(COST_QUANTIZER)
+
+        if unidades <= ZERO_QUANTITY:
+            raise ProduccionNoPermitidaError(
+                'La cantidad a empacar debe ser mayor que cero.'
+            )
+
+        cantidad_consumida_lote = (
+            presentacion.calcular_cantidad_consumida_lote() * unidades
+        ).quantize(COST_QUANTIZER)
+
+        if producto.stock_fabricado_disponible < cantidad_consumida_lote:
+            raise ProduccionNoPermitidaError(
+                'No hay stock fabricado suficiente para completar el empaque.'
+            )
+
+        producto_inventario = (
+            ProductoFabricadoService.convertir_presentacion_a_inventario(
+                producto_id,
+                presentacion_id,
+            )
+        )
+        presentacion.refresh_from_db()
+
+        producto.stock_fabricado_disponible = (
+            producto.stock_fabricado_disponible - cantidad_consumida_lote
+        ).quantize(COST_QUANTIZER)
+        producto.save(update_fields=['stock_fabricado_disponible', 'updated_at'])
+
+        producto_inventario.actualizar_stock(
+            unidades.quantize(INVENTORY_QUANTIZER),
+        )
+
+        movimiento = MovimientoEmpaquePresentacion.objects.create(
+            presentacion=presentacion,
+            cantidad_unidades=unidades,
+            cantidad_consumida_lote=cantidad_consumida_lote,
+            usuario=usuario if getattr(usuario, 'is_authenticated', False) else None,
+        )
+
+        return {
+            'producto': ProductoFabricadoService._obtener_producto(producto.id),
+            'presentacion': PresentacionProductoFabricado.objects.select_related(
+                'producto_fabricado',
+                'producto_inventario',
+            ).get(pk=presentacion.pk),
+            'movimiento': movimiento,
+            'producto_inventario': producto_inventario,
+            'cantidad_unidades': unidades,
+            'cantidad_consumida_lote': cantidad_consumida_lote,
         }
 
     @staticmethod
@@ -592,6 +878,62 @@ class ProductoFabricadoService:
 
         return producto_inventario
 
+    @staticmethod
+    @transaction.atomic
+    def convertir_presentacion_a_inventario(
+        producto_id: int,
+        presentacion_id: int,
+    ) -> Producto:
+        presentacion = ProductoFabricadoService._obtener_presentacion(
+            producto_id,
+            presentacion_id,
+        )
+
+        if presentacion.costo_unitario_presentacion <= ZERO_QUANTITY:
+            raise ProduccionNoPermitidaError(
+                'La presentacion debe tener un costo unitario valido antes '
+                'de vincularse a inventario.'
+            )
+
+        precio_compra = presentacion.costo_unitario_presentacion.quantize(
+            INVENTORY_QUANTIZER,
+        )
+        precio_venta = (
+            presentacion.precio_venta or
+            presentacion.precio_venta_sugerido or
+            precio_compra
+        ).quantize(INVENTORY_QUANTIZER)
+
+        datos_producto = {
+            'nombre': (
+                ProductoFabricadoService
+                ._construir_nombre_presentacion_inventario(presentacion)
+            ),
+            'descripcion': (
+                f'{presentacion.producto_fabricado.nombre} · '
+                f'{presentacion.cantidad_por_unidad} '
+                f'{presentacion.unidad_medida}'
+            ),
+            'precio_compra': precio_compra,
+            'precio_venta': precio_venta,
+            'iva': ZERO,
+        }
+
+        if presentacion.producto_inventario_id:
+            producto_inventario = presentacion.producto_inventario
+            for campo, valor in datos_producto.items():
+                setattr(producto_inventario, campo, valor)
+            producto_inventario.save()
+        else:
+            producto_inventario = Producto.objects.create(
+                existencias=ZERO,
+                **datos_producto,
+            )
+            presentacion.producto_inventario = producto_inventario
+            presentacion.save(update_fields=['producto_inventario', 'updated_at'])
+
+        return producto_inventario
+
 
 def crear_ingrediente(data: Dict[str, Any]) -> Ingrediente:
     return IngredienteService.crear_ingrediente(data)
@@ -634,8 +976,13 @@ def ingredientes_bajo_stock() -> List[Ingrediente]:
 def crear_producto_fabricado(
     data: Dict[str, Any],
     receta: List[Dict[str, Any]],
+    presentaciones: Optional[List[Dict[str, Any]]] = None,
 ) -> ProductoFabricado:
-    return ProductoFabricadoService.crear_producto_fabricado(data, receta)
+    return ProductoFabricadoService.crear_producto_fabricado(
+        data,
+        receta,
+        presentaciones,
+    )
 
 
 def listar_productos_fabricados(
@@ -731,4 +1078,53 @@ def eliminar_ingrediente_de_receta(
     ProductoFabricadoService.eliminar_ingrediente_receta(
         producto_id,
         ingrediente_id,
+    )
+
+
+def obtener_presentaciones_producto(
+    producto_id: int,
+) -> List[PresentacionProductoFabricado]:
+    return ProductoFabricadoService.obtener_presentaciones(producto_id)
+
+
+def crear_presentacion_producto(
+    producto_id: int,
+    data: Dict[str, Any],
+) -> PresentacionProductoFabricado:
+    return ProductoFabricadoService.crear_presentacion(producto_id, data)
+
+
+def actualizar_presentacion_producto(
+    producto_id: int,
+    presentacion_id: int,
+    data: Dict[str, Any],
+) -> PresentacionProductoFabricado:
+    return ProductoFabricadoService.actualizar_presentacion(
+        producto_id,
+        presentacion_id,
+        data,
+    )
+
+
+def eliminar_presentacion_producto(
+    producto_id: int,
+    presentacion_id: int,
+) -> None:
+    ProductoFabricadoService.eliminar_presentacion(
+        producto_id,
+        presentacion_id,
+    )
+
+
+def empacar_presentacion_producto(
+    producto_id: int,
+    presentacion_id: int,
+    cantidad_unidades: Any,
+    usuario=None,
+) -> Dict[str, Any]:
+    return ProductoFabricadoService.empacar_presentacion(
+        producto_id,
+        presentacion_id,
+        cantidad_unidades,
+        usuario=usuario,
     )

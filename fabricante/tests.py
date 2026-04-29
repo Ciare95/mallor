@@ -9,12 +9,20 @@ from inventario.models import Producto
 from proveedor.models import Proveedor
 from usuario.models import Usuario
 
-from fabricante.models import Ingrediente, IngredientesProducto, ProductoFabricado
+from fabricante.models import (
+    Ingrediente,
+    IngredientesProducto,
+    PresentacionProductoFabricado,
+    ProductoFabricado,
+)
 from fabricante.serializers import (
     IngredienteSerializer,
     ProductoFabricadoDetailSerializer,
 )
-from fabricante.services import IngredienteService, ProductoFabricadoService
+from fabricante.services import (
+    IngredienteService,
+    ProductoFabricadoService,
+)
 from fabricante.utils import (
     calcular_costo_por_unidad_destino,
     convertir_unidad,
@@ -35,16 +43,22 @@ class ConversionUnidadesUtilsTest(SimpleTestCase):
             validar_compatibilidad_unidades('GALONES', 'MILILITROS')
         )
         self.assertTrue(
+            validar_compatibilidad_unidades('GARRAFAS', 'LITROS')
+        )
+        self.assertTrue(
             validar_compatibilidad_unidades('LIBRAS', 'GRAMOS')
+        )
+        self.assertTrue(
+            validar_compatibilidad_unidades('GALONES', 'GRAMOS')
+        )
+        self.assertTrue(
+            validar_compatibilidad_unidades('KILOGRAMOS', 'LITROS')
         )
 
     def test_validar_compatibilidad_unidades_incompatibles(self):
         """
         Verifica que unidades de distinto tipo no sean compatibles.
         """
-        self.assertFalse(
-            validar_compatibilidad_unidades('GALONES', 'GRAMOS')
-        )
         self.assertFalse(
             validar_compatibilidad_unidades('UNIDADES', 'LITROS')
         )
@@ -53,6 +67,10 @@ class ConversionUnidadesUtilsTest(SimpleTestCase):
         """
         Verifica conversiones de volumen soportadas.
         """
+        self.assertEqual(
+            convertir_unidad(Decimal('1'), 'GARRAFAS', 'GALONES'),
+            Decimal('5.0000'),
+        )
         self.assertEqual(
             convertir_unidad(Decimal('1'), 'GALONES', 'LITROS'),
             Decimal('3.7854'),
@@ -83,12 +101,29 @@ class ConversionUnidadesUtilsTest(SimpleTestCase):
             Decimal('28.3495'),
         )
 
+    def test_convertir_unidad_liquidos_entre_volumen_y_masa(self):
+        """
+        Verifica conversiones liquidas usando equivalencia 1 ml = 1 g.
+        """
+        self.assertEqual(
+            convertir_unidad(Decimal('1'), 'GALONES', 'GRAMOS'),
+            Decimal('3785.4118'),
+        )
+        self.assertEqual(
+            convertir_unidad(Decimal('500'), 'GRAMOS', 'GALONES'),
+            Decimal('0.1321'),
+        )
+        self.assertEqual(
+            convertir_unidad(Decimal('1'), 'KILOGRAMOS', 'LITROS'),
+            Decimal('1.0000'),
+        )
+
     def test_convertir_unidad_incompatible_lanza_error(self):
         """
         Verifica que las conversiones incompatibles fallen.
         """
         with self.assertRaises(ValueError):
-            convertir_unidad(Decimal('1'), 'LITROS', 'GRAMOS')
+            convertir_unidad(Decimal('1'), 'UNIDADES', 'GRAMOS')
 
     def test_calcular_costo_por_unidad_destino(self):
         """
@@ -107,6 +142,18 @@ class ConversionUnidadesUtilsTest(SimpleTestCase):
             ),
             Decimal('1320.8500'),
         )
+
+    def test_calcular_costo_por_unidad_destino_desde_garrafa(self):
+        """
+        Verifica el costo equivalente desde una garrafa de 5 galones.
+        """
+        costo_por_litro = calcular_costo_por_unidad_destino(
+            Decimal('50000'),
+            'GARRAFAS',
+            'LITROS',
+        )
+
+        self.assertEqual(costo_por_litro, Decimal('2641.7148'))
 
 
 class IngredientesProductoConversionTest(TestCase):
@@ -175,6 +222,23 @@ class IngredientesProductoConversionTest(TestCase):
 
         self.producto_fabricado.refresh_from_db()
         self.assertFalse(
+            self.producto_fabricado.validar_disponibilidad_ingredientes()
+        )
+
+    def test_validar_disponibilidad_ingredientes_galones_a_gramos(self):
+        """
+        Verifica equivalencia liquida entre galones y gramos.
+        """
+        IngredientesProducto.objects.create(
+            producto_fabricado=self.producto_fabricado,
+            ingrediente=self.ingrediente,
+            cantidad_necesaria=Decimal('500'),
+            unidad_medida=Ingrediente.UnidadMedida.GRAMOS,
+        )
+
+        self.producto_fabricado.refresh_from_db()
+
+        self.assertTrue(
             self.producto_fabricado.validar_disponibilidad_ingredientes()
         )
 
@@ -462,6 +526,166 @@ class FabricanteServiceTest(TestCase):
         self.assertEqual(producto.producto_final_id, inventario_producto.id)
         self.assertEqual(inventario_producto.precio_compra, Decimal('165.11'))
 
+    def test_crear_producto_con_presentaciones(self):
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Jabon liquido base',
+                'descripcion': 'Lote maestro',
+                'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
+                'cantidad_producida': Decimal('20'),
+                'precio_venta': Decimal('0'),
+                'precio_venta_sugerido': Decimal('0'),
+                'tiempo_produccion': 55,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('1'),
+                    'unidad_medida': Ingrediente.UnidadMedida.GALONES,
+                },
+            ],
+            presentaciones=[
+                {
+                    'nombre': 'Envase 1 litro',
+                    'cantidad_por_unidad': Decimal('1'),
+                    'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
+                    'precio_venta_sugerido': Decimal('800'),
+                    'precio_venta': Decimal('850'),
+                },
+                {
+                    'nombre': 'Envase 3 litros',
+                    'cantidad_por_unidad': Decimal('3'),
+                    'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
+                    'precio_venta_sugerido': Decimal('2200'),
+                    'precio_venta': Decimal('2400'),
+                },
+            ],
+        )
+
+        self.assertEqual(producto.presentaciones.count(), 2)
+        presentacion = producto.presentaciones.get(nombre='Envase 1 litro')
+        self.assertEqual(
+            presentacion.costo_unitario_presentacion,
+            Decimal('500.0000'),
+        )
+
+    def test_empacar_presentacion_descuenta_stock_fabricado(self):
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Jabon liquido base',
+                'descripcion': 'Lote maestro',
+                'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
+                'cantidad_producida': Decimal('20'),
+                'precio_venta': Decimal('0'),
+                'precio_venta_sugerido': Decimal('0'),
+                'tiempo_produccion': 55,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('1'),
+                    'unidad_medida': Ingrediente.UnidadMedida.GALONES,
+                },
+            ],
+            presentaciones=[
+                {
+                    'nombre': 'Envase 1 litro',
+                    'cantidad_por_unidad': Decimal('1'),
+                    'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
+                    'precio_venta_sugerido': Decimal('800'),
+                    'precio_venta': Decimal('850'),
+                },
+                {
+                    'nombre': 'Envase 3 litros',
+                    'cantidad_por_unidad': Decimal('3'),
+                    'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
+                    'precio_venta_sugerido': Decimal('2200'),
+                    'precio_venta': Decimal('2400'),
+                },
+            ],
+        )
+
+        ProductoFabricadoService.producir_lote(producto.id, Decimal('1'))
+        presentacion = producto.presentaciones.get(nombre='Envase 3 litros')
+
+        resultado = ProductoFabricadoService.empacar_presentacion(
+            producto.id,
+            presentacion.id,
+            Decimal('2'),
+            usuario=self.usuario,
+        )
+
+        producto.refresh_from_db()
+        inventario = resultado['producto_inventario']
+        inventario.refresh_from_db()
+
+        self.assertEqual(producto.stock_fabricado_disponible, Decimal('14.0000'))
+        self.assertEqual(inventario.existencias, Decimal('2.00'))
+        self.assertEqual(
+            inventario.nombre,
+            'Jabon liquido base - Envase 3 litros',
+        )
+        self.assertEqual(
+            resultado['cantidad_consumida_lote'],
+            Decimal('6.0000'),
+        )
+
+    def test_empacar_presentacion_resincroniza_nombre_inventario_existente(self):
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Jabon liquido base',
+                'descripcion': 'Lote maestro',
+                'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
+                'cantidad_producida': Decimal('20'),
+                'precio_venta': Decimal('0'),
+                'precio_venta_sugerido': Decimal('0'),
+                'tiempo_produccion': 55,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('1'),
+                    'unidad_medida': Ingrediente.UnidadMedida.GALONES,
+                },
+            ],
+            presentaciones=[
+                {
+                    'nombre': 'Envase 1 litro',
+                    'cantidad_por_unidad': Decimal('1'),
+                    'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
+                    'precio_venta_sugerido': Decimal('800'),
+                    'precio_venta': Decimal('850'),
+                },
+            ],
+        )
+
+        presentacion = producto.presentaciones.get(nombre='Envase 1 litro')
+        inventario = ProductoFabricadoService.convertir_presentacion_a_inventario(
+            producto.id,
+            presentacion.id,
+        )
+        inventario.nombre = 'Envase 1 litro'
+        inventario.save(update_fields=['nombre', 'updated_at'])
+
+        ProductoFabricadoService.producir_lote(producto.id, Decimal('1'))
+        resultado = ProductoFabricadoService.empacar_presentacion(
+            producto.id,
+            presentacion.id,
+            Decimal('1'),
+            usuario=self.usuario,
+        )
+
+        inventario.refresh_from_db()
+
+        self.assertEqual(
+            inventario.nombre,
+            'Jabon liquido base - Envase 1 litro',
+        )
+        self.assertEqual(
+            resultado['producto_inventario'].nombre,
+            'Jabon liquido base - Envase 1 litro',
+        )
+
 
 class FabricanteApiTest(TestCase):
     """
@@ -611,7 +835,7 @@ class FabricanteApiTest(TestCase):
             {
                 'nombre': 'Yogur API',
                 'descripcion': 'Producto fabricado desde API',
-                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
                 'cantidad_producida': '10.0000',
                 'precio_venta_sugerido': '0.00',
                 'precio_venta': '2500.00',
@@ -623,24 +847,47 @@ class FabricanteApiTest(TestCase):
                         'unidad_medida': Ingrediente.UnidadMedida.MILILITROS,
                     },
                 ],
+                'presentaciones': [
+                    {
+                        'nombre': 'Botella 500 ml',
+                        'cantidad_por_unidad': '500.0000',
+                        'unidad_medida': Ingrediente.UnidadMedida.MILILITROS,
+                        'precio_venta_sugerido': '1500.00',
+                        'precio_venta': '1700.00',
+                    },
+                ],
             },
             format='json',
         )
         self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
         producto_id = create_response.data['id']
 
+        list_response = self.client.get('/api/fabricante/productos/')
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        producto_listado = next(
+            item
+            for item in list_response.data['results']
+            if item['id'] == producto_id
+        )
+        self.assertEqual(len(producto_listado['presentaciones']), 1)
+        self.assertEqual(
+            producto_listado['presentaciones'][0]['nombre'],
+            'Botella 500 ml',
+        )
+
         retrieve_response = self.client.get(
             f'/api/fabricante/productos/{producto_id}/'
         )
         self.assertEqual(retrieve_response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(retrieve_response.data['receta']), 1)
+        self.assertEqual(len(retrieve_response.data['presentaciones']), 1)
 
         update_response = self.client.put(
             f'/api/fabricante/productos/{producto_id}/',
             {
                 'nombre': 'Yogur API Editado',
                 'descripcion': 'Producto actualizado',
-                'unidad_medida': ProductoFabricado.UnidadMedida.UNIDADES,
+                'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
                 'cantidad_producida': '12.0000',
                 'precio_venta_sugerido': '2600.00',
                 'precio_venta': '2700.00',
@@ -767,3 +1014,70 @@ class FabricanteApiTest(TestCase):
             f'{self.ingrediente_secundario.id}/'
         )
         self.assertEqual(delete_response.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_endpoints_de_presentaciones_y_empaque_funcionan(self):
+        self.client.login(
+            username=self.admin.username,
+            password=self.admin_password,
+        )
+        producto = ProductoFabricadoService.crear_producto_fabricado(
+            data={
+                'nombre': 'Jabon API',
+                'descripcion': 'Producto para probar empaque',
+                'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
+                'cantidad_producida': Decimal('20'),
+                'precio_venta': Decimal('0'),
+                'precio_venta_sugerido': Decimal('0'),
+                'tiempo_produccion': 30,
+            },
+            receta=[
+                {
+                    'ingrediente_id': self.ingrediente.id,
+                    'cantidad_necesaria': Decimal('1'),
+                    'unidad_medida': Ingrediente.UnidadMedida.GALONES,
+                },
+            ],
+        )
+
+        create_response = self.client.post(
+            f'/api/fabricante/productos/{producto.id}/presentaciones/',
+            {
+                'nombre': 'Envase 3 litros',
+                'cantidad_por_unidad': '3.0000',
+                'unidad_medida': ProductoFabricado.UnidadMedida.LITROS,
+                'precio_venta_sugerido': '2200.00',
+                'precio_venta': '2400.00',
+            },
+            format='json',
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        presentacion_id = create_response.data['id']
+
+        list_response = self.client.get(
+            f'/api/fabricante/productos/{producto.id}/presentaciones/'
+        )
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(list_response.data), 1)
+
+        producir_response = self.client.post(
+            f'/api/fabricante/productos/{producto.id}/producir/',
+            {'cantidad_lotes': '1'},
+            format='json',
+        )
+        self.assertEqual(producir_response.status_code, status.HTTP_200_OK)
+
+        empaque_response = self.client.post(
+            f'/api/fabricante/productos/{producto.id}/presentaciones/'
+            f'{presentacion_id}/empacar/',
+            {'cantidad_unidades': '2'},
+            format='json',
+        )
+        self.assertEqual(empaque_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            empaque_response.data['producto_inventario']['nombre'],
+            'Jabon API - Envase 3 litros',
+        )
+        self.assertEqual(
+            empaque_response.data['cantidad_consumida_lote'],
+            '6.0000',
+        )

@@ -15,8 +15,14 @@ ZERO = Decimal('0.0000')
 TIPO_VOLUMEN = 'VOLUMEN'
 TIPO_MASA = 'MASA'
 TIPO_CONTEO = 'CONTEO'
+TIPOS_CONVERSION_LIQUIDA = {TIPO_VOLUMEN, TIPO_MASA}
 
 UNIDADES_SOPORTADAS = {
+    'GARRAFAS': {
+        'categoria': TIPO_VOLUMEN,
+        'factor_base': Decimal('18927.0590'),
+        'label': 'Garrafas',
+    },
     'GALONES': {
         'categoria': TIPO_VOLUMEN,
         'factor_base': Decimal('3785.4118'),
@@ -101,7 +107,11 @@ def _convertir_a_decimal(valor, nombre_campo):
 
 def validar_compatibilidad_unidades(unidad1, unidad2):
     """
-    Valida si dos unidades pertenecen al mismo tipo de medida.
+    Valida si dos unidades pertenecen a un tipo compatible de medida.
+
+    Para formulas liquidas se usa una equivalencia por defecto de
+    ``1 mililitro = 1 gramo``, por lo que masa y volumen se consideran
+    compatibles entre si.
     """
     try:
         _, configuracion_unidad1 = _obtener_configuracion_unidad(unidad1)
@@ -109,15 +119,26 @@ def validar_compatibilidad_unidades(unidad1, unidad2):
     except ValueError:
         return False
 
+    categoria_unidad1 = configuracion_unidad1['categoria']
+    categoria_unidad2 = configuracion_unidad2['categoria']
+
+    if (
+        categoria_unidad1 in TIPOS_CONVERSION_LIQUIDA and
+        categoria_unidad2 in TIPOS_CONVERSION_LIQUIDA
+    ):
+        return True
+
     return (
-        configuracion_unidad1['categoria'] ==
-        configuracion_unidad2['categoria']
+        categoria_unidad1 == categoria_unidad2
     )
 
 
 def convertir_unidad(cantidad, unidad_origen, unidad_destino):
     """
     Convierte una cantidad entre dos unidades compatibles.
+
+    Para conversiones entre volumen y masa se usa la equivalencia
+    liquida por defecto de ``1 mililitro = 1 gramo``.
     """
     cantidad_decimal = _convertir_a_decimal(cantidad, 'cantidad')
     codigo_origen, configuracion_origen = _obtener_configuracion_unidad(
@@ -127,10 +148,17 @@ def convertir_unidad(cantidad, unidad_origen, unidad_destino):
         unidad_destino,
     )
 
-    if (
-        configuracion_origen['categoria'] !=
-        configuracion_destino['categoria']
-    ):
+    categoria_origen = configuracion_origen['categoria']
+    categoria_destino = configuracion_destino['categoria']
+    categorias_son_compatibles = (
+        categoria_origen == categoria_destino or
+        (
+            categoria_origen in TIPOS_CONVERSION_LIQUIDA and
+            categoria_destino in TIPOS_CONVERSION_LIQUIDA
+        )
+    )
+
+    if not categorias_son_compatibles:
         raise ValueError(
             'Las unidades de origen y destino no son compatibles.'
         )

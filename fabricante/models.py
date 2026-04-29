@@ -24,6 +24,7 @@ class Ingrediente(models.Model):
     """
 
     class UnidadMedida(models.TextChoices):
+        GARRAFAS = 'GARRAFAS', _('Garrafas')
         GALONES = 'GALONES', _('Galones')
         LITROS = 'LITROS', _('Litros')
         MILILITROS = 'MILILITROS', _('Mililitros')
@@ -291,6 +292,7 @@ class ProductoFabricado(models.Model):
     """
 
     class UnidadMedida(models.TextChoices):
+        GARRAFAS = 'GARRAFAS', _('Garrafas')
         GALONES = 'GALONES', _('Galones')
         LITROS = 'LITROS', _('Litros')
         MILILITROS = 'MILILITROS', _('Mililitros')
@@ -322,6 +324,20 @@ class ProductoFabricado(models.Model):
         max_digits=14,
         decimal_places=4,
         help_text=_('Cantidad producida por lote.'),
+    )
+    stock_fabricado_disponible = models.DecimalField(
+        _('stock fabricado disponible'),
+        max_digits=14,
+        decimal_places=4,
+        default=ZERO_QUANTITY,
+        help_text=_('Cantidad fabricada pendiente por empacar o despachar.'),
+    )
+    total_producido_acumulado = models.DecimalField(
+        _('total producido acumulado'),
+        max_digits=14,
+        decimal_places=4,
+        default=ZERO_QUANTITY,
+        help_text=_('Cantidad historica producida de este producto.'),
     )
     costo_produccion = models.DecimalField(
         _('costo de produccion'),
@@ -453,6 +469,20 @@ class ProductoFabricado(models.Model):
             (self.calcular_margen_utilidad() / costo_unitario) * Decimal('100')
         ).quantize(PERCENTAGE_QUANTIZER)
 
+    def convertir_cantidad_a_unidad_lote(
+        self,
+        cantidad,
+        unidad_medida,
+    ):
+        """
+        Convierte una cantidad externa a la unidad base del lote.
+        """
+        return convertir_unidad(
+            cantidad,
+            unidad_medida,
+            self.unidad_medida,
+        ).quantize(COST_QUANTIZER)
+
     def _obtener_ingredientes_faltantes(self):
         faltantes = []
 
@@ -509,6 +539,16 @@ class ProductoFabricado(models.Model):
                 'La cantidad producida debe ser mayor que cero.'
             )
 
+        if self.stock_fabricado_disponible < ZERO_QUANTITY:
+            errores['stock_fabricado_disponible'] = _(
+                'El stock fabricado disponible no puede ser negativo.'
+            )
+
+        if self.total_producido_acumulado < ZERO_QUANTITY:
+            errores['total_producido_acumulado'] = _(
+                'El total producido acumulado no puede ser negativo.'
+            )
+
         if self.precio_venta_sugerido < ZERO:
             errores['precio_venta_sugerido'] = _(
                 'El precio de venta sugerido no puede ser negativo.'
@@ -531,6 +571,12 @@ class ProductoFabricado(models.Model):
         self.actualizar_campos_calculados()
         self.full_clean()
         super().save(*args, **kwargs)
+
+        if self.pk:
+            for presentacion in self.presentaciones.select_related(
+                'producto_fabricado',
+            ):
+                presentacion.save()
 
 
 class IngredientesProducto(models.Model):
@@ -663,3 +709,257 @@ class IngredientesProducto(models.Model):
             super().delete(*args, **kwargs)
             if producto_fabricado is not None:
                 producto_fabricado.save()
+
+
+class PresentacionProductoFabricado(models.Model):
+    """
+    Presentacion comercial derivada de un producto fabricado.
+    """
+
+    id = models.AutoField(primary_key=True)
+    producto_fabricado = models.ForeignKey(
+        ProductoFabricado,
+        on_delete=models.CASCADE,
+        related_name='presentaciones',
+        verbose_name=_('producto fabricado'),
+        help_text=_('Producto fabricado del que nace la presentacion.'),
+    )
+    nombre = models.CharField(
+        _('nombre'),
+        max_length=200,
+        help_text=_('Nombre comercial de la presentacion.'),
+    )
+    cantidad_por_unidad = models.DecimalField(
+        _('cantidad por unidad'),
+        max_digits=14,
+        decimal_places=4,
+        help_text=_('Contenido de cada unidad vendible.'),
+    )
+    unidad_medida = models.CharField(
+        _('unidad de medida'),
+        max_length=20,
+        choices=Ingrediente.UnidadMedida.choices,
+        help_text=_('Unidad de la presentacion vendible.'),
+    )
+    costo_unitario_presentacion = models.DecimalField(
+        _('costo unitario de presentacion'),
+        max_digits=14,
+        decimal_places=4,
+        default=ZERO_QUANTITY,
+        help_text=_('Costo calculado por unidad de la presentacion.'),
+    )
+    precio_venta_sugerido = models.DecimalField(
+        _('precio de venta sugerido'),
+        max_digits=14,
+        decimal_places=2,
+        default=ZERO,
+        help_text=_('Precio sugerido de venta por presentacion.'),
+    )
+    precio_venta = models.DecimalField(
+        _('precio de venta'),
+        max_digits=14,
+        decimal_places=2,
+        default=ZERO,
+        help_text=_('Precio final de venta por presentacion.'),
+    )
+    margen_utilidad = models.DecimalField(
+        _('margen de utilidad'),
+        max_digits=14,
+        decimal_places=4,
+        default=ZERO_QUANTITY,
+        help_text=_('Margen actual por presentacion.'),
+    )
+    porcentaje_utilidad = models.DecimalField(
+        _('porcentaje de utilidad'),
+        max_digits=7,
+        decimal_places=2,
+        default=ZERO,
+        help_text=_('Rentabilidad actual por presentacion.'),
+    )
+    producto_inventario = models.ForeignKey(
+        'inventario.Producto',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='presentaciones_fabricadas',
+        verbose_name=_('producto de inventario'),
+        help_text=_('Producto de inventario vinculado a esta presentacion.'),
+    )
+    created_at = models.DateTimeField(
+        _('fecha de creacion'),
+        auto_now_add=True,
+    )
+    updated_at = models.DateTimeField(
+        _('fecha de actualizacion'),
+        auto_now=True,
+    )
+
+    class Meta:
+        db_table = 'presentaciones_producto_fabricado'
+        ordering = ['producto_fabricado', 'nombre', 'id']
+        verbose_name = _('presentacion de producto fabricado')
+        verbose_name_plural = _('presentaciones de productos fabricados')
+        indexes = [
+            models.Index(fields=['producto_fabricado']),
+            models.Index(fields=['unidad_medida']),
+            models.Index(fields=['producto_inventario']),
+        ]
+
+    def __str__(self):
+        return f'{self.producto_fabricado.nombre} - {self.nombre}'
+
+    def calcular_cantidad_consumida_lote(self):
+        """
+        Convierte el contenido de la presentacion a la unidad base del lote.
+        """
+        return self.producto_fabricado.convertir_cantidad_a_unidad_lote(
+            self.cantidad_por_unidad,
+            self.unidad_medida,
+        )
+
+    def calcular_costo_unitario_presentacion(self):
+        """
+        Calcula el costo de una unidad vendible de la presentacion.
+        """
+        return (
+            self.calcular_cantidad_consumida_lote() *
+            self.producto_fabricado.costo_unitario
+        ).quantize(COST_QUANTIZER)
+
+    def calcular_margen_utilidad(self):
+        return (
+            Decimal(self.precio_venta or ZERO) -
+            self.calcular_costo_unitario_presentacion()
+        ).quantize(COST_QUANTIZER)
+
+    def calcular_porcentaje_utilidad(self):
+        costo_unitario = self.calcular_costo_unitario_presentacion()
+        if costo_unitario <= ZERO_QUANTITY:
+            return ZERO
+
+        return (
+            (self.calcular_margen_utilidad() / costo_unitario) *
+            Decimal('100')
+        ).quantize(PERCENTAGE_QUANTIZER)
+
+    def actualizar_campos_calculados(self):
+        self.costo_unitario_presentacion = (
+            self.calcular_costo_unitario_presentacion()
+        )
+        self.margen_utilidad = self.calcular_margen_utilidad()
+        self.porcentaje_utilidad = self.calcular_porcentaje_utilidad()
+
+    def clean(self):
+        self.nombre = (self.nombre or '').strip()
+        errores = {}
+
+        if not self.nombre:
+            errores['nombre'] = _(
+                'El nombre de la presentacion es obligatorio.'
+            )
+
+        if self.cantidad_por_unidad <= ZERO_QUANTITY:
+            errores['cantidad_por_unidad'] = _(
+                'La cantidad por unidad debe ser mayor que cero.'
+            )
+
+        if self.precio_venta_sugerido < ZERO:
+            errores['precio_venta_sugerido'] = _(
+                'El precio de venta sugerido no puede ser negativo.'
+            )
+
+        if self.precio_venta < ZERO:
+            errores['precio_venta'] = _(
+                'El precio de venta no puede ser negativo.'
+            )
+
+        if (
+            self.producto_fabricado_id and
+            not validar_compatibilidad_unidades(
+                self.unidad_medida,
+                self.producto_fabricado.unidad_medida,
+            )
+        ):
+            errores['unidad_medida'] = _(
+                'La unidad de la presentacion no es compatible con la unidad '
+                'base del lote fabricado.'
+            )
+
+        if errores:
+            raise ValidationError(errores)
+
+    def save(self, *args, **kwargs):
+        self.actualizar_campos_calculados()
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class MovimientoEmpaquePresentacion(models.Model):
+    """
+    Registro de empaque desde stock fabricado hacia inventario vendible.
+    """
+
+    id = models.AutoField(primary_key=True)
+    presentacion = models.ForeignKey(
+        PresentacionProductoFabricado,
+        on_delete=models.PROTECT,
+        related_name='movimientos_empaque',
+        verbose_name=_('presentacion'),
+    )
+    cantidad_unidades = models.DecimalField(
+        _('cantidad de unidades'),
+        max_digits=14,
+        decimal_places=4,
+        help_text=_('Cantidad de unidades empaquetadas.'),
+    )
+    cantidad_consumida_lote = models.DecimalField(
+        _('cantidad consumida del lote'),
+        max_digits=14,
+        decimal_places=4,
+        help_text=_('Cantidad del lote consumida por el empaque.'),
+    )
+    fecha_empaque = models.DateTimeField(
+        _('fecha de empaque'),
+        default=timezone.now,
+    )
+    usuario = models.ForeignKey(
+        'usuario.Usuario',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='movimientos_empaque_presentaciones',
+        verbose_name=_('usuario'),
+    )
+
+    class Meta:
+        db_table = 'movimientos_empaque_presentacion'
+        ordering = ['-fecha_empaque', '-id']
+        verbose_name = _('movimiento de empaque')
+        verbose_name_plural = _('movimientos de empaque')
+        indexes = [
+            models.Index(fields=['presentacion']),
+            models.Index(fields=['fecha_empaque']),
+        ]
+
+    def __str__(self):
+        return f'{self.presentacion.nombre} - {self.cantidad_unidades}'
+
+    def clean(self):
+        errores = {}
+
+        if self.cantidad_unidades <= ZERO_QUANTITY:
+            errores['cantidad_unidades'] = _(
+                'La cantidad de unidades debe ser mayor que cero.'
+            )
+
+        if self.cantidad_consumida_lote <= ZERO_QUANTITY:
+            errores['cantidad_consumida_lote'] = _(
+                'La cantidad consumida del lote debe ser mayor que cero.'
+            )
+
+        if errores:
+            raise ValidationError(errores)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
