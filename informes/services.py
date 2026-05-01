@@ -24,6 +24,7 @@ from core.exceptions import (
     CierreCajaDuplicadoError,
     CierreCajaNoEncontradoError,
     InformeError,
+    InformeNoEncontradoError,
     RangoFechasInvalidoError,
 )
 from cliente.models import Cliente
@@ -32,7 +33,7 @@ from inventario.models import Producto
 from usuario.models import Usuario
 from ventas.models import DetalleVenta, Venta
 
-from .models import CierreCaja
+from .models import CierreCaja, Informe
 
 
 ZERO = Decimal('0.00')
@@ -2141,3 +2142,538 @@ class ReporteEstadisticasService:
             'serie_historica': serie_historica,
             'serie_proyectada': serie_proyectada,
         }
+
+
+class InformeService:
+    """
+    Servicio de negocio para persistir y exportar informes generados.
+
+    Mantiene la orquestacion entre estadisticas, generadores de archivo y
+    el modelo `Informe`, evitando que las vistas mezclen reglas de
+    negocio con respuestas HTTP.
+    """
+
+    PDF = 'pdf'
+    EXCEL = 'excel'
+
+    @staticmethod
+    def _queryset_base():
+        return Informe.objects.select_related('usuario_genero')
+
+    @staticmethod
+    def _parse_date(value: Any, field_name: str) -> date:
+        return ReporteEstadisticasService._parse_date(value, field_name)
+
+    @staticmethod
+    def _parse_positive_int(value: Any, field_name: str) -> int:
+        return ReporteEstadisticasService._parse_positive_int(
+            value,
+            field_name,
+        )
+
+    @staticmethod
+    def _validar_rango_fechas(
+        fecha_inicio: date,
+        fecha_fin: date,
+    ) -> None:
+        ReporteEstadisticasService._validar_rango_fechas(
+            fecha_inicio,
+            fecha_fin,
+        )
+
+    @staticmethod
+    def _default_period() -> tuple[date, date]:
+        fecha_fin = timezone.localdate()
+        fecha_inicio = fecha_fin.replace(day=1)
+        return fecha_inicio, fecha_fin
+
+    @staticmethod
+    def _resolve_period(
+        tipo_informe: str,
+        fecha_inicio: Any = None,
+        fecha_fin: Any = None,
+    ) -> tuple[date, date]:
+        if fecha_inicio is None and fecha_fin is None:
+            if tipo_informe == Informe.TipoInforme.CIERRE_CAJA:
+                hoy = timezone.localdate()
+                return hoy, hoy
+            return InformeService._default_period()
+
+        fecha_inicio_date = InformeService._parse_date(
+            fecha_inicio,
+            'fecha_inicio',
+        )
+        fecha_fin_date = InformeService._parse_date(
+            fecha_fin,
+            'fecha_fin',
+        )
+        InformeService._validar_rango_fechas(
+            fecha_inicio_date,
+            fecha_fin_date,
+        )
+        return fecha_inicio_date, fecha_fin_date
+
+    @staticmethod
+    def _to_json_safe(value: Any) -> Any:
+        return CierreCajaService._to_json_safe(value)
+
+    @staticmethod
+    def _resolve_cierre_id(
+        cierre_id: Optional[int],
+        fecha_inicio: date,
+        fecha_fin: date,
+    ) -> int:
+        if cierre_id is not None:
+            return int(cierre_id)
+
+        fecha_objetivo = fecha_fin or fecha_inicio
+        cierre = CierreCaja.objects.filter(
+            fecha_cierre=fecha_objetivo,
+        ).only('id').first()
+        if cierre is None:
+            raise InformeError(
+                _(
+                    'No existe un cierre de caja para la fecha '
+                    '%(fecha)s.'
+                ) % {
+                    'fecha': fecha_objetivo,
+                },
+                code='cierre_caja_no_disponible',
+            )
+        return cierre.id
+
+    @staticmethod
+    def _build_report_data(
+        tipo_informe: str,
+        fecha_inicio: date,
+        fecha_fin: date,
+        limite: int = 10,
+        cierre_id: Optional[int] = None,
+    ) -> dict[str, Any]:
+        if tipo_informe == Informe.TipoInforme.VENTAS_PERIODO:
+            return {
+                'estadisticas_ventas_periodo': (
+                    ReporteEstadisticasService.estadisticas_ventas_periodo(
+                        fecha_inicio,
+                        fecha_fin,
+                    )
+                ),
+                'ventas_por_dia': (
+                    ReporteEstadisticasService.ventas_por_dia(
+                        fecha_inicio,
+                        fecha_fin,
+                    )
+                ),
+                'ventas_por_mes': (
+                    ReporteEstadisticasService.ventas_por_mes(
+                        fecha_inicio.year,
+                    )
+                ),
+                'ventas_por_categoria': (
+                    ReporteEstadisticasService.ventas_por_categoria(
+                        fecha_inicio,
+                        fecha_fin,
+                    )
+                ),
+                'ventas_por_metodo_pago': (
+                    ReporteEstadisticasService.ventas_por_metodo_pago(
+                        fecha_inicio,
+                        fecha_fin,
+                    )
+                ),
+            }
+
+        if tipo_informe == Informe.TipoInforme.PRODUCTOS_MAS_VENDIDOS:
+            return {
+                'productos_mas_vendidos': (
+                    ReporteEstadisticasService.productos_mas_vendidos(
+                        fecha_inicio,
+                        fecha_fin,
+                        limite,
+                    )
+                ),
+                'productos_menos_vendidos': (
+                    ReporteEstadisticasService.productos_menos_vendidos(
+                        limite,
+                    )
+                ),
+                'productos_sin_movimiento': (
+                    ReporteEstadisticasService.productos_sin_movimiento(30)
+                ),
+            }
+
+        if tipo_informe == Informe.TipoInforme.CLIENTES_TOP:
+            return {
+                'mejores_clientes': (
+                    ReporteEstadisticasService.mejores_clientes(
+                        fecha_inicio,
+                        fecha_fin,
+                        limite,
+                    )
+                ),
+                'analisis_recurrencia_clientes': (
+                    ReporteEstadisticasService.analisis_recurrencia_clientes()
+                ),
+            }
+
+        if tipo_informe == Informe.TipoInforme.INVENTARIO_VALORIZADO:
+            return {
+                'valor_total_inventario': (
+                    ReporteEstadisticasService.valor_total_inventario()
+                ),
+                'rotacion_inventario': (
+                    ReporteEstadisticasService.rotacion_inventario(
+                        fecha_inicio,
+                        fecha_fin,
+                    )
+                ),
+            }
+
+        if tipo_informe == Informe.TipoInforme.CUENTAS_POR_COBRAR:
+            return {
+                'total_cuentas_por_cobrar': (
+                    ReporteEstadisticasService.total_cuentas_por_cobrar()
+                ),
+                'antiguedad_cartera': (
+                    ReporteEstadisticasService.antiguedad_cartera()
+                ),
+                'proyeccion_ingresos': (
+                    ReporteEstadisticasService.proyeccion_ingresos(30)
+                ),
+            }
+
+        if tipo_informe == Informe.TipoInforme.CIERRE_CAJA:
+            cierre = CierreCajaService.obtener_detalle_cierre(
+                InformeService._resolve_cierre_id(
+                    cierre_id,
+                    fecha_inicio,
+                    fecha_fin,
+                ),
+            )
+            return {
+                'cierre_id': cierre.id,
+                'cierre_caja': cierre.generar_resumen(),
+            }
+
+        raise InformeError(
+            _('El tipo de informe solicitado no es valido.'),
+            code='tipo_informe_invalido',
+        )
+
+    @staticmethod
+    def _generate_pdf_file(
+        tipo_informe: str,
+        datos: dict[str, Any],
+        fecha_inicio: date,
+        fecha_fin: date,
+        cierre_id: Optional[int] = None,
+    ):
+        from .generators import (
+            generar_pdf_cierre_caja,
+            generar_pdf_cuentas_por_cobrar,
+            generar_pdf_inventario_valorizado,
+            generar_pdf_ventas_periodo,
+        )
+
+        if tipo_informe == Informe.TipoInforme.VENTAS_PERIODO:
+            return generar_pdf_ventas_periodo(
+                datos.get('estadisticas_ventas_periodo', {}),
+                fecha_inicio,
+                fecha_fin,
+            )
+
+        if tipo_informe == Informe.TipoInforme.INVENTARIO_VALORIZADO:
+            return generar_pdf_inventario_valorizado()
+
+        if tipo_informe == Informe.TipoInforme.CUENTAS_POR_COBRAR:
+            return generar_pdf_cuentas_por_cobrar()
+
+        if tipo_informe == Informe.TipoInforme.CIERRE_CAJA:
+            return generar_pdf_cierre_caja(
+                InformeService._resolve_cierre_id(
+                    cierre_id,
+                    fecha_inicio,
+                    fecha_fin,
+                ),
+            )
+
+        raise InformeError(
+            _(
+                'El tipo de informe %(tipo)s no tiene generador PDF '
+                'configurado.'
+            ) % {
+                'tipo': tipo_informe,
+            },
+            code='pdf_no_soportado',
+        )
+
+    @staticmethod
+    def _generate_excel_file(
+        tipo_informe: str,
+        fecha_inicio: date,
+        fecha_fin: date,
+        limite: int = 10,
+    ):
+        from .generators import (
+            generar_excel_clientes_cartera,
+            generar_excel_clientes_top,
+            generar_excel_productos_vendidos,
+            generar_excel_ventas_detallado,
+        )
+
+        if tipo_informe == Informe.TipoInforme.VENTAS_PERIODO:
+            return generar_excel_ventas_detallado(
+                fecha_inicio,
+                fecha_fin,
+            )
+
+        if tipo_informe == Informe.TipoInforme.PRODUCTOS_MAS_VENDIDOS:
+            return generar_excel_productos_vendidos(
+                fecha_inicio,
+                fecha_fin,
+            )
+
+        if tipo_informe == Informe.TipoInforme.CLIENTES_TOP:
+            return generar_excel_clientes_top(
+                fecha_inicio,
+                fecha_fin,
+                limite,
+            )
+
+        if tipo_informe == Informe.TipoInforme.CUENTAS_POR_COBRAR:
+            return generar_excel_clientes_cartera()
+
+        raise InformeError(
+            _(
+                'El tipo de informe %(tipo)s no tiene generador Excel '
+                'configurado.'
+            ) % {
+                'tipo': tipo_informe,
+            },
+            code='excel_no_soportado',
+        )
+
+    @staticmethod
+    def _assign_generated_file(
+        informe: Informe,
+        formato: str,
+        generated_file: Any,
+    ) -> None:
+        django_file = generated_file.to_content_file()
+        save_kwargs = {'save': False}
+
+        if formato == InformeService.PDF:
+            informe.archivo_pdf.save(
+                generated_file.filename,
+                django_file,
+                **save_kwargs,
+            )
+        else:
+            informe.archivo_excel.save(
+                generated_file.filename,
+                django_file,
+                **save_kwargs,
+            )
+
+    @staticmethod
+    def _save_report_instance(
+        *,
+        tipo_informe: str,
+        fecha_inicio: date,
+        fecha_fin: date,
+        datos: dict[str, Any],
+        usuario_genero: Usuario,
+        formato: str,
+        generated_file: Any,
+    ) -> Informe:
+        informe = Informe(
+            tipo_informe=tipo_informe,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            datos=InformeService._to_json_safe(datos),
+            usuario_genero=usuario_genero,
+        )
+        InformeService._assign_generated_file(
+            informe,
+            formato,
+            generated_file,
+        )
+        informe.save()
+        return informe
+
+    @staticmethod
+    def listar_informes(
+        filtros: Optional[Dict[str, Any]] = None,
+    ) -> List[Informe]:
+        queryset = InformeService._queryset_base()
+
+        if not filtros:
+            return list(queryset.order_by('-fecha_generacion', '-id'))
+
+        if filtros.get('tipo_informe'):
+            queryset = queryset.filter(tipo_informe=filtros['tipo_informe'])
+
+        if filtros.get('fecha_inicio'):
+            queryset = queryset.filter(fecha_inicio__gte=filtros['fecha_inicio'])
+
+        if filtros.get('fecha_fin'):
+            queryset = queryset.filter(fecha_fin__lte=filtros['fecha_fin'])
+
+        if filtros.get('usuario_id'):
+            queryset = queryset.filter(usuario_genero_id=filtros['usuario_id'])
+
+        if filtros.get('q'):
+            termino = str(filtros['q']).strip()
+            queryset = queryset.filter(
+                Q(tipo_informe__icontains=termino)
+                | Q(usuario_genero__username__icontains=termino)
+                | Q(usuario_genero__first_name__icontains=termino)
+                | Q(usuario_genero__last_name__icontains=termino)
+            )
+
+        ordering = filtros.get('ordering', '-fecha_generacion')
+        ordering_permitido = {
+            'fecha_generacion',
+            '-fecha_generacion',
+            'fecha_inicio',
+            '-fecha_inicio',
+            'fecha_fin',
+            '-fecha_fin',
+            'tipo_informe',
+            '-tipo_informe',
+        }
+        if ordering not in ordering_permitido:
+            ordering = '-fecha_generacion'
+
+        return list(queryset.order_by(ordering, '-id'))
+
+    @staticmethod
+    def obtener_informe(informe_id: int) -> Informe:
+        try:
+            return InformeService._queryset_base().get(pk=informe_id)
+        except Informe.DoesNotExist as exc:
+            raise InformeNoEncontradoError(informe_id) from exc
+
+    @staticmethod
+    @transaction.atomic
+    def generar_informe(
+        data: Dict[str, Any],
+        usuario_genero: Usuario,
+    ) -> Informe:
+        tipo_informe = data['tipo_informe']
+        formato = str(data['formato']).lower()
+        limite = InformeService._parse_positive_int(
+            data.get('limite', 10),
+            'limite',
+        )
+        fecha_inicio, fecha_fin = InformeService._resolve_period(
+            tipo_informe,
+            data.get('fecha_inicio'),
+            data.get('fecha_fin'),
+        )
+        cierre_id = data.get('cierre_id')
+        datos = InformeService._build_report_data(
+            tipo_informe=tipo_informe,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            limite=limite,
+            cierre_id=cierre_id,
+        )
+
+        if formato == InformeService.PDF:
+            generated_file = InformeService._generate_pdf_file(
+                tipo_informe=tipo_informe,
+                datos=datos,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+                cierre_id=cierre_id,
+            )
+        elif formato == InformeService.EXCEL:
+            generated_file = InformeService._generate_excel_file(
+                tipo_informe=tipo_informe,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+                limite=limite,
+            )
+        else:
+            raise InformeError(
+                _('El formato solicitado no es soportado.'),
+                code='formato_invalido',
+            )
+
+        return InformeService._save_report_instance(
+            tipo_informe=tipo_informe,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+            datos=datos,
+            usuario_genero=usuario_genero,
+            formato=formato,
+            generated_file=generated_file,
+        )
+
+    @staticmethod
+    @transaction.atomic
+    def obtener_archivo_reporte(
+        informe_id: int,
+        formato: str,
+    ):
+        informe = InformeService.obtener_informe(informe_id)
+        formato_normalizado = str(formato).lower()
+
+        if formato_normalizado == InformeService.PDF and informe.archivo_pdf:
+            return informe.archivo_pdf
+
+        if formato_normalizado == InformeService.EXCEL and informe.archivo_excel:
+            return informe.archivo_excel
+
+        datos = (
+            informe.datos
+            if isinstance(informe.datos, dict) else {}
+        )
+        limite = 10
+
+        if informe.tipo_informe == Informe.TipoInforme.PRODUCTOS_MAS_VENDIDOS:
+            limite = (
+                datos.get('productos_mas_vendidos', {})
+                .get('limite', 10)
+            )
+        elif informe.tipo_informe == Informe.TipoInforme.CLIENTES_TOP:
+            limite = (
+                datos.get('mejores_clientes', {})
+                .get('limite', 10)
+            )
+
+        cierre_id = datos.get('cierre_id')
+
+        if formato_normalizado == InformeService.PDF:
+            generated_file = InformeService._generate_pdf_file(
+                tipo_informe=informe.tipo_informe,
+                datos=datos,
+                fecha_inicio=informe.fecha_inicio,
+                fecha_fin=informe.fecha_fin,
+                cierre_id=cierre_id,
+            )
+        elif formato_normalizado == InformeService.EXCEL:
+            generated_file = InformeService._generate_excel_file(
+                tipo_informe=informe.tipo_informe,
+                fecha_inicio=informe.fecha_inicio,
+                fecha_fin=informe.fecha_fin,
+                limite=limite,
+            )
+        else:
+            raise InformeError(
+                _('El formato solicitado no es soportado.'),
+                code='formato_invalido',
+            )
+
+        InformeService._assign_generated_file(
+            informe,
+            formato_normalizado,
+            generated_file,
+        )
+        informe.save(update_fields=['archivo_pdf', 'archivo_excel'])
+
+        if formato_normalizado == InformeService.PDF:
+            return informe.archivo_pdf
+
+        return informe.archivo_excel

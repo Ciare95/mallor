@@ -522,6 +522,18 @@ class CierreCajaDuplicadoError(InformeError):
         )
 
 
+class InformeNoEncontradoError(InformeError):
+    """Excepcion cuando un informe no existe."""
+
+    def __init__(self, informe_id: int):
+        super().__init__(
+            message=_("Informe con ID %(id)s no encontrado.") % {
+                'id': informe_id,
+            },
+            code="informe_no_encontrado",
+        )
+
+
 class RangoFechasInvalidoError(InformeError):
     """Excepcion cuando el rango de fechas no es coherente."""
 

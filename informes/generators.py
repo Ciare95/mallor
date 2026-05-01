@@ -43,6 +43,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from cliente.models import Cliente
 from core.exceptions import InformeError
 from inventario.models import Producto
 from ventas.models import DetalleVenta, Venta
@@ -2076,6 +2077,113 @@ class ExcelReportGenerator(BaseReportGenerator):
         )
         return self._save_workbook(workbook, filename)
 
+    def generar_excel_clientes_top(
+        self,
+        fecha_inicio: Any,
+        fecha_fin: Any,
+        limite: int = 100,
+    ) -> GeneratedReportFile:
+        """
+        Genera el Excel de mejores clientes para un periodo.
+        """
+        fecha_inicio_date = self._parse_date(fecha_inicio, 'fecha_inicio')
+        fecha_fin_date = self._parse_date(fecha_fin, 'fecha_fin')
+        reporte = ReporteEstadisticasService.mejores_clientes(
+            fecha_inicio_date,
+            fecha_fin_date,
+            limite,
+        )
+        workbook, worksheet = self._new_workbook('Clientes top')
+        self._apply_title(
+            worksheet,
+            'Mejores clientes del periodo',
+            (
+                f'Periodo: {fecha_inicio_date} a {fecha_fin_date} | '
+                f'Generado: {self._format_datetime(timezone.now())}'
+            ),
+        )
+        headers = (
+            'Cliente',
+            'Documento',
+            'Total comprado',
+            'Cantidad compras',
+            'Ticket promedio',
+        )
+        header_row = 4
+        self._apply_header(worksheet, header_row, headers)
+        resultados = reporte.get('resultados', [])
+
+        for index, item in enumerate(resultados, start=header_row + 1):
+            worksheet.cell(row=index, column=1, value=item['nombre'])
+            worksheet.cell(
+                row=index,
+                column=2,
+                value=item['numero_documento'],
+            )
+            worksheet.cell(
+                row=index,
+                column=3,
+                value=item['total_comprado'],
+            )
+            worksheet.cell(
+                row=index,
+                column=4,
+                value=item['cantidad_compras'],
+            )
+            worksheet.cell(
+                row=index,
+                column=5,
+                value=item['ticket_promedio'],
+            )
+            self._style_body_row(worksheet, index, len(headers))
+            worksheet.cell(row=index, column=3).number_format = (
+                NUMBER_FORMAT_CURRENCY
+            )
+            worksheet.cell(row=index, column=5).number_format = (
+                NUMBER_FORMAT_CURRENCY
+            )
+
+        total_row = header_row + len(resultados) + 1
+        worksheet.cell(row=total_row, column=1, value='Totales')
+        worksheet.cell(
+            row=total_row,
+            column=3,
+            value=f'=SUM(C{header_row + 1}:C{total_row - 1})',
+        )
+        worksheet.cell(
+            row=total_row,
+            column=4,
+            value=f'=SUM(D{header_row + 1}:D{total_row - 1})',
+        )
+        for column in (1, 3, 4):
+            cell = worksheet.cell(row=total_row, column=column)
+            cell.font = EXCEL_SUBHEADER_FONT
+            cell.fill = EXCEL_SUBHEADER_FILL
+            cell.border = EXCEL_BORDER
+        worksheet.cell(row=total_row, column=3).number_format = (
+            NUMBER_FORMAT_CURRENCY
+        )
+
+        self._insert_bar_chart(
+            worksheet,
+            'Clientes con mayor facturacion',
+            3,
+            1,
+            header_row + 1,
+            min(total_row - 1, header_row + 15),
+            'G4',
+        )
+        self._set_column_widths(worksheet, (28, 18, 16, 16, 16, 12, 12, 12))
+        self._finalize_table(worksheet, header_row, 'A5')
+
+        filename = self._build_filename(
+            'clientes-top',
+            fecha_inicio_date.isoformat(),
+            fecha_fin_date.isoformat(),
+            extension='xlsx',
+        )
+        return self._save_workbook(workbook, filename)
+
     def generar_excel_clientes_cartera(self) -> GeneratedReportFile:
         """
         Genera el Excel operativo de clientes con cartera.
@@ -2312,9 +2420,126 @@ def generar_excel_ventas_detallado(
     )
 
 
-def generar_excel_productos_vendidos() -> GeneratedReportFile:
+def generar_excel_productos_vendidos(
+    fecha_inicio: Any = None,
+    fecha_fin: Any = None,
+) -> GeneratedReportFile:
     """Fachada funcional para Excel de productos vendidos."""
-    return ExcelReportGenerator().generar_excel_productos_vendidos()
+    generator = ExcelReportGenerator()
+    if fecha_inicio is None or fecha_fin is None:
+        return generator.generar_excel_productos_vendidos()
+
+    fecha_inicio_date = generator._parse_date(fecha_inicio, 'fecha_inicio')
+    fecha_fin_date = generator._parse_date(fecha_fin, 'fecha_fin')
+    reporte = ReporteEstadisticasService.productos_mas_vendidos(
+        fecha_inicio_date,
+        fecha_fin_date,
+        100,
+    )
+    workbook, worksheet = generator._new_workbook('Productos vendidos')
+    generator._apply_title(
+        worksheet,
+        'Productos mas vendidos del periodo',
+        (
+            f'Periodo: {fecha_inicio_date} a {fecha_fin_date} | '
+            f'Generado: {generator._format_datetime(timezone.now())}'
+        ),
+    )
+    headers = (
+        'Producto',
+        'Codigo',
+        'Categoria',
+        'Cantidad vendida',
+        'Total vendido',
+        'Margen generado',
+    )
+    header_row = 4
+    generator._apply_header(worksheet, header_row, headers)
+    resultados = reporte.get('resultados', [])
+
+    for index, item in enumerate(resultados, start=header_row + 1):
+        worksheet.cell(row=index, column=1, value=item['nombre'])
+        worksheet.cell(row=index, column=2, value=item['codigo_interno'])
+        worksheet.cell(row=index, column=3, value=item['categoria'])
+        worksheet.cell(
+            row=index,
+            column=4,
+            value=item['cantidad_vendida'],
+        )
+        worksheet.cell(row=index, column=5, value=item['total_vendido'])
+        worksheet.cell(
+            row=index,
+            column=6,
+            value=item['margen_generado'],
+        )
+        generator._style_body_row(worksheet, index, len(headers))
+        worksheet.cell(row=index, column=5).number_format = (
+            NUMBER_FORMAT_CURRENCY
+        )
+        worksheet.cell(row=index, column=6).number_format = (
+            NUMBER_FORMAT_CURRENCY
+        )
+
+    total_row = header_row + len(resultados) + 1
+    worksheet.cell(row=total_row, column=1, value='Totales')
+    worksheet.cell(
+        row=total_row,
+        column=4,
+        value=f'=SUM(D{header_row + 1}:D{total_row - 1})',
+    )
+    worksheet.cell(
+        row=total_row,
+        column=5,
+        value=f'=SUM(E{header_row + 1}:E{total_row - 1})',
+    )
+    worksheet.cell(
+        row=total_row,
+        column=6,
+        value=f'=SUM(F{header_row + 1}:F{total_row - 1})',
+    )
+    for column in (1, 4, 5, 6):
+        cell = worksheet.cell(row=total_row, column=column)
+        cell.font = EXCEL_SUBHEADER_FONT
+        cell.fill = EXCEL_SUBHEADER_FILL
+        cell.border = EXCEL_BORDER
+    worksheet.cell(row=total_row, column=5).number_format = (
+        NUMBER_FORMAT_CURRENCY
+    )
+    worksheet.cell(row=total_row, column=6).number_format = (
+        NUMBER_FORMAT_CURRENCY
+    )
+
+    generator._insert_bar_chart(
+        worksheet,
+        'Productos con mayor ingreso',
+        5,
+        1,
+        header_row + 1,
+        min(total_row - 1, header_row + 15),
+        'H4',
+    )
+    generator._set_column_widths(worksheet, (30, 14, 18, 16, 16, 16, 12, 12))
+    generator._finalize_table(worksheet, header_row, 'A5')
+    filename = generator._build_filename(
+        'productos-vendidos',
+        fecha_inicio_date.isoformat(),
+        fecha_fin_date.isoformat(),
+        extension='xlsx',
+    )
+    return generator._save_workbook(workbook, filename)
+
+
+def generar_excel_clientes_top(
+    fecha_inicio: Any,
+    fecha_fin: Any,
+    limite: int = 100,
+) -> GeneratedReportFile:
+    """Fachada funcional para Excel de mejores clientes."""
+    return ExcelReportGenerator().generar_excel_clientes_top(
+        fecha_inicio,
+        fecha_fin,
+        limite,
+    )
 
 
 def generar_excel_clientes_cartera() -> GeneratedReportFile:
