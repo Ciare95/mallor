@@ -1,11 +1,22 @@
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import DecimalField, Q, Sum
-from django.db.models.functions import Coalesce
+from django.db.models import (
+    Avg,
+    Count,
+    DecimalField,
+    ExpressionWrapper,
+    F,
+    Max,
+    Min,
+    Q,
+    Sum,
+)
+from django.db.models.functions import Coalesce, TruncDate, TruncMonth
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -15,8 +26,11 @@ from core.exceptions import (
     InformeError,
     RangoFechasInvalidoError,
 )
+from cliente.models import Cliente
 from inventario.models import FacturaCompra
+from inventario.models import Producto
 from usuario.models import Usuario
+from ventas.models import DetalleVenta, Venta
 
 from .models import CierreCaja
 
@@ -29,6 +43,34 @@ MANUAL_GASTO_KEYS = (
     'salarios',
     'otros_gastos',
 )
+BUSINESS_TIMEZONE = ZoneInfo('America/Bogota')
+MONTH_LABELS = (
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre',
+)
+
+
+def _local_day_start_utc(target_date: date) -> datetime:
+    local_start = datetime.combine(
+        target_date,
+        time.min,
+        tzinfo=BUSINESS_TIMEZONE,
+    )
+    return local_start.astimezone(dt_timezone.utc)
+
+
+def _next_local_day_start_utc(target_date: date) -> datetime:
+    return _local_day_start_utc(target_date + timedelta(days=1))
 
 
 class CierreCajaService:
@@ -701,4 +743,1401 @@ class CierreCajaService:
             'salarios': gastos_manuales['salarios'],
             'otros_gastos': gastos_manuales['otros_gastos'],
             'total': CierreCajaService._quantize(total),
+        }
+
+
+class ReporteEstadisticasService:
+    """
+    Servicio para estadisticas y reportes transversales del negocio.
+
+    Entrega datos agregados y series listas para visualizacion en el
+    frontend, reutilizando consultas optimizadas sobre ventas,
+    productos, clientes e inventario.
+    """
+
+    @staticmethod
+    def _quantize(value: Decimal) -> Decimal:
+        return (value or ZERO).quantize(QUANTIZER)
+
+    @staticmethod
+    def _safe_percentage(
+        current_value: Decimal,
+        previous_value: Decimal,
+    ) -> Optional[float]:
+        if previous_value == ZERO:
+            return None
+
+        variacion = (
+            (current_value - previous_value) / previous_value
+        ) * Decimal('100')
+        return float(ReporteEstadisticasService._quantize(variacion))
+
+    @staticmethod
+    def _safe_ticket(total: Decimal, cantidad: int) -> Decimal:
+        if cantidad <= 0:
+            return ZERO
+        return ReporteEstadisticasService._quantize(
+            total / Decimal(str(cantidad)),
+        )
+
+    @staticmethod
+    def _parse_date(value: Any, field_name: str) -> date:
+        if isinstance(value, datetime):
+            if timezone.is_aware(value):
+                return timezone.localtime(value).date()
+            return value.date()
+
+        if isinstance(value, date):
+            return value
+
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value)
+            except ValueError as exc:
+                raise InformeError(
+                    _(
+                        'El campo %(campo)s debe tener una fecha valida.'
+                    ) % {
+                        'campo': field_name,
+                    },
+                    code='fecha_invalida',
+                ) from exc
+
+        raise InformeError(
+            _(
+                'El campo %(campo)s debe ser una fecha valida.'
+            ) % {
+                'campo': field_name,
+            },
+            code='fecha_invalida',
+        )
+
+    @staticmethod
+    def _parse_positive_int(value: Any, field_name: str) -> int:
+        try:
+            parsed_value = int(value)
+        except (TypeError, ValueError) as exc:
+            raise InformeError(
+                _(
+                    'El campo %(campo)s debe ser un entero valido.'
+                ) % {
+                    'campo': field_name,
+                },
+                code='entero_invalido',
+            ) from exc
+
+        if parsed_value <= 0:
+            raise InformeError(
+                _(
+                    'El campo %(campo)s debe ser mayor que cero.'
+                ) % {
+                    'campo': field_name,
+                },
+                code='entero_no_positivo',
+            )
+
+        return parsed_value
+
+    @staticmethod
+    def _validar_rango_fechas(
+        fecha_inicio: date,
+        fecha_fin: date,
+    ) -> None:
+        if fecha_inicio > fecha_fin:
+            raise RangoFechasInvalidoError(fecha_inicio, fecha_fin)
+
+    @staticmethod
+    def _ventas_queryset_periodo(
+        fecha_inicio: date,
+        fecha_fin: date,
+    ):
+        ReporteEstadisticasService._validar_rango_fechas(
+            fecha_inicio,
+            fecha_fin,
+        )
+        return Venta.objects.filter(
+            estado=Venta.Estado.TERMINADA,
+            fecha_venta__gte=_local_day_start_utc(fecha_inicio),
+            fecha_venta__lt=_next_local_day_start_utc(fecha_fin),
+        )
+
+    @staticmethod
+    def _detalles_queryset_periodo(
+        fecha_inicio: date,
+        fecha_fin: date,
+    ):
+        return DetalleVenta.objects.filter(
+            venta__in=ReporteEstadisticasService._ventas_queryset_periodo(
+                fecha_inicio,
+                fecha_fin,
+            ),
+        )
+
+    @staticmethod
+    def _generar_rango_fechas(
+        fecha_inicio: date,
+        fecha_fin: date,
+    ) -> List[date]:
+        dias = (fecha_fin - fecha_inicio).days
+        return [
+            fecha_inicio + timedelta(days=offset)
+            for offset in range(dias + 1)
+        ]
+
+    @staticmethod
+    def _cliente_nombre_desde_registro(registro: Dict[str, Any]) -> str:
+        return (
+            registro.get('cliente__razon_social')
+            or registro.get('cliente__nombre')
+            or registro.get('cliente__nombre_comercial')
+            or _('Cliente sin nombre')
+        )
+
+    @staticmethod
+    def _comparacion_metricas(
+        actual: Decimal,
+        anterior: Decimal,
+    ) -> Dict[str, Any]:
+        diferencia = ReporteEstadisticasService._quantize(actual - anterior)
+        return {
+            'actual': float(ReporteEstadisticasService._quantize(actual)),
+            'anterior': float(ReporteEstadisticasService._quantize(anterior)),
+            'variacion_absoluta': float(diferencia),
+            'variacion_porcentual': (
+                ReporteEstadisticasService._safe_percentage(
+                    actual,
+                    anterior,
+                )
+            ),
+        }
+
+    @staticmethod
+    def estadisticas_ventas_periodo(
+        fecha_inicio: Any,
+        fecha_fin: Any,
+    ) -> Dict[str, Any]:
+        """
+        Retorna estadisticas generales de ventas en un periodo.
+        """
+        fecha_inicio_date = ReporteEstadisticasService._parse_date(
+            fecha_inicio,
+            'fecha_inicio',
+        )
+        fecha_fin_date = ReporteEstadisticasService._parse_date(
+            fecha_fin,
+            'fecha_fin',
+        )
+        ventas_qs = ReporteEstadisticasService._ventas_queryset_periodo(
+            fecha_inicio_date,
+            fecha_fin_date,
+        )
+        agregados = ventas_qs.aggregate(
+            total_ventas=Coalesce(
+                Sum('total'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=2,
+                ),
+            ),
+            cantidad_ventas=Count('id'),
+        )
+        total_ventas = ReporteEstadisticasService._quantize(
+            agregados['total_ventas'],
+        )
+        cantidad_ventas = agregados['cantidad_ventas']
+        ticket_promedio = ReporteEstadisticasService._safe_ticket(
+            total_ventas,
+            cantidad_ventas,
+        )
+
+        dias_periodo = (fecha_fin_date - fecha_inicio_date).days + 1
+        fecha_fin_anterior = fecha_inicio_date - timedelta(days=1)
+        fecha_inicio_anterior = (
+            fecha_fin_anterior - timedelta(days=dias_periodo - 1)
+        )
+        ventas_anterior_qs = (
+            ReporteEstadisticasService._ventas_queryset_periodo(
+                fecha_inicio_anterior,
+                fecha_fin_anterior,
+            )
+        )
+        agregados_anteriores = ventas_anterior_qs.aggregate(
+            total_ventas=Coalesce(
+                Sum('total'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=2,
+                ),
+            ),
+            cantidad_ventas=Count('id'),
+        )
+        total_ventas_anterior = ReporteEstadisticasService._quantize(
+            agregados_anteriores['total_ventas'],
+        )
+        cantidad_ventas_anterior = agregados_anteriores['cantidad_ventas']
+        ticket_promedio_anterior = ReporteEstadisticasService._safe_ticket(
+            total_ventas_anterior,
+            cantidad_ventas_anterior,
+        )
+
+        return {
+            'fecha_inicio': fecha_inicio_date.isoformat(),
+            'fecha_fin': fecha_fin_date.isoformat(),
+            'resumen': {
+                'total_ventas': float(total_ventas),
+                'cantidad_ventas': cantidad_ventas,
+                'ticket_promedio': float(ticket_promedio),
+            },
+            'periodo_anterior': {
+                'fecha_inicio': fecha_inicio_anterior.isoformat(),
+                'fecha_fin': fecha_fin_anterior.isoformat(),
+            },
+            'comparacion_periodo_anterior': {
+                'total_ventas': (
+                    ReporteEstadisticasService._comparacion_metricas(
+                        total_ventas,
+                        total_ventas_anterior,
+                    )
+                ),
+                'cantidad_ventas': {
+                    'actual': cantidad_ventas,
+                    'anterior': cantidad_ventas_anterior,
+                    'variacion_absoluta': (
+                        cantidad_ventas - cantidad_ventas_anterior
+                    ),
+                    'variacion_porcentual': (
+                        ReporteEstadisticasService._safe_percentage(
+                            Decimal(str(cantidad_ventas)),
+                            Decimal(str(cantidad_ventas_anterior)),
+                        )
+                    ),
+                },
+                'ticket_promedio': (
+                    ReporteEstadisticasService._comparacion_metricas(
+                        ticket_promedio,
+                        ticket_promedio_anterior,
+                    )
+                ),
+            },
+            'grafico_tendencia': (
+                ReporteEstadisticasService.ventas_por_dia(
+                    fecha_inicio_date,
+                    fecha_fin_date,
+                )['series']
+            ),
+        }
+
+    @staticmethod
+    def ventas_por_dia(
+        fecha_inicio: Any,
+        fecha_fin: Any,
+    ) -> Dict[str, Any]:
+        """
+        Retorna la serie temporal diaria de ventas del periodo.
+        """
+        fecha_inicio_date = ReporteEstadisticasService._parse_date(
+            fecha_inicio,
+            'fecha_inicio',
+        )
+        fecha_fin_date = ReporteEstadisticasService._parse_date(
+            fecha_fin,
+            'fecha_fin',
+        )
+        ventas_qs = ReporteEstadisticasService._ventas_queryset_periodo(
+            fecha_inicio_date,
+            fecha_fin_date,
+        )
+        resultados = ventas_qs.annotate(
+            fecha_local=TruncDate(
+                'fecha_venta',
+                tzinfo=BUSINESS_TIMEZONE,
+            ),
+        ).values(
+            'fecha_local',
+        ).annotate(
+            total_ventas=Coalesce(
+                Sum('total'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=2,
+                ),
+            ),
+            cantidad_ventas=Count('id'),
+        ).order_by('fecha_local')
+
+        resultados_por_fecha = {
+            item['fecha_local']: item
+            for item in resultados
+        }
+        series = []
+
+        for fecha_item in ReporteEstadisticasService._generar_rango_fechas(
+            fecha_inicio_date,
+            fecha_fin_date,
+        ):
+            item = resultados_por_fecha.get(fecha_item)
+            total = (
+                ReporteEstadisticasService._quantize(
+                    item['total_ventas'],
+                )
+                if item else ZERO
+            )
+            cantidad = item['cantidad_ventas'] if item else 0
+            ticket = ReporteEstadisticasService._safe_ticket(
+                total,
+                cantidad,
+            )
+            series.append({
+                'fecha': fecha_item.isoformat(),
+                'total_ventas': float(total),
+                'cantidad_ventas': cantidad,
+                'ticket_promedio': float(ticket),
+            })
+
+        return {
+            'fecha_inicio': fecha_inicio_date.isoformat(),
+            'fecha_fin': fecha_fin_date.isoformat(),
+            'series': series,
+        }
+
+    @staticmethod
+    def ventas_por_mes(anio: Any) -> Dict[str, Any]:
+        """
+        Retorna la serie temporal mensual de ventas para un año.
+        """
+        anio_int = ReporteEstadisticasService._parse_positive_int(
+            anio,
+            'anio',
+        )
+        fecha_inicio = date(anio_int, 1, 1)
+        fecha_fin = date(anio_int, 12, 31)
+        ventas_qs = ReporteEstadisticasService._ventas_queryset_periodo(
+            fecha_inicio,
+            fecha_fin,
+        )
+        resultados = ventas_qs.annotate(
+            mes_local=TruncMonth(
+                'fecha_venta',
+                tzinfo=BUSINESS_TIMEZONE,
+            ),
+        ).values(
+            'mes_local',
+        ).annotate(
+            total_ventas=Coalesce(
+                Sum('total'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=2,
+                ),
+            ),
+            cantidad_ventas=Count('id'),
+        ).order_by('mes_local')
+
+        resultados_por_mes = {
+            item['mes_local'].month: item
+            for item in resultados
+        }
+        series = []
+
+        for mes in range(1, 13):
+            item = resultados_por_mes.get(mes)
+            total = (
+                ReporteEstadisticasService._quantize(
+                    item['total_ventas'],
+                )
+                if item else ZERO
+            )
+            cantidad = item['cantidad_ventas'] if item else 0
+            ticket = ReporteEstadisticasService._safe_ticket(
+                total,
+                cantidad,
+            )
+            series.append({
+                'mes': mes,
+                'label': MONTH_LABELS[mes - 1],
+                'total_ventas': float(total),
+                'cantidad_ventas': cantidad,
+                'ticket_promedio': float(ticket),
+            })
+
+        return {
+            'anio': anio_int,
+            'series': series,
+        }
+
+    @staticmethod
+    def ventas_por_categoria(
+        fecha_inicio: Any,
+        fecha_fin: Any,
+    ) -> Dict[str, Any]:
+        """
+        Retorna la distribucion de ventas por categoria.
+        """
+        fecha_inicio_date = ReporteEstadisticasService._parse_date(
+            fecha_inicio,
+            'fecha_inicio',
+        )
+        fecha_fin_date = ReporteEstadisticasService._parse_date(
+            fecha_fin,
+            'fecha_fin',
+        )
+        detalles_qs = ReporteEstadisticasService._detalles_queryset_periodo(
+            fecha_inicio_date,
+            fecha_fin_date,
+        )
+        resultados = detalles_qs.values(
+            'producto__categoria__nombre',
+        ).annotate(
+            total_vendido=Coalesce(
+                Sum('total'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=2,
+                ),
+            ),
+            cantidad_vendida=Coalesce(
+                Sum('cantidad'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=2,
+                ),
+            ),
+            cantidad_ventas=Count('venta', distinct=True),
+        ).order_by('-total_vendido', 'producto__categoria__nombre')
+
+        total_general = sum(
+            (
+                ReporteEstadisticasService._quantize(item['total_vendido'])
+                for item in resultados
+            ),
+            start=ZERO,
+        )
+        distribucion = []
+
+        for item in resultados:
+            total_vendido = ReporteEstadisticasService._quantize(
+                item['total_vendido'],
+            )
+            porcentaje = (
+                float(
+                    ReporteEstadisticasService._quantize(
+                        (total_vendido / total_general) * Decimal('100'),
+                    ),
+                )
+                if total_general > ZERO else 0.0
+            )
+            distribucion.append({
+                'categoria': (
+                    item['producto__categoria__nombre'] or 'Sin categoria'
+                ),
+                'total_vendido': float(total_vendido),
+                'cantidad_vendida': float(
+                    ReporteEstadisticasService._quantize(
+                        item['cantidad_vendida'],
+                    ),
+                ),
+                'cantidad_ventas': item['cantidad_ventas'],
+                'porcentaje': porcentaje,
+            })
+
+        return {
+            'fecha_inicio': fecha_inicio_date.isoformat(),
+            'fecha_fin': fecha_fin_date.isoformat(),
+            'total_general': float(total_general),
+            'distribucion': distribucion,
+        }
+
+    @staticmethod
+    def ventas_por_metodo_pago(
+        fecha_inicio: Any,
+        fecha_fin: Any,
+    ) -> Dict[str, Any]:
+        """
+        Retorna la distribucion de ventas por metodo de pago.
+        """
+        fecha_inicio_date = ReporteEstadisticasService._parse_date(
+            fecha_inicio,
+            'fecha_inicio',
+        )
+        fecha_fin_date = ReporteEstadisticasService._parse_date(
+            fecha_fin,
+            'fecha_fin',
+        )
+        ventas_qs = ReporteEstadisticasService._ventas_queryset_periodo(
+            fecha_inicio_date,
+            fecha_fin_date,
+        )
+        resultados = ventas_qs.values(
+            'metodo_pago',
+        ).annotate(
+            total_vendido=Coalesce(
+                Sum('total'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=2,
+                ),
+            ),
+            cantidad_ventas=Count('id'),
+        ).order_by('-total_vendido', 'metodo_pago')
+
+        total_general = sum(
+            (
+                ReporteEstadisticasService._quantize(item['total_vendido'])
+                for item in resultados
+            ),
+            start=ZERO,
+        )
+        etiquetas = dict(Venta.MetodoPago.choices)
+        distribucion = []
+
+        for item in resultados:
+            total_vendido = ReporteEstadisticasService._quantize(
+                item['total_vendido'],
+            )
+            porcentaje = (
+                float(
+                    ReporteEstadisticasService._quantize(
+                        (total_vendido / total_general) * Decimal('100'),
+                    ),
+                )
+                if total_general > ZERO else 0.0
+            )
+            distribucion.append({
+                'metodo_pago': item['metodo_pago'],
+                'label': etiquetas.get(item['metodo_pago'], item['metodo_pago']),
+                'total_vendido': float(total_vendido),
+                'cantidad_ventas': item['cantidad_ventas'],
+                'porcentaje': porcentaje,
+            })
+
+        return {
+            'fecha_inicio': fecha_inicio_date.isoformat(),
+            'fecha_fin': fecha_fin_date.isoformat(),
+            'total_general': float(total_general),
+            'distribucion': distribucion,
+        }
+
+    @staticmethod
+    def productos_mas_vendidos(
+        fecha_inicio: Any,
+        fecha_fin: Any,
+        limite: Any = 10,
+    ) -> Dict[str, Any]:
+        """
+        Retorna el top de productos mas vendidos en el periodo.
+        """
+        fecha_inicio_date = ReporteEstadisticasService._parse_date(
+            fecha_inicio,
+            'fecha_inicio',
+        )
+        fecha_fin_date = ReporteEstadisticasService._parse_date(
+            fecha_fin,
+            'fecha_fin',
+        )
+        limite_int = ReporteEstadisticasService._parse_positive_int(
+            limite,
+            'limite',
+        )
+        detalles_qs = ReporteEstadisticasService._detalles_queryset_periodo(
+            fecha_inicio_date,
+            fecha_fin_date,
+        )
+        costo_expr = ExpressionWrapper(
+            F('cantidad') * F('producto__precio_compra'),
+            output_field=DecimalField(
+                max_digits=16,
+                decimal_places=2,
+            ),
+        )
+        resultados = detalles_qs.values(
+            'producto_id',
+            'producto__nombre',
+            'producto__codigo_interno',
+            'producto__categoria__nombre',
+        ).annotate(
+            cantidad_vendida=Coalesce(
+                Sum('cantidad'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=2,
+                ),
+            ),
+            total_vendido=Coalesce(
+                Sum('total'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+            costo_estimado=Coalesce(
+                Sum(costo_expr),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+            cantidad_ventas=Count('venta', distinct=True),
+        ).order_by('-cantidad_vendida', '-total_vendido')[:limite_int]
+
+        productos = []
+
+        for item in resultados:
+            total_vendido = ReporteEstadisticasService._quantize(
+                item['total_vendido'],
+            )
+            costo_estimado = ReporteEstadisticasService._quantize(
+                item['costo_estimado'],
+            )
+            margen = ReporteEstadisticasService._quantize(
+                total_vendido - costo_estimado,
+            )
+            productos.append({
+                'producto_id': item['producto_id'],
+                'nombre': item['producto__nombre'],
+                'codigo_interno': item['producto__codigo_interno'],
+                'categoria': item['producto__categoria__nombre'],
+                'cantidad_vendida': float(
+                    ReporteEstadisticasService._quantize(
+                        item['cantidad_vendida'],
+                    ),
+                ),
+                'total_vendido': float(total_vendido),
+                'margen_generado': float(margen),
+                'cantidad_ventas': item['cantidad_ventas'],
+            })
+
+        return {
+            'fecha_inicio': fecha_inicio_date.isoformat(),
+            'fecha_fin': fecha_fin_date.isoformat(),
+            'limite': limite_int,
+            'resultados': productos,
+        }
+
+    @staticmethod
+    def productos_menos_vendidos(
+        limite: Any = 10,
+    ) -> Dict[str, Any]:
+        """
+        Retorna productos con baja rotacion historica.
+        """
+        limite_int = ReporteEstadisticasService._parse_positive_int(
+            limite,
+            'limite',
+        )
+        resultados = DetalleVenta.objects.filter(
+            venta__estado=Venta.Estado.TERMINADA,
+        ).values(
+            'producto_id',
+            'producto__nombre',
+            'producto__codigo_interno',
+            'producto__categoria__nombre',
+        ).annotate(
+            cantidad_vendida=Coalesce(
+                Sum('cantidad'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=2,
+                ),
+            ),
+            total_vendido=Coalesce(
+                Sum('total'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+            ultima_venta=Max('venta__fecha_venta'),
+        ).filter(
+            cantidad_vendida__gt=ZERO,
+        ).order_by('cantidad_vendida', 'total_vendido')[:limite_int]
+
+        productos = []
+
+        for item in resultados:
+            ultima_venta = item['ultima_venta']
+            ultima_venta_str = (
+                timezone.localtime(ultima_venta).isoformat()
+                if ultima_venta else None
+            )
+            productos.append({
+                'producto_id': item['producto_id'],
+                'nombre': item['producto__nombre'],
+                'codigo_interno': item['producto__codigo_interno'],
+                'categoria': item['producto__categoria__nombre'],
+                'cantidad_vendida': float(
+                    ReporteEstadisticasService._quantize(
+                        item['cantidad_vendida'],
+                    ),
+                ),
+                'total_vendido': float(
+                    ReporteEstadisticasService._quantize(
+                        item['total_vendido'],
+                    ),
+                ),
+                'ultima_venta': ultima_venta_str,
+            })
+
+        return {
+            'limite': limite_int,
+            'resultados': productos,
+        }
+
+    @staticmethod
+    def productos_sin_movimiento(
+        dias: Any = 30,
+    ) -> Dict[str, Any]:
+        """
+        Retorna productos sin ventas en los ultimos N dias.
+        """
+        dias_int = ReporteEstadisticasService._parse_positive_int(
+            dias,
+            'dias',
+        )
+        fecha_corte = timezone.localdate() - timedelta(days=dias_int)
+        fecha_corte_dt = _local_day_start_utc(fecha_corte)
+        productos_qs = Producto.objects.select_related('categoria').annotate(
+            ultima_venta=Max(
+                'detalles_venta__venta__fecha_venta',
+                filter=Q(
+                    detalles_venta__venta__estado=Venta.Estado.TERMINADA,
+                ),
+            ),
+        ).filter(
+            Q(ultima_venta__lt=fecha_corte_dt) | Q(ultima_venta__isnull=True)
+        ).order_by('ultima_venta', 'nombre')
+
+        productos = []
+        hoy = timezone.localdate()
+
+        for producto in productos_qs:
+            ultima_venta = producto.ultima_venta
+            ultima_fecha = (
+                timezone.localtime(ultima_venta).date()
+                if ultima_venta else None
+            )
+            dias_sin_movimiento = (
+                (hoy - ultima_fecha).days
+                if ultima_fecha else None
+            )
+            productos.append({
+                'producto_id': producto.id,
+                'nombre': producto.nombre,
+                'codigo_interno': producto.codigo_interno,
+                'categoria': (
+                    producto.categoria.nombre
+                    if producto.categoria else 'Sin categoria'
+                ),
+                'existencias': float(
+                    ReporteEstadisticasService._quantize(
+                        producto.existencias,
+                    ),
+                ),
+                'valor_inventario': float(
+                    ReporteEstadisticasService._quantize(
+                        producto.precio_compra * producto.existencias,
+                    ),
+                ),
+                'ultima_venta': (
+                    ultima_fecha.isoformat() if ultima_fecha else None
+                ),
+                'dias_sin_movimiento': dias_sin_movimiento,
+            })
+
+        return {
+            'dias': dias_int,
+            'fecha_corte': fecha_corte.isoformat(),
+            'resultados': productos,
+        }
+
+    @staticmethod
+    def mejores_clientes(
+        fecha_inicio: Any,
+        fecha_fin: Any,
+        limite: Any = 10,
+    ) -> Dict[str, Any]:
+        """
+        Retorna el top de clientes por compras en un periodo.
+        """
+        fecha_inicio_date = ReporteEstadisticasService._parse_date(
+            fecha_inicio,
+            'fecha_inicio',
+        )
+        fecha_fin_date = ReporteEstadisticasService._parse_date(
+            fecha_fin,
+            'fecha_fin',
+        )
+        limite_int = ReporteEstadisticasService._parse_positive_int(
+            limite,
+            'limite',
+        )
+        ventas_qs = ReporteEstadisticasService._ventas_queryset_periodo(
+            fecha_inicio_date,
+            fecha_fin_date,
+        ).exclude(
+            cliente__numero_documento=Cliente.CONSUMIDOR_FINAL_DOCUMENTO,
+        ).filter(
+            cliente__isnull=False,
+        )
+        resultados = ventas_qs.values(
+            'cliente_id',
+            'cliente__nombre',
+            'cliente__razon_social',
+            'cliente__nombre_comercial',
+            'cliente__numero_documento',
+        ).annotate(
+            total_comprado=Coalesce(
+                Sum('total'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+            cantidad_compras=Count('id'),
+            ticket_promedio=Coalesce(
+                Avg('total'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=2,
+                ),
+            ),
+        ).order_by('-total_comprado', '-cantidad_compras')[:limite_int]
+
+        clientes = []
+
+        for item in resultados:
+            clientes.append({
+                'cliente_id': item['cliente_id'],
+                'nombre': (
+                    ReporteEstadisticasService._cliente_nombre_desde_registro(
+                        item,
+                    )
+                ),
+                'numero_documento': item['cliente__numero_documento'],
+                'total_comprado': float(
+                    ReporteEstadisticasService._quantize(
+                        item['total_comprado'],
+                    ),
+                ),
+                'cantidad_compras': item['cantidad_compras'],
+                'ticket_promedio': float(
+                    ReporteEstadisticasService._quantize(
+                        item['ticket_promedio'],
+                    ),
+                ),
+            })
+
+        return {
+            'fecha_inicio': fecha_inicio_date.isoformat(),
+            'fecha_fin': fecha_fin_date.isoformat(),
+            'limite': limite_int,
+            'resultados': clientes,
+        }
+
+    @staticmethod
+    def analisis_recurrencia_clientes() -> Dict[str, Any]:
+        """
+        Analiza clientes nuevos vs recurrentes con base en ventas cerradas.
+        """
+        clientes_qs = Cliente.objects.filter(
+            ventas__estado=Venta.Estado.TERMINADA,
+        ).exclude(
+            numero_documento=Cliente.CONSUMIDOR_FINAL_DOCUMENTO,
+        ).annotate(
+            total_compras=Count(
+                'ventas',
+                filter=Q(ventas__estado=Venta.Estado.TERMINADA),
+            ),
+            total_comprado=Coalesce(
+                Sum(
+                    'ventas__total',
+                    filter=Q(ventas__estado=Venta.Estado.TERMINADA),
+                ),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+            primera_compra=Min(
+                'ventas__fecha_venta',
+                filter=Q(ventas__estado=Venta.Estado.TERMINADA),
+            ),
+            ultima_compra=Max(
+                'ventas__fecha_venta',
+                filter=Q(ventas__estado=Venta.Estado.TERMINADA),
+            ),
+        ).filter(
+            total_compras__gt=0,
+        )
+
+        clientes = list(
+            clientes_qs.values(
+                'id',
+                'nombre',
+                'razon_social',
+                'nombre_comercial',
+                'numero_documento',
+                'total_compras',
+                'total_comprado',
+                'primera_compra',
+                'ultima_compra',
+            ).order_by('-total_compras', '-total_comprado')
+        )
+        clientes_nuevos = [
+            cliente for cliente in clientes
+            if cliente['total_compras'] == 1
+        ]
+        clientes_recurrentes = [
+            cliente for cliente in clientes
+            if cliente['total_compras'] > 1
+        ]
+        total_clientes = len(clientes)
+        porcentaje_recurrentes = (
+            round((len(clientes_recurrentes) / total_clientes) * 100, 2)
+            if total_clientes else 0.0
+        )
+        top_recurrentes = []
+
+        for cliente in clientes_recurrentes[:10]:
+            top_recurrentes.append({
+                'cliente_id': cliente['id'],
+                'nombre': (
+                    cliente['razon_social']
+                    or cliente['nombre']
+                    or cliente['nombre_comercial']
+                ),
+                'numero_documento': cliente['numero_documento'],
+                'total_compras': cliente['total_compras'],
+                'total_comprado': float(
+                    ReporteEstadisticasService._quantize(
+                        cliente['total_comprado'],
+                    ),
+                ),
+                'primera_compra': (
+                    timezone.localtime(cliente['primera_compra']).date()
+                    .isoformat()
+                    if cliente['primera_compra'] else None
+                ),
+                'ultima_compra': (
+                    timezone.localtime(cliente['ultima_compra']).date()
+                    .isoformat()
+                    if cliente['ultima_compra'] else None
+                ),
+            })
+
+        return {
+            'resumen': {
+                'total_clientes': total_clientes,
+                'clientes_nuevos': len(clientes_nuevos),
+                'clientes_recurrentes': len(clientes_recurrentes),
+                'porcentaje_recurrentes': porcentaje_recurrentes,
+            },
+            'distribucion': [
+                {
+                    'tipo': 'NUEVOS',
+                    'cantidad': len(clientes_nuevos),
+                },
+                {
+                    'tipo': 'RECURRENTES',
+                    'cantidad': len(clientes_recurrentes),
+                },
+            ],
+            'top_recurrentes': top_recurrentes,
+        }
+
+    @staticmethod
+    def valor_total_inventario() -> Dict[str, Any]:
+        """
+        Calcula la valorizacion actual del inventario.
+        """
+        valor_compra_expr = ExpressionWrapper(
+            F('precio_compra') * F('existencias'),
+            output_field=DecimalField(
+                max_digits=16,
+                decimal_places=2,
+            ),
+        )
+        valor_venta_expr = ExpressionWrapper(
+            F('precio_venta') * F('existencias'),
+            output_field=DecimalField(
+                max_digits=16,
+                decimal_places=2,
+            ),
+        )
+        agregados = Producto.objects.aggregate(
+            valor_compra=Coalesce(
+                Sum(valor_compra_expr),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+            valor_venta=Coalesce(
+                Sum(valor_venta_expr),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+            total_existencias=Coalesce(
+                Sum('existencias'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+            cantidad_productos=Count('id'),
+        )
+        margen_potencial = ReporteEstadisticasService._quantize(
+            agregados['valor_venta'] - agregados['valor_compra'],
+        )
+
+        return {
+            'valor_compra': float(
+                ReporteEstadisticasService._quantize(
+                    agregados['valor_compra'],
+                ),
+            ),
+            'valor_venta': float(
+                ReporteEstadisticasService._quantize(
+                    agregados['valor_venta'],
+                ),
+            ),
+            'margen_potencial': float(margen_potencial),
+            'total_existencias': float(
+                ReporteEstadisticasService._quantize(
+                    agregados['total_existencias'],
+                ),
+            ),
+            'cantidad_productos': agregados['cantidad_productos'],
+        }
+
+    @staticmethod
+    def rotacion_inventario(
+        fecha_inicio: Any,
+        fecha_fin: Any,
+    ) -> Dict[str, Any]:
+        """
+        Calcula un indice de rotacion con base en ventas del periodo.
+        """
+        fecha_inicio_date = ReporteEstadisticasService._parse_date(
+            fecha_inicio,
+            'fecha_inicio',
+        )
+        fecha_fin_date = ReporteEstadisticasService._parse_date(
+            fecha_fin,
+            'fecha_fin',
+        )
+        detalles_qs = ReporteEstadisticasService._detalles_queryset_periodo(
+            fecha_inicio_date,
+            fecha_fin_date,
+        )
+        costo_expr = ExpressionWrapper(
+            F('cantidad') * F('producto__precio_compra'),
+            output_field=DecimalField(
+                max_digits=16,
+                decimal_places=2,
+            ),
+        )
+        agregados = detalles_qs.aggregate(
+            costo_productos_vendidos=Coalesce(
+                Sum(costo_expr),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+            unidades_vendidas=Coalesce(
+                Sum('cantidad'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+        )
+        inventario_actual = ReporteEstadisticasService.valor_total_inventario()
+        valor_inventario_actual = Decimal(
+            str(inventario_actual['valor_compra']),
+        )
+        costo_productos_vendidos = (
+            ReporteEstadisticasService._quantize(
+                agregados['costo_productos_vendidos'],
+            )
+        )
+        indice_rotacion = (
+            ReporteEstadisticasService._quantize(
+                costo_productos_vendidos / valor_inventario_actual,
+            )
+            if valor_inventario_actual > ZERO else ZERO
+        )
+        dias_periodo = (fecha_fin_date - fecha_inicio_date).days + 1
+        dias_inventario = (
+            ReporteEstadisticasService._quantize(
+                Decimal(str(dias_periodo)) / indice_rotacion,
+            )
+            if indice_rotacion > ZERO else ZERO
+        )
+        productos_rotacion_qs = detalles_qs.values(
+            'producto_id',
+            'producto__nombre',
+            'producto__codigo_interno',
+        ).annotate(
+            unidades_vendidas=Coalesce(
+                Sum('cantidad'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+            stock_actual=Coalesce(
+                Max('producto__existencias'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+        ).order_by('-unidades_vendidas')[:10]
+        productos_rotacion = []
+
+        for item in productos_rotacion_qs:
+            stock_actual = ReporteEstadisticasService._quantize(
+                item['stock_actual'],
+            )
+            indice_producto = (
+                ReporteEstadisticasService._quantize(
+                    item['unidades_vendidas'] / stock_actual,
+                )
+                if stock_actual > ZERO else ZERO
+            )
+            productos_rotacion.append({
+                'producto_id': item['producto_id'],
+                'nombre': item['producto__nombre'],
+                'codigo_interno': item['producto__codigo_interno'],
+                'unidades_vendidas': float(
+                    ReporteEstadisticasService._quantize(
+                        item['unidades_vendidas'],
+                    ),
+                ),
+                'stock_actual': float(stock_actual),
+                'indice_rotacion': float(indice_producto),
+            })
+
+        return {
+            'fecha_inicio': fecha_inicio_date.isoformat(),
+            'fecha_fin': fecha_fin_date.isoformat(),
+            'costo_productos_vendidos': float(costo_productos_vendidos),
+            'valor_inventario_actual': float(
+                ReporteEstadisticasService._quantize(
+                    valor_inventario_actual,
+                ),
+            ),
+            'indice_rotacion': float(indice_rotacion),
+            'dias_inventario': float(dias_inventario),
+            'productos_rotacion': productos_rotacion,
+        }
+
+    @staticmethod
+    def total_cuentas_por_cobrar() -> Dict[str, Any]:
+        """
+        Retorna el total actual de cartera por cobrar.
+        """
+        ventas_qs = Venta.objects.filter(
+            estado=Venta.Estado.TERMINADA,
+            saldo_pendiente__gt=ZERO,
+        )
+        agregados = ventas_qs.aggregate(
+            total_cartera=Coalesce(
+                Sum('saldo_pendiente'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=16,
+                    decimal_places=2,
+                ),
+            ),
+            cantidad_ventas=Count('id'),
+            clientes_con_saldo=Count('cliente_id', distinct=True),
+            ticket_promedio=Coalesce(
+                Avg('saldo_pendiente'),
+                ZERO,
+                output_field=DecimalField(
+                    max_digits=14,
+                    decimal_places=2,
+                ),
+            ),
+        )
+
+        return {
+            'total_cartera': float(
+                ReporteEstadisticasService._quantize(
+                    agregados['total_cartera'],
+                ),
+            ),
+            'cantidad_ventas': agregados['cantidad_ventas'],
+            'clientes_con_saldo': agregados['clientes_con_saldo'],
+            'ticket_promedio_pendiente': float(
+                ReporteEstadisticasService._quantize(
+                    agregados['ticket_promedio'],
+                ),
+            ),
+        }
+
+    @staticmethod
+    def antiguedad_cartera() -> Dict[str, Any]:
+        """
+        Retorna un analisis de antiguedad de la cartera actual.
+        """
+        hoy = timezone.localdate()
+        ventas = list(
+            Venta.objects.select_related('cliente').filter(
+                estado=Venta.Estado.TERMINADA,
+                saldo_pendiente__gt=ZERO,
+            ).order_by('fecha_venta')
+        )
+        buckets = {
+            'AL_DIA': {
+                'label': 'Al dia',
+                'total': ZERO,
+                'cantidad_ventas': 0,
+            },
+            '1_30': {
+                'label': '1-30 dias',
+                'total': ZERO,
+                'cantidad_ventas': 0,
+            },
+            '31_60': {
+                'label': '31-60 dias',
+                'total': ZERO,
+                'cantidad_ventas': 0,
+            },
+            '61_90': {
+                'label': '61-90 dias',
+                'total': ZERO,
+                'cantidad_ventas': 0,
+            },
+            '91_MAS': {
+                'label': '91+ dias',
+                'total': ZERO,
+                'cantidad_ventas': 0,
+            },
+        }
+
+        for venta in ventas:
+            fecha_venta = timezone.localtime(venta.fecha_venta).date()
+            dias_plazo = venta.cliente.dias_plazo if venta.cliente else 0
+            fecha_vencimiento = fecha_venta + timedelta(days=dias_plazo)
+            dias_vencidos = (hoy - fecha_vencimiento).days
+
+            if dias_vencidos <= 0:
+                bucket = 'AL_DIA'
+            elif dias_vencidos <= 30:
+                bucket = '1_30'
+            elif dias_vencidos <= 60:
+                bucket = '31_60'
+            elif dias_vencidos <= 90:
+                bucket = '61_90'
+            else:
+                bucket = '91_MAS'
+
+            buckets[bucket]['total'] += venta.saldo_pendiente
+            buckets[bucket]['cantidad_ventas'] += 1
+
+        distribucion = []
+        total_general = ZERO
+
+        for key in ('AL_DIA', '1_30', '31_60', '61_90', '91_MAS'):
+            total_bucket = ReporteEstadisticasService._quantize(
+                buckets[key]['total'],
+            )
+            total_general += total_bucket
+            distribucion.append({
+                'bucket': key,
+                'label': buckets[key]['label'],
+                'total': float(total_bucket),
+                'cantidad_ventas': buckets[key]['cantidad_ventas'],
+            })
+
+        return {
+            'fecha_corte': hoy.isoformat(),
+            'total_general': float(total_general),
+            'distribucion': distribucion,
+        }
+
+    @staticmethod
+    def proyeccion_ingresos(
+        dias: Any = 30,
+    ) -> Dict[str, Any]:
+        """
+        Proyecta ingresos futuros usando promedio diario historico.
+        """
+        dias_int = ReporteEstadisticasService._parse_positive_int(
+            dias,
+            'dias',
+        )
+        ventana_historica = max(30, dias_int)
+        fecha_fin_historica = timezone.localdate()
+        fecha_inicio_historica = (
+            fecha_fin_historica - timedelta(days=ventana_historica - 1)
+        )
+        serie_historica = ReporteEstadisticasService.ventas_por_dia(
+            fecha_inicio_historica,
+            fecha_fin_historica,
+        )['series']
+        total_historico = sum(
+            (
+                Decimal(str(item['total_ventas']))
+                for item in serie_historica
+            ),
+            start=ZERO,
+        )
+        promedio_diario = ReporteEstadisticasService._quantize(
+            total_historico / Decimal(str(ventana_historica)),
+        )
+        total_proyectado = ReporteEstadisticasService._quantize(
+            promedio_diario * Decimal(str(dias_int)),
+        )
+        fecha_inicio_proyeccion = fecha_fin_historica + timedelta(days=1)
+        serie_proyectada = []
+
+        for offset in range(dias_int):
+            fecha_proyectada = fecha_inicio_proyeccion + timedelta(
+                days=offset,
+            )
+            serie_proyectada.append({
+                'fecha': fecha_proyectada.isoformat(),
+                'ingreso_proyectado': float(promedio_diario),
+            })
+
+        return {
+            'dias_proyeccion': dias_int,
+            'ventana_historica': ventana_historica,
+            'fecha_inicio_historica': fecha_inicio_historica.isoformat(),
+            'fecha_fin_historica': fecha_fin_historica.isoformat(),
+            'promedio_diario_historico': float(promedio_diario),
+            'total_historico': float(
+                ReporteEstadisticasService._quantize(total_historico),
+            ),
+            'total_proyectado': float(total_proyectado),
+            'serie_historica': serie_historica,
+            'serie_proyectada': serie_proyectada,
         }
