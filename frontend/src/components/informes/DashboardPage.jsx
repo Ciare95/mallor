@@ -35,6 +35,7 @@ import GraficoMetodosPago from './GraficoMetodosPago';
 import GraficoProductos from './GraficoProductos';
 import GraficoTendenciaSemanal from './GraficoTendenciaSemanal';
 import GraficoVentas from './GraficoVentas';
+import InformesModuleNav from './InformesModuleNav';
 import { DashboardSection, ErrorPanel, LoadingPanel, PanelShell } from './shared';
 import TablaTopClientes from './TablaTopClientes';
 
@@ -308,6 +309,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <InformesModuleNav />
+
       <FiltrosFecha
         preset={preset}
         customRange={draftCustomRange}

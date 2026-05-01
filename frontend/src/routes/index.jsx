@@ -9,6 +9,8 @@ import ClientesPage from '../pages/clientes/ClientesPage';
 import ProveedoresPage from '../pages/proveedores/ProveedoresPage';
 import FabricantePage from '../pages/fabricante/FabricantePage';
 import DashboardInformesPage from '../pages/informes/DashboardPage';
+import CierresCajaPage from '../pages/informes/CierresCajaPage';
+import ReportesPage from '../pages/informes/ReportesPage';
 
 export const router = createBrowserRouter([
   {
@@ -50,6 +52,14 @@ export const router = createBrowserRouter([
       {
         path: 'informes',
         element: <DashboardInformesPage />,
+      },
+      {
+        path: 'informes/cierres',
+        element: <CierresCajaPage />,
+      },
+      {
+        path: 'informes/reportes',
+        element: <ReportesPage />,
       },
     ],
   },

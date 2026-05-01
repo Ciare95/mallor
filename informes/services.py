@@ -17,6 +17,7 @@ from django.db.models import (
     Sum,
 )
 from django.db.models.functions import Coalesce, TruncDate, TruncMonth
+from django.utils.functional import Promise
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -205,6 +206,9 @@ class CierreCajaService:
 
     @staticmethod
     def _to_json_safe(value: Any) -> Any:
+        if isinstance(value, Promise):
+            return str(value)
+
         if isinstance(value, Decimal):
             return float(CierreCajaService._quantize(value))
 
@@ -221,6 +225,12 @@ class CierreCajaService:
             }
 
         if isinstance(value, list):
+            return [
+                CierreCajaService._to_json_safe(item)
+                for item in value
+            ]
+
+        if isinstance(value, tuple):
             return [
                 CierreCajaService._to_json_safe(item)
                 for item in value
@@ -2498,7 +2508,13 @@ class InformeService:
             formato,
             generated_file,
         )
-        informe.save()
+        try:
+            informe.save()
+        except DjangoValidationError as exc:
+            raise InformeError(
+                CierreCajaService._combine_validation_error_messages(exc),
+                code='informe_invalido',
+            ) from exc
         return informe
 
     @staticmethod
