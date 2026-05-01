@@ -1,5 +1,7 @@
+from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -13,6 +15,20 @@ from ventas.models import Abono, DetalleVenta, Venta
 
 ZERO = Decimal('0.00')
 QUANTIZER = Decimal('0.01')
+BUSINESS_TIMEZONE = ZoneInfo('America/Bogota')
+
+
+def _local_day_start_utc(target_date: date) -> datetime:
+    local_start = datetime.combine(
+        target_date,
+        time.min,
+        tzinfo=BUSINESS_TIMEZONE,
+    )
+    return local_start.astimezone(dt_timezone.utc)
+
+
+def _next_local_day_start_utc(target_date: date) -> datetime:
+    return _local_day_start_utc(target_date + timedelta(days=1))
 
 
 class CierreCaja(models.Model):
@@ -155,13 +171,15 @@ class CierreCaja(models.Model):
     def _ventas_queryset(self):
         return Venta.objects.filter(
             estado=Venta.Estado.TERMINADA,
-            fecha_venta__date=self.fecha_cierre,
+            fecha_venta__gte=_local_day_start_utc(self.fecha_cierre),
+            fecha_venta__lt=_next_local_day_start_utc(self.fecha_cierre),
         )
 
     def _abonos_queryset(self):
         return Abono.objects.filter(
             venta__estado=Venta.Estado.TERMINADA,
-            fecha_abono__date=self.fecha_cierre,
+            fecha_abono__gte=_local_day_start_utc(self.fecha_cierre),
+            fecha_abono__lt=_next_local_day_start_utc(self.fecha_cierre),
             metodo_pago=Abono.MetodoPago.EFECTIVO,
         )
 
@@ -211,7 +229,10 @@ class CierreCaja(models.Model):
         ventas_por_categoria = {}
         categorias = DetalleVenta.objects.filter(
             venta__estado=Venta.Estado.TERMINADA,
-            venta__fecha_venta__date=self.fecha_cierre,
+            venta__fecha_venta__gte=_local_day_start_utc(self.fecha_cierre),
+            venta__fecha_venta__lt=_next_local_day_start_utc(
+                self.fecha_cierre,
+            ),
         ).values(
             'producto__categoria__nombre',
         ).annotate(

@@ -484,3 +484,54 @@ class ProduccionNoPermitidaError(FabricanteError):
             },
             code="produccion_no_permitida",
         )
+
+
+class InformeError(MallorError):
+    """
+    Excepcion base para errores del modulo de informes.
+    """
+
+    def __init__(self, message: str, code: str = "informe_error"):
+        super().__init__(message, code)
+
+
+class CierreCajaNoEncontradoError(InformeError):
+    """Excepcion cuando un cierre de caja no existe."""
+
+    def __init__(self, cierre_id: int):
+        super().__init__(
+            message=_("Cierre de caja con ID %(id)s no encontrado.") % {
+                'id': cierre_id,
+            },
+            code="cierre_caja_no_encontrado",
+        )
+
+
+class CierreCajaDuplicadoError(InformeError):
+    """Excepcion cuando ya existe un cierre para la fecha solicitada."""
+
+    def __init__(self, fecha):
+        super().__init__(
+            message=_(
+                "Ya existe un cierre de caja registrado para la fecha "
+                "%(fecha)s."
+            ) % {
+                'fecha': fecha,
+            },
+            code="cierre_caja_duplicado",
+        )
+
+
+class RangoFechasInvalidoError(InformeError):
+    """Excepcion cuando el rango de fechas no es coherente."""
+
+    def __init__(self, fecha_inicio, fecha_fin):
+        super().__init__(
+            message=_(
+                "El rango de fechas es invalido: %(inicio)s a %(fin)s."
+            ) % {
+                'inicio': fecha_inicio,
+                'fin': fecha_fin,
+            },
+            code="rango_fechas_invalido",
+        )
