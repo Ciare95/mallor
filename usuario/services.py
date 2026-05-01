@@ -360,6 +360,28 @@ class UsuarioService:
         
         # Empleados tienen permisos limitados
         if usuario.is_empleado:
+            acciones_operativas = {
+                'crear_cliente',
+                'ver_cliente',
+                'actualizar_cliente',
+                'listar_clientes',
+                'crear_proveedor',
+                'ver_proveedor',
+                'actualizar_proveedor',
+                'listar_proveedores',
+                'crear_venta',
+                'ver_venta',
+                'actualizar_venta',
+                'listar_ventas',
+                'registrar_abono',
+                'ver_abono',
+                'listar_abonos',
+                'ver_informe_ventas',
+            }
+
+            if accion in acciones_operativas:
+                return True
+
             # Empleados no pueden gestionar usuarios (excepto su propio perfil)
             if accion in ['crear_usuario', 'eliminar_usuario', 'actualizar_rol']:
                 return False

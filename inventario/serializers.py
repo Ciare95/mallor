@@ -35,6 +35,10 @@ class CategoriaSerializer(serializers.ModelSerializer):
 
 
 class DetalleFacturaCompraSerializer(serializers.ModelSerializer):
+    producto_nombre = serializers.CharField(
+        source='producto.nombre',
+        read_only=True,
+    )
     subtotal = serializers.DecimalField(
         max_digits=12, decimal_places=2, read_only=True
     )
@@ -50,7 +54,8 @@ class DetalleFacturaCompraSerializer(serializers.ModelSerializer):
         model = DetalleFacturaCompra
         fields = [
             'id', 'factura', 'producto', 'producto_nombre',
-            'cantidad', 'precio_unitario', 'iva', 'descuento',
+            'cantidad', 'precio_unitario', 'precio_venta_sugerido',
+            'iva', 'descuento',
             'subtotal', 'iva_valor', 'total_detalle',
             'created_at', 'updated_at',
         ]
@@ -259,6 +264,7 @@ class DetalleFacturaCompraCreateSerializer(serializers.ModelSerializer):
         model = DetalleFacturaCompra
         fields = [
             'producto', 'cantidad', 'precio_unitario',
+            'precio_venta_sugerido',
             'iva', 'descuento',
         ]
 
@@ -273,6 +279,13 @@ class DetalleFacturaCompraCreateSerializer(serializers.ModelSerializer):
         if value <= 0:
             raise serializers.ValidationError(
                 'El precio unitario debe ser mayor que cero'
+            )
+        return value
+
+    def validate_precio_venta_sugerido(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError(
+                'El precio de venta sugerido debe ser mayor que cero'
             )
         return value
 

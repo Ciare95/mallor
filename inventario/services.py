@@ -28,6 +28,59 @@ from .models import (
 from proveedor.models import Proveedor
 from usuario.models import Usuario
 
+DEFAULT_SALE_PRICING_RULES = {
+    'umbral': Decimal('1000'),
+    'margen_menor_igual': Decimal('119'),
+    'margen_mayor': Decimal('69'),
+}
+
+
+def normalize_sale_pricing_rules(
+    pricing_rules: Optional[Dict[str, Any]] = None
+) -> Dict[str, Decimal]:
+    rule = pricing_rules or {}
+
+    def parse_decimal(key: str, default: Decimal) -> Decimal:
+        value = rule.get(key, default)
+        try:
+            return Decimal(str(value))
+        except (ValueError, TypeError, ArithmeticError):
+            return default
+
+    return {
+        'umbral': parse_decimal(
+            'umbral',
+            DEFAULT_SALE_PRICING_RULES['umbral'],
+        ),
+        'margen_menor_igual': parse_decimal(
+            'margen_menor_igual',
+            DEFAULT_SALE_PRICING_RULES['margen_menor_igual'],
+        ),
+        'margen_mayor': parse_decimal(
+            'margen_mayor',
+            DEFAULT_SALE_PRICING_RULES['margen_mayor'],
+        ),
+    }
+
+
+def calculate_suggested_sale_price(
+    base_price: Decimal,
+    pricing_rules: Optional[Dict[str, Any]] = None,
+) -> Decimal:
+    q = Decimal('0.01')
+    if base_price <= 0:
+        return Decimal('0.00')
+
+    rule = normalize_sale_pricing_rules(pricing_rules)
+    markup = (
+        rule['margen_menor_igual']
+        if base_price <= rule['umbral']
+        else rule['margen_mayor']
+    )
+    return (
+        base_price * (Decimal('1') + (markup / Decimal('100')))
+    ).quantize(q)
+
 
 class CategoriaService:
     """
@@ -557,6 +610,7 @@ class FacturaCompraService:
     def procesar_factura(
         factura_id: int,
         usuario: Usuario,
+        pricing_rules: Optional[Dict[str, Any]] = None,
     ) -> FacturaCompra:
         """
         Procesa una factura de compra y actualiza el inventario.
@@ -616,13 +670,20 @@ class FacturaCompraService:
             producto = detalle.producto
             if detalle.precio_unitario > 0:
                 q = Decimal('0.01')
-                producto.precio_compra = detalle.precio_unitario.quantize(q)
-                margen = Decimal('1.30')
-                precio_sugerido = detalle.precio_unitario * margen
                 iva_decimal = detalle.iva / Decimal('100')
-                producto.precio_venta = (
-                    precio_sugerido * (Decimal('1') + iva_decimal)
+                costo_final = (
+                    detalle.precio_unitario * (Decimal('1') + iva_decimal)
                 ).quantize(q)
+                producto.precio_compra = detalle.precio_unitario.quantize(q)
+                if detalle.precio_venta_sugerido:
+                    producto.precio_venta = (
+                        detalle.precio_venta_sugerido
+                    ).quantize(q)
+                else:
+                    producto.precio_venta = calculate_suggested_sale_price(
+                        costo_final,
+                        pricing_rules=pricing_rules,
+                    )
                 producto.iva = detalle.iva
                 producto.save(update_fields=[
                     'precio_compra', 'precio_venta', 'iva', 'updated_at'

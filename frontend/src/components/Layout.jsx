@@ -1,96 +1,169 @@
-import { Outlet, Link, NavLink } from 'react-router-dom';
-import { Home, Users, FileText, Settings, PackageSearch } from 'lucide-react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import {
+  Activity,
+  Building2,
+  CreditCard,
+  Factory,
+  FileText,
+  FlaskConical,
+  Home,
+  PackageSearch,
+  PieChart,
+  Settings,
+  Users,
+} from 'lucide-react';
+import { useAppStore } from '../store/useStore';
 
 export default function Layout() {
+  const location = useLocation();
+  const sidebarOpen = useAppStore((state) => state.sidebarOpen);
+  const toggleSidebar = useAppStore((state) => state.toggleSidebar);
+
   const navItems = [
-    { path: '/', label: 'Inicio', icon: <Home size={20} />, end: true },
-    { path: '/usuarios', label: 'Usuarios', icon: <Users size={20} />, end: false },
-    { path: '/inventario', label: 'Inventario', icon: <PackageSearch size={20} />, end: false },
-    { path: '/about', label: 'Acerca', icon: <FileText size={20} />, end: false },
+    { path: '/', label: 'Inicio', icon: Home, end: true },
+    { path: '/ventas', label: 'Ventas', icon: CreditCard, end: false },
+    { path: '/clientes', label: 'Clientes', icon: Building2, end: false },
+    { path: '/proveedores', label: 'Proveedores', icon: Factory, end: false },
+    { path: '/fabricante', label: 'Fabricante', icon: FlaskConical, end: false },
+    { path: '/inventario', label: 'Inventario', icon: PackageSearch, end: false },
+    { path: '/informes', label: 'Informes', icon: PieChart, end: false },
+    { path: '/usuarios', label: 'Usuarios', icon: Users, end: false },
+    { path: '/about', label: 'Acerca', icon: FileText, end: false },
   ];
 
+  const pageTitle =
+    navItems.find((item) =>
+      item.end
+        ? location.pathname === item.path
+        : location.pathname.startsWith(item.path),
+    )?.label || 'Mallor';
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold">M</span>
+    <div className="min-h-screen bg-app text-main">
+      <div className="pointer-events-none absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(24,23,22,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(24,23,22,0.03)_1px,transparent_1px)] [background-size:32px_32px]" />
+      <div className="relative flex min-h-screen">
+        <aside
+          className={`hidden border-r border-app bg-panel/90 backdrop-blur xl:flex xl:flex-col ${
+            sidebarOpen ? 'xl:w-64' : 'xl:w-20'
+          }`}
+        >
+          <div className="border-b border-app px-4 py-5">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-app bg-[var(--accent-soft)] text-[var(--accent)]">
+                <Activity className="h-4 w-4" />
               </div>
-              <h1 className="text-2xl font-bold text-gray-800">Mallor</h1>
+              {sidebarOpen && (
+                <div>
+                  <div className="font-display text-[1.55rem] text-main">
+                    Mallor
+                  </div>
+                  <div className="eyebrow">consola operativa</div>
+                </div>
+              )}
             </div>
-            <nav className="hidden md:flex items-center space-x-6">
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    `flex items-center space-x-2 transition ${isActive ? 'text-blue-600 font-semibold' : 'text-gray-600 hover:text-blue-600'}`
-                  }
-                >
-                  {item.icon}
-                  <span>{item.label}</span>
-                </NavLink>
-              ))}
-              <div className="flex items-center space-x-4">
-                <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                  Iniciar sesión
-                </button>
-                <button className="p-2 text-gray-600 hover:text-gray-800">
-                  <Settings size={20} />
-                </button>
-              </div>
-            </nav>
           </div>
 
-          {/* Navegación móvil */}
-          <div className="flex md:hidden items-center justify-between mt-4">
-            <div className="flex space-x-4">
-              {navItems.map((item) => (
-                <NavLink
-                  key={item.path}
-                  to={item.path}
-                  end={item.end}
-                  className={({ isActive }) =>
-                    `flex items-center space-x-2 transition ${isActive ? 'text-blue-600' : 'text-gray-600 hover:text-blue-600'}`
-                  }
-                >
-                  {item.icon}
-                </NavLink>
-              ))}
+          <nav className="flex-1 px-3 py-4">
+            <div className="mb-3 px-2 text-[10px] uppercase tracking-[0.28em] text-muted">
+              {sidebarOpen ? 'Modulos' : 'Menu'}
             </div>
-            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
-              Iniciar sesión
+            <div className="space-y-1.5">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    end={item.end}
+                    className={({ isActive }) =>
+                      `group flex min-h-11 items-center gap-3 rounded-lg border px-3 py-2.5 transition ${
+                        isActive
+                          ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-main'
+                          : 'border-transparent text-soft hover:border-app hover:bg-white/60 hover:text-main'
+                      }`
+                    }
+                    title={item.label}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {sidebarOpen && (
+                      <span className="text-[13px] font-semibold">
+                        {item.label}
+                      </span>
+                    )}
+                  </NavLink>
+                );
+              })}
+            </div>
+          </nav>
+
+          <div className="border-t border-app px-3 py-4">
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="app-button-secondary flex min-h-10 w-full"
+            >
+              {sidebarOpen ? 'Compactar' : 'Expandir'}
             </button>
           </div>
-        </div>
-      </header>
+        </aside>
 
-      <main className="container mx-auto px-4 py-8">
-        <Outlet />
-      </main>
-
-      <footer className="bg-white border-t mt-8">
-        <div className="container mx-auto px-4 py-4">
-          <div className="flex flex-col md:flex-row justify-between items-center">
-            <div className="mb-4 md:mb-0">
-              <div className="flex items-center space-x-2">
-                <div className="w-6 h-6 bg-blue-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white text-sm font-bold">M</span>
+        <div className="relative flex min-h-screen flex-1 flex-col">
+          <header className="sticky top-0 z-30 border-b border-app bg-app/90 backdrop-blur">
+            <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6 xl:px-8">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleSidebar}
+                  className="hidden h-10 w-10 items-center justify-center rounded-lg border border-app bg-white/60 text-soft transition hover:bg-white xl:flex"
+                  aria-label="Alternar panel"
+                >
+                  <Settings className="h-4 w-4" />
+                </button>
+                <div>
+                  <div className="eyebrow">Mallor workspace</div>
+                  <h1 className="font-display text-[1.85rem] leading-none text-main">
+                    {pageTitle}
+                  </h1>
                 </div>
-                <span className="text-lg font-semibold text-gray-800">Mallor</span>
               </div>
-              <p className="text-gray-600 text-sm mt-2">Sistema de gestión integral para Pymes</p>
+
+              <div className="hidden items-center gap-3 md:flex">
+                <div className="app-pill border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]">
+                  Backend conectado
+                </div>
+                <div className="app-pill">React + DRF</div>
+              </div>
             </div>
-            <div className="text-center md:text-right">
-              <p className="text-gray-600">© 2025 Mallor - Todos los derechos reservados</p>
-              <p className="text-gray-500 text-sm mt-1">Versión 1.0.0</p>
+
+            <div className="flex items-center gap-2 overflow-x-auto border-t border-app px-4 py-2.5 xl:hidden">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <NavLink
+                    key={item.path}
+                    to={item.path}
+                    end={item.end}
+                    className={({ isActive }) =>
+                      `inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-2 text-[12px] font-semibold transition ${
+                        isActive
+                          ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                          : 'border-app bg-white/60 text-soft'
+                      }`
+                    }
+                  >
+                    <Icon className="h-4 w-4" />
+                    {item.label}
+                  </NavLink>
+                );
+              })}
             </div>
-          </div>
+          </header>
+
+          <main className="mx-auto flex w-full max-w-[1600px] flex-1 flex-col px-4 py-5 sm:px-6 xl:px-8 xl:py-6">
+            <Outlet />
+          </main>
         </div>
-      </footer>
+      </div>
     </div>
   );
 }

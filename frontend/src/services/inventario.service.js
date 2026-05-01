@@ -1,6 +1,7 @@
 import api from './api';
 
 const INVENTARIO_BASE = '/inventario';
+const BACKEND_ORIGIN = new URL(api.defaults.baseURL).origin;
 
 const cleanParams = (params = {}) =>
   Object.fromEntries(
@@ -14,6 +15,48 @@ const normalizeProductPayload = (datos = {}) => {
     delete payload.categoria_id;
   }
   return payload;
+};
+
+const normalizeImageUrl = (value) => {
+  if (!value || typeof value !== 'string') {
+    return value || '';
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  if (value.startsWith('/')) {
+    return `${BACKEND_ORIGIN}${value}`;
+  }
+
+  return `${BACKEND_ORIGIN}/${value}`;
+};
+
+const normalizeProductResponse = (producto) => {
+  if (!producto || typeof producto !== 'object') {
+    return producto;
+  }
+
+  return {
+    ...producto,
+    imagen: normalizeImageUrl(producto.imagen),
+  };
+};
+
+const normalizeProductCollection = (payload) => {
+  if (Array.isArray(payload)) {
+    return payload.map(normalizeProductResponse);
+  }
+
+  if (!payload || typeof payload !== 'object' || !Array.isArray(payload.results)) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    results: payload.results.map(normalizeProductResponse),
+  };
 };
 
 const toProductRequestBody = (datos = {}) => {
@@ -45,19 +88,19 @@ export const listarProductos = async (filtros = {}) => {
   const response = await api.get(`${INVENTARIO_BASE}/productos/`, {
     params: cleanParams(filtros),
   });
-  return response.data;
+  return normalizeProductCollection(response.data);
 };
 
 export const buscarProductos = async (q) => {
   const response = await api.get(`${INVENTARIO_BASE}/productos/buscar/`, {
     params: cleanParams({ q }),
   });
-  return response.data;
+  return normalizeProductCollection(response.data);
 };
 
 export const obtenerProducto = async (id) => {
   const response = await api.get(`${INVENTARIO_BASE}/productos/${id}/`);
-  return response.data;
+  return normalizeProductResponse(response.data);
 };
 
 export const crearProducto = async (datos) => {
@@ -67,7 +110,7 @@ export const crearProducto = async (datos) => {
     body,
     requestConfigForBody(body)
   );
-  return response.data;
+  return normalizeProductResponse(response.data);
 };
 
 export const actualizarProducto = async (id, datos) => {
@@ -77,7 +120,7 @@ export const actualizarProducto = async (id, datos) => {
     body,
     requestConfigForBody(body)
   );
-  return response.data;
+  return normalizeProductResponse(response.data);
 };
 
 export const eliminarProducto = async (id) => {
@@ -134,8 +177,14 @@ export const obtenerFacturaCompra = async (id) => {
   return response.data;
 };
 
-export const procesarFacturaCompra = async (id) => {
-  const response = await api.post(`${INVENTARIO_BASE}/facturas/${id}/procesar/`);
+export const procesarFacturaCompra = async (input) => {
+  const payload =
+    typeof input === 'object' && input !== null ? input : { id: input };
+  const { id, ...body } = payload;
+  const response = await api.post(
+    `${INVENTARIO_BASE}/facturas/${id}/procesar/`,
+    body
+  );
   return response.data;
 };
 

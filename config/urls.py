@@ -14,6 +14,8 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 
@@ -23,7 +25,15 @@ urlpatterns = [
     # API REST
     path('api/', include('usuario.urls')),
     path('api/inventario/', include('inventario.urls')),
+    path('api/fabricante/', include('fabricante.urls')),
+    path('api/informes/', include('informes.urls')),
+    path('api/', include('ventas.urls')),
+    path('api/', include('cliente.urls')),
+    path('api/', include('proveedor.urls')),
     
     # Autenticación de DRF (login/logout para interfaz navegable)
     path('api-auth/', include('rest_framework.urls', namespace='rest_framework')),
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

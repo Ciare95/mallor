@@ -478,7 +478,14 @@ class FacturaCompraViewSet(RolePermissionMixin, viewsets.ViewSet):
 
     def create(self, request: Request) -> Response:
         try:
-            serializer = FacturaCompraCreateSerializer(data=request.data)
+            if not request.user or not request.user.is_authenticated:
+                return Response(
+                    {'error': _('Usuario no autenticado')},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            data = request.data.copy()
+            data['usuario_registro'] = request.user.id
+            serializer = FacturaCompraCreateSerializer(data=data)
             serializer.is_valid(raise_exception=True)
             factura = FacturaCompraService.registrar_factura_compra(
                 serializer.validated_data
@@ -521,8 +528,13 @@ class FacturaCompraViewSet(RolePermissionMixin, viewsets.ViewSet):
                     {'error': _('Usuario no autenticado')},
                     status=status.HTTP_401_UNAUTHORIZED
                 )
+            pricing_rules = None
+            if hasattr(request, 'data'):
+                pricing_rules = request.data.get('regla_precio_venta')
             factura = FacturaCompraService.procesar_factura(
-                factura_id=int(pk), usuario=usuario
+                factura_id=int(pk),
+                usuario=usuario,
+                pricing_rules=pricing_rules,
             )
             serializer = FacturaCompraSerializer(factura)
             return Response(serializer.data, status=status.HTTP_200_OK)

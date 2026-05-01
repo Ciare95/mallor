@@ -123,15 +123,42 @@ class RolePermissionMixin:
         """
         Intercepta el dispatch para validar permisos antes de procesar la request.
         """
+        # Para DRF, la autenticación ocurre dentro de APIView.dispatch.
+        # Si validamos aquí, request.user todavía no refleja BasicAuth.
+        if isinstance(self, APIView):
+            return super().dispatch(request, *args, **kwargs)
+
+        try:
+            self._run_permission_validations(request)
+            return super().dispatch(request, *args, **kwargs)
+        except PermisoDenegadoError as exc:
+            return self.handle_permission_denied(request, exc)
+
+    def initial(self, request: DRFRequest, *args, **kwargs):
+        """
+        Ejecuta validaciones de permisos para DRF después de autenticar la request.
+        """
+        initial_method = getattr(super(), 'initial', None)
+        if callable(initial_method):
+            initial_method(request, *args, **kwargs)
+
+        self._run_permission_validations(request)
+
+    def _run_permission_validations(self, request: HttpRequest) -> None:
+        """
+        Ejecuta todas las validaciones de permisos configuradas para la vista.
+        """
         # Validar permisos si hay roles requeridos
         if self.required_roles:
             self._validate_role_permission(request)
-        
+
         # Validar permisos granular si hay acción definida
-        if self.permission_action and hasattr(request, 'user') and request.user.is_authenticated:
+        if (
+            self.permission_action
+            and hasattr(request, 'user')
+            and request.user.is_authenticated
+        ):
             self._validate_business_permission(request)
-        
-        return super().dispatch(request, *args, **kwargs)
     
     def _validate_role_permission(self, request: HttpRequest) -> None:
         """
@@ -312,7 +339,22 @@ PERMISOS = {
     'VENTA_ACTUALIZAR': 'actualizar_venta',
     'VENTA_ELIMINAR': 'eliminar_venta',
     'VENTA_LISTAR': 'listar_ventas',
-    
+
+    # Clientes
+    'CLIENTE_CREAR': 'crear_cliente',
+    'CLIENTE_VER': 'ver_cliente',
+    'CLIENTE_ACTUALIZAR': 'actualizar_cliente',
+    'CLIENTE_ELIMINAR': 'eliminar_cliente',
+    'CLIENTE_LISTAR': 'listar_clientes',
+    'CLIENTE_VER_INFORMES': 'ver_informe_clientes',
+
+    # Proveedores
+    'PROVEEDOR_CREAR': 'crear_proveedor',
+    'PROVEEDOR_VER': 'ver_proveedor',
+    'PROVEEDOR_ACTUALIZAR': 'actualizar_proveedor',
+    'PROVEEDOR_ELIMINAR': 'eliminar_proveedor',
+    'PROVEEDOR_LISTAR': 'listar_proveedores',
+
     # Facturas
     'FACTURA_CREAR': 'crear_factura',
     'FACTURA_VER': 'ver_factura',
