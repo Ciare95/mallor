@@ -8,6 +8,7 @@ import VentasPage from '../pages/ventas/VentasPage';
 import ClientesPage from '../pages/clientes/ClientesPage';
 import ProveedoresPage from '../pages/proveedores/ProveedoresPage';
 import FabricantePage from '../pages/fabricante/FabricantePage';
+import DashboardInformesPage from '../pages/informes/DashboardPage';
 
 export const router = createBrowserRouter([
   {
@@ -45,6 +46,10 @@ export const router = createBrowserRouter([
       {
         path: 'fabricante',
         element: <FabricantePage />,
+      },
+      {
+        path: 'informes',
+        element: <DashboardInformesPage />,
       },
     ],
   },

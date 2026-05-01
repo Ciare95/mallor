@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Home,
   PackageSearch,
+  PieChart,
   Settings,
   Users,
 } from 'lucide-react';
@@ -25,6 +26,7 @@ export default function Layout() {
     { path: '/proveedores', label: 'Proveedores', icon: Factory, end: false },
     { path: '/fabricante', label: 'Fabricante', icon: FlaskConical, end: false },
     { path: '/inventario', label: 'Inventario', icon: PackageSearch, end: false },
+    { path: '/informes', label: 'Informes', icon: PieChart, end: false },
     { path: '/usuarios', label: 'Usuarios', icon: Users, end: false },
     { path: '/about', label: 'Acerca', icon: FileText, end: false },
   ];
