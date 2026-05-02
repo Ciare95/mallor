@@ -140,6 +140,7 @@ export const calculateDaysPastDue = (venta, diasPlazo = 0) => {
 export const buildClientePayload = (form) => ({
   tipo_documento: form.tipo_documento,
   numero_documento: form.numero_documento.trim(),
+  digito_verificacion: form.digito_verificacion.trim(),
   nombre: form.nombre.trim(),
   razon_social: form.razon_social.trim(),
   nombre_comercial: form.nombre_comercial.trim(),
@@ -149,6 +150,7 @@ export const buildClientePayload = (form) => ({
   direccion: form.direccion.trim(),
   ciudad: form.ciudad.trim(),
   departamento: form.departamento.trim(),
+  municipio_codigo: form.municipio_codigo.trim(),
   codigo_postal: form.codigo_postal.trim(),
   tipo_cliente: form.tipo_cliente,
   regimen_tributario: form.regimen_tributario,
@@ -162,6 +164,7 @@ export const buildClientePayload = (form) => ({
 export const createClienteFormState = (cliente) => ({
   tipo_documento: cliente?.tipo_documento || 'CC',
   numero_documento: cliente?.numero_documento || '',
+  digito_verificacion: cliente?.digito_verificacion || '',
   nombre: cliente?.nombre || '',
   razon_social: cliente?.razon_social || '',
   nombre_comercial: cliente?.nombre_comercial || '',
@@ -171,6 +174,7 @@ export const createClienteFormState = (cliente) => ({
   direccion: cliente?.direccion || '',
   ciudad: cliente?.ciudad || '',
   departamento: cliente?.departamento || '',
+  municipio_codigo: cliente?.municipio_codigo || '',
   codigo_postal: cliente?.codigo_postal || '',
   tipo_cliente: cliente?.tipo_cliente || 'NATURAL',
   regimen_tributario: cliente?.regimen_tributario || '',
@@ -195,6 +199,10 @@ export const validateClienteForm = ({
   if (duplicateDocument) {
     errors.numero_documento =
       'Ya existe un cliente con este tipo y numero de documento.';
+  }
+
+  if (form.digito_verificacion.trim() && !/^\d+$/.test(form.digito_verificacion.trim())) {
+    errors.digito_verificacion = 'El digito de verificacion debe ser numerico.';
   }
 
   if (form.tipo_cliente === 'NATURAL' && !form.nombre.trim()) {
@@ -222,6 +230,10 @@ export const validateClienteForm = ({
 
   if (!form.departamento.trim()) {
     errors.departamento = 'El departamento es obligatorio.';
+  }
+
+  if (!form.municipio_codigo.trim()) {
+    errors.municipio_codigo = 'El codigo de municipio es obligatorio.';
   }
 
   if (form.email.trim() && !/\S+@\S+\.\S+/.test(form.email.trim())) {

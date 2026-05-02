@@ -3,10 +3,14 @@ import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   CreditCard,
+  Download,
   FilePenLine,
   Loader2,
+  Mail,
+  RotateCcw,
   ReceiptText,
   Slash,
+  Undo2,
 } from 'lucide-react';
 import { obtenerVenta } from '../../services/ventas.service';
 import {
@@ -28,6 +32,11 @@ export default function VentaDetail({
   onAbonar,
   onCancel,
   onFacturar,
+  onReintentarFactura,
+  onDescargarFacturaPdf,
+  onDescargarFacturaXml,
+  onEnviarFacturaEmail,
+  onCrearNotaCredito,
   abonoSubmitting,
   abonoError,
 }) {
@@ -76,6 +85,8 @@ export default function VentaDetail({
 
   const venta = ventaQuery.data;
   const paymentDisplayStatus = getVentaPaymentDisplayStatus(venta);
+  const factura = venta.factura_documento;
+  const facturaSolicitada = Boolean(venta.factura_electronica);
   const tabs = [
     [VENTA_DETALLE_TABS.RESUMEN, 'Resumen'],
     [VENTA_DETALLE_TABS.ABONOS, 'Abonos'],
@@ -137,11 +148,60 @@ export default function VentaDetail({
             <button
               type="button"
               onClick={() => onFacturar(venta)}
+              disabled={!facturaSolicitada}
               className="app-button-secondary min-h-10"
             >
               <ReceiptText className="h-4 w-4" />
-              Facturar
+              {factura?.status === 'ERROR' ? 'Reintentar factura' : 'Facturar'}
             </button>
+            {factura?.status === 'ERROR' && (
+              <button
+                type="button"
+                onClick={() => onReintentarFactura(venta)}
+                className="app-button-secondary min-h-10"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Reintentar
+              </button>
+            )}
+            {factura?.status === 'EMITIDA' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onDescargarFacturaPdf(venta)}
+                  className="app-button-secondary min-h-10"
+                >
+                  <Download className="h-4 w-4" />
+                  PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDescargarFacturaXml(venta)}
+                  className="app-button-secondary min-h-10"
+                >
+                  <Download className="h-4 w-4" />
+                  XML
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onEnviarFacturaEmail(venta)}
+                  className="app-button-secondary min-h-10"
+                >
+                  <Mail className="h-4 w-4" />
+                  Email
+                </button>
+                {factura.status !== 'ANULADA' && (
+                  <button
+                    type="button"
+                    onClick={() => onCrearNotaCredito(venta)}
+                    className="app-button-secondary min-h-10"
+                  >
+                    <Undo2 className="h-4 w-4" />
+                    Nota credito
+                  </button>
+                )}
+              </>
+            )}
           </>
         }
       >
@@ -150,6 +210,38 @@ export default function VentaDetail({
           <SummaryCard label="Estado" value={<StatusBadge status={venta.estado} />} />
           <SummaryCard label="Pago" value={<StatusBadge status={paymentDisplayStatus} />} />
           <SummaryCard label="Total" value={formatCurrency(venta.total)} />
+        </div>
+
+        <div className="mt-4 rounded-xl border border-app bg-white/76 p-5">
+          <div className="grid gap-4 lg:grid-cols-[1fr_0.8fr_0.9fr_1.2fr]">
+            <Metric
+              compact
+              label="Factura electronica"
+              value={
+                facturaSolicitada
+                  ? factura?.status || 'PENDIENTE DE EMISION'
+                  : 'NO SOLICITADA'
+              }
+            />
+            <Metric
+              compact
+              label="Numero Factus"
+              value={factura?.bill_number || 'Sin emitir'}
+            />
+            <Metric
+              compact
+              label="CUFE"
+              value={factura?.cufe || 'No disponible'}
+            />
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.2em] text-muted">
+                Ultimo error
+              </div>
+              <div className="mt-2 text-[13px] font-semibold text-main">
+                {factura?.last_error_message || 'Sin errores registrados'}
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className="mt-6 rounded-xl border border-app bg-white/76 p-5">

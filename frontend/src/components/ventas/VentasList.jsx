@@ -262,6 +262,11 @@ export default function VentasList({
                       <div className="mt-1 text-[12px] text-soft">
                         {venta.detalles_count} items · {venta.metodo_pago}
                       </div>
+                      <div className="mt-1 text-[11px] text-soft">
+                        {venta.factura_electronica
+                          ? `Factura: ${venta.factura_documento?.bill_number || venta.factura_documento?.status || 'pendiente'}`
+                          : 'Factura: no solicitada'}
+                      </div>
                     </div>
                     <div>
                       <StatusBadge status={venta.estado} />

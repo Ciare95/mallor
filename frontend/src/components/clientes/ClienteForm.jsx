@@ -157,6 +157,14 @@ export default function ClienteForm({
                   : 'Documento unico por tipo.'
               }
             />
+            <InputField
+              label="Digito de verificacion"
+              value={form.digito_verificacion}
+              onChange={(value) => setField('digito_verificacion', value)}
+              onBlur={() => handleBlur('digito_verificacion')}
+              error={visibleErrors.digito_verificacion}
+              helper="Opcional para NIT. Factus lo usara si aplica."
+            />
 
             {form.tipo_cliente === 'NATURAL' ? (
               <InputField
@@ -250,6 +258,14 @@ export default function ClienteForm({
                   onChange={(value) => setField('departamento', value)}
                   onBlur={() => handleBlur('departamento')}
                   error={visibleErrors.departamento}
+                />
+                <InputField
+                  label="Codigo municipio DIAN"
+                  value={form.municipio_codigo}
+                  onChange={(value) => setField('municipio_codigo', value)}
+                  onBlur={() => handleBlur('municipio_codigo')}
+                  error={visibleErrors.municipio_codigo}
+                  helper="Ejemplo: 11001 para Bogota."
                 />
               </div>
             </div>

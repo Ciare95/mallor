@@ -6,6 +6,7 @@ import UsuariosPage from '../pages/usuarios/UsuariosPage';
 import ProductosPage from '../pages/inventario/ProductosPage';
 import VentasPage from '../pages/ventas/VentasPage';
 import ClientesPage from '../pages/clientes/ClientesPage';
+import FacturacionPage from '../pages/facturacion/FacturacionPage';
 import ProveedoresPage from '../pages/proveedores/ProveedoresPage';
 import FabricantePage from '../pages/fabricante/FabricantePage';
 import DashboardInformesPage from '../pages/informes/DashboardPage';
@@ -40,6 +41,10 @@ export const router = createBrowserRouter([
       {
         path: 'clientes',
         element: <ClientesPage />,
+      },
+      {
+        path: 'facturacion',
+        element: <FacturacionPage />,
       },
       {
         path: 'proveedores',

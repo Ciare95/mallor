@@ -20,6 +20,8 @@ const initialFormData = {
   codigo_interno: '',
   codigo_barras: '',
   nombre: '',
+  unidad_medida_codigo: '94',
+  estandar_codigo: '999',
   categoria_id: '',
   marca: '',
   descripcion: '',
@@ -40,6 +42,8 @@ const getInitialFormData = (producto) => {
     codigo_interno: producto.codigo_interno || '',
     codigo_barras: producto.codigo_barras || '',
     nombre: producto.nombre || '',
+    unidad_medida_codigo: producto.unidad_medida_codigo || '94',
+    estandar_codigo: producto.estandar_codigo || '999',
     categoria_id: producto.categoria?.id || producto.categoria_id || '',
     marca: producto.marca || '',
     descripcion: producto.descripcion || '',
@@ -102,6 +106,14 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
     codigo_barras: (value) =>
       value && !/^[a-zA-Z0-9_.-]+$/.test(value)
         ? 'Codigo de barras invalido'
+        : null,
+    unidad_medida_codigo: (value) =>
+      !String(value || '').trim()
+        ? 'La unidad de medida es obligatoria'
+        : null,
+    estandar_codigo: (value) =>
+      !String(value || '').trim()
+        ? 'El codigo estandar es obligatorio'
         : null,
   };
 
@@ -255,6 +267,24 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
               error={touched.nombre && errors.nombre}
               placeholder="Nombre comercial"
               className="md:col-span-2"
+            />
+            <Field
+              label="Unidad medida"
+              name="unidad_medida_codigo"
+              value={formData.unidad_medida_codigo}
+              onChange={handleChange}
+              onBlur={handleBlur}
+              error={touched.unidad_medida_codigo && errors.unidad_medida_codigo}
+              helper="Default Factus: 94"
+            />
+            <Field
+              label="Codigo estandar"
+              name="estandar_codigo"
+              value={formData.estandar_codigo}
+              onChange={handleChange}
+              onBlur={handleBlur}
+              error={touched.estandar_codigo && errors.estandar_codigo}
+              helper="Default Factus: 999"
             />
 
             <label className="app-field">

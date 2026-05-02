@@ -96,6 +96,18 @@ class Cliente(models.Model):
         blank=True,
         help_text=_('Codigo postal del cliente.'),
     )
+    municipio_codigo = models.CharField(
+        _('codigo de municipio'),
+        max_length=10,
+        blank=True,
+        help_text=_('Codigo DIAN/Factus del municipio del cliente.'),
+    )
+    digito_verificacion = models.CharField(
+        _('digito de verificacion'),
+        max_length=5,
+        blank=True,
+        help_text=_('Digito de verificacion para NIT cuando aplique.'),
+    )
     tipo_cliente = models.CharField(
         _('tipo de cliente'),
         max_length=10,
@@ -255,6 +267,7 @@ class Cliente(models.Model):
                 'direccion': 'No especificada',
                 'ciudad': 'No especificada',
                 'departamento': 'No especificado',
+                'municipio_codigo': '11001',
                 'tipo_cliente': cls.TipoCliente.NATURAL,
                 'regimen_tributario': '',
                 'responsable_iva': False,
@@ -327,6 +340,15 @@ class Cliente(models.Model):
             raise ValidationError({
                 'departamento': _('El departamento es obligatorio.'),
             })
+
+        if self.tipo_documento == self.TipoDocumento.NIT:
+            dv = (self.digito_verificacion or '').strip()
+            if dv and not dv.isdigit():
+                raise ValidationError({
+                    'digito_verificacion': _(
+                        'El digito de verificacion debe ser numerico.'
+                    ),
+                })
 
         if (
             self.tipo_cliente == self.TipoCliente.NATURAL

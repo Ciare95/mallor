@@ -5,8 +5,10 @@ export const CONSUMIDOR_FINAL = {
   nombre_completo: 'Consumidor Final',
   numero_documento: '222222222222',
   tipo_documento: 'CC',
-  telefono: '',
+  telefono: '0000000000',
   email: '',
+  direccion: 'Consumidor final',
+  municipio_codigo: '11001',
   persisted: false,
   esTemporal: false,
 };

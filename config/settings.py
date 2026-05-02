@@ -156,6 +156,41 @@ REST_FRAMEWORK = {
     ],
 }
 
+FACTUS_CONFIG = {
+    'BASE_URL': os.getenv('FACTUS_BASE_URL', 'https://api-sandbox.factus.com.co'),
+    'CLIENT_ID': os.getenv('FACTUS_CLIENT_ID', ''),
+    'CLIENT_SECRET': os.getenv('FACTUS_CLIENT_SECRET', ''),
+    'USERNAME': os.getenv('FACTUS_USERNAME', ''),
+    'PASSWORD': os.getenv('FACTUS_PASSWORD', ''),
+    'TIMEOUT': int(os.getenv('FACTUS_TIMEOUT', '30')),
+    'MAX_RETRIES': int(os.getenv('FACTUS_MAX_RETRIES', '2')),
+    'VERIFY_SSL': os.getenv('FACTUS_VERIFY_SSL', 'True') == 'True',
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'mallor.factus': {
+            'handlers': ['console'],
+            'level': os.getenv('FACTUS_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+    },
+}
+
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",

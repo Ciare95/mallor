@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
@@ -32,6 +33,7 @@ from ventas.models import Abono, DetalleVenta, Venta
 
 QUANTIZER = Decimal('0.01')
 BUSINESS_TIMEZONE = ZoneInfo('America/Bogota')
+logger = logging.getLogger('mallor.factus')
 
 
 def _local_day_start_utc(target_date: date) -> datetime:
@@ -45,6 +47,29 @@ def _local_day_start_utc(target_date: date) -> datetime:
 
 def _next_local_day_start_utc(target_date: date) -> datetime:
     return _local_day_start_utc(target_date + timedelta(days=1))
+
+
+def _schedule_facturacion_electronica(venta: Venta) -> None:
+    if venta.estado != Venta.Estado.TERMINADA or not venta.factura_electronica:
+        return
+
+    def _emitir() -> None:
+        from ventas.facturacion_services import FacturacionElectronicaService
+
+        try:
+            config = FacturacionElectronicaService.get_config()
+            if not config.is_enabled or not config.auto_emitir_al_terminar:
+                return
+
+            FacturacionElectronicaService().emitir_factura(venta.id)
+        except Exception:
+            # La venta debe persistirse incluso si la emision falla.
+            logger.exception(
+                'No fue posible emitir automaticamente la factura de la venta %s',
+                venta.id,
+            )
+
+    transaction.on_commit(_emitir)
 
 
 class _VentaInventarioService:
@@ -282,7 +307,10 @@ class VentaService:
         return Venta.objects.select_related(
             'cliente',
             'usuario_registro',
+            'factura_documento',
+            'factura_documento__numbering_range',
         ).prefetch_related(
+            'factura_documento__intentos',
             'abonos__usuario_registro',
             'detalles__producto__categoria',
         )
@@ -290,9 +318,12 @@ class VentaService:
     @staticmethod
     def _obtener_venta_para_actualizar(venta_id: int) -> Venta:
         try:
-            return Venta.objects.select_for_update().select_related(
+            return Venta.objects.select_for_update(of=('self',)).select_related(
                 'usuario_registro',
+                'cliente',
             ).prefetch_related(
+                'factura_documento__numbering_range',
+                'factura_documento__intentos',
                 'abonos',
                 'detalles__producto',
             ).get(pk=venta_id)
@@ -394,6 +425,7 @@ class VentaService:
                 ),
             )
 
+        _schedule_facturacion_electronica(venta)
         return VentaService.obtener_venta(venta.id)
 
     @staticmethod
@@ -578,6 +610,7 @@ class VentaService:
                 )
 
         venta.save()
+        _schedule_facturacion_electronica(venta)
         return VentaService.obtener_venta(venta.id)
 
     @staticmethod
@@ -640,6 +673,7 @@ class VentaService:
 
         venta.estado = nuevo_estado
         venta.save()
+        _schedule_facturacion_electronica(venta)
         return VentaService.obtener_venta(venta.id)
 
     @staticmethod

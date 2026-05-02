@@ -638,3 +638,221 @@ class Abono(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class FactusEnvironment(models.TextChoices):
+    SANDBOX = 'SANDBOX', _('Sandbox')
+    PRODUCCION = 'PRODUCCION', _('Produccion')
+
+
+class FacturacionElectronicaConfig(models.Model):
+    """
+    Configuración funcional de facturación electrónica.
+    """
+
+    is_enabled = models.BooleanField(
+        _('facturacion habilitada'),
+        default=False,
+    )
+    environment = models.CharField(
+        _('ambiente'),
+        max_length=20,
+        choices=FactusEnvironment.choices,
+        default=FactusEnvironment.SANDBOX,
+    )
+    auto_emitir_al_terminar = models.BooleanField(
+        _('auto emitir al terminar'),
+        default=True,
+    )
+    auto_enviar_email = models.BooleanField(
+        _('auto enviar email'),
+        default=False,
+    )
+    active_bill_range = models.ForeignKey(
+        'FactusNumberingRange',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='configs_factura',
+    )
+    active_credit_note_range = models.ForeignKey(
+        'FactusNumberingRange',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='configs_nota_credito',
+    )
+    company_snapshot = models.JSONField(
+        _('snapshot de empresa'),
+        default=dict,
+        blank=True,
+    )
+    last_connection_status = models.CharField(
+        _('ultimo estado de conexion'),
+        max_length=50,
+        blank=True,
+    )
+    last_connection_checked_at = models.DateTimeField(
+        _('ultima verificacion de conexion'),
+        null=True,
+        blank=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'facturacion_electronica_config'
+        verbose_name = _('configuracion de facturacion electronica')
+        verbose_name_plural = _('configuracion de facturacion electronica')
+
+    def clean(self):
+        if self.pk is None and FacturacionElectronicaConfig.objects.exists():
+            raise ValidationError(
+                _('Solo puede existir una configuracion de facturacion.'),
+            )
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+
+class FactusNumberingRange(models.Model):
+    """
+    Rango de numeración sincronizado desde Factus.
+    """
+
+    factus_id = models.PositiveIntegerField(unique=True)
+    document_code = models.CharField(max_length=10, default='01')
+    prefix = models.CharField(max_length=20)
+    from_number = models.PositiveIntegerField(default=0)
+    to_number = models.PositiveIntegerField(default=0)
+    current_number = models.PositiveIntegerField(default=0)
+    resolution_number = models.CharField(max_length=100, blank=True)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    is_credit_note_range = models.BooleanField(default=False)
+    synced_at = models.DateTimeField(auto_now=True)
+    raw_payload = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        db_table = 'factus_numbering_ranges'
+        verbose_name = _('rango de numeracion Factus')
+        verbose_name_plural = _('rangos de numeracion Factus')
+        indexes = [
+            models.Index(fields=['factus_id']),
+            models.Index(fields=['document_code']),
+            models.Index(fields=['is_active']),
+        ]
+
+    def __str__(self):
+        return f'{self.prefix} ({self.factus_id})'
+
+
+class VentaFacturaElectronica(models.Model):
+    """
+    Estado documental electrónico de una venta.
+    """
+
+    class Status(models.TextChoices):
+        PENDIENTE_ENVIO = 'PENDIENTE_ENVIO', _('Pendiente de envio')
+        EMITIDA = 'EMITIDA', _('Emitida')
+        ERROR = 'ERROR', _('Error')
+        ANULADA = 'ANULADA', _('Anulada')
+
+    venta = models.OneToOneField(
+        Venta,
+        on_delete=models.CASCADE,
+        related_name='factura_documento',
+    )
+    status = models.CharField(
+        max_length=30,
+        choices=Status.choices,
+        default=Status.PENDIENTE_ENVIO,
+    )
+    reference_code = models.CharField(max_length=100, unique=True)
+    bill_number = models.CharField(max_length=100, blank=True)
+    cufe = models.CharField(max_length=255, blank=True)
+    numbering_range = models.ForeignKey(
+        FactusNumberingRange,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='facturas_emitidas',
+    )
+    resolution_number = models.CharField(max_length=100, blank=True)
+    validated_at = models.DateTimeField(null=True, blank=True)
+    email_last_sent_at = models.DateTimeField(null=True, blank=True)
+    last_error_code = models.CharField(max_length=100, blank=True)
+    last_error_message = models.TextField(blank=True)
+    request_payload = models.JSONField(default=dict, blank=True)
+    response_payload = models.JSONField(default=dict, blank=True)
+    credit_note_number = models.CharField(max_length=100, blank=True)
+    credit_note_payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'ventas_factura_electronica'
+        verbose_name = _('factura electronica de venta')
+        verbose_name_plural = _('facturas electronicas de ventas')
+        indexes = [
+            models.Index(fields=['status']),
+            models.Index(fields=['bill_number']),
+            models.Index(fields=['cufe']),
+        ]
+
+    def __str__(self):
+        return f'{self.venta.numero_venta} - {self.status}'
+
+    def sync_venta_fields(self):
+        self.venta.numero_factura_electronica = self.bill_number
+        self.venta.fecha_facturacion = self.validated_at
+        self.venta.save(
+            update_fields=[
+                'numero_factura_electronica',
+                'fecha_facturacion',
+                'updated_at',
+            ],
+        )
+
+
+class FacturaElectronicaIntento(models.Model):
+    """
+    Auditoría de interacciones con Factus.
+    """
+
+    class Action(models.TextChoices):
+        EMITIR = 'EMITIR', _('Emitir')
+        CONSULTAR = 'CONSULTAR', _('Consultar')
+        ENVIAR_EMAIL = 'ENVIAR_EMAIL', _('Enviar email')
+        DESCARGAR_PDF = 'DESCARGAR_PDF', _('Descargar PDF')
+        DESCARGAR_XML = 'DESCARGAR_XML', _('Descargar XML')
+        NOTA_CREDITO = 'NOTA_CREDITO', _('Nota credito')
+        SINCRONIZAR_RANGOS = 'SINCRONIZAR_RANGOS', _('Sincronizar rangos')
+        VALIDAR_CONEXION = 'VALIDAR_CONEXION', _('Validar conexion')
+
+    factura = models.ForeignKey(
+        VentaFacturaElectronica,
+        on_delete=models.CASCADE,
+        related_name='intentos',
+        null=True,
+        blank=True,
+    )
+    action = models.CharField(max_length=30, choices=Action.choices)
+    is_success = models.BooleanField(default=False)
+    response_status_code = models.PositiveIntegerField(null=True, blank=True)
+    request_payload = models.JSONField(default=dict, blank=True)
+    response_payload = models.JSONField(default=dict, blank=True)
+    error_message = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'factura_electronica_intentos'
+        verbose_name = _('intento de factura electronica')
+        verbose_name_plural = _('intentos de factura electronica')
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.action} - {"OK" if self.is_success else "ERROR"}'

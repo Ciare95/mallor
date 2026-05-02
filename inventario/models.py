@@ -145,6 +145,18 @@ class Producto(models.Model):
         default=0,
         help_text=_('Porcentaje de IVA aplicable (0-100)')
     )
+    unidad_medida_codigo = models.CharField(
+        _('codigo de unidad de medida'),
+        max_length=10,
+        default='94',
+        help_text=_('Codigo Factus/DIAN de la unidad de medida del producto')
+    )
+    estandar_codigo = models.CharField(
+        _('codigo estandar'),
+        max_length=10,
+        default='999',
+        help_text=_('Codigo estandar del producto para facturación electrónica')
+    )
     
     imagen = models.ImageField(
         _('imagen'),
@@ -315,6 +327,20 @@ class Producto(models.Model):
         if self.iva is not None and (self.iva < 0 or self.iva > 100):
             raise ValidationError({
                 'iva': _('El IVA debe estar entre 0 y 100')
+            })
+
+        if not (self.unidad_medida_codigo or '').strip():
+            raise ValidationError({
+                'unidad_medida_codigo': _(
+                    'El codigo de unidad de medida es obligatorio.'
+                )
+            })
+
+        if not (self.estandar_codigo or '').strip():
+            raise ValidationError({
+                'estandar_codigo': _(
+                    'El codigo estandar es obligatorio.'
+                )
             })
         
         # Validar que fecha_caducidad no sea en el pasado (solo si está presente)

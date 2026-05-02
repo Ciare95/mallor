@@ -335,6 +335,12 @@ export default function VentaForm({
               </div>
 
               <div className="mt-4 grid gap-3">
+                {draft.facturaElectronica &&
+                  !selectedClient.municipio_codigo && (
+                    <div className="rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-4 py-3 text-[12px] text-[var(--warning-text)]">
+                      El cliente necesita codigo de municipio para emitir factura electronica.
+                    </div>
+                  )}
                 <label className="app-field">
                   <span className="app-field-label">Buscar cliente</span>
                   <input

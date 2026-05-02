@@ -9,6 +9,7 @@ import {
   Home,
   PackageSearch,
   PieChart,
+  ReceiptText,
   Settings,
   Users,
 } from 'lucide-react';
@@ -23,6 +24,7 @@ export default function Layout() {
     { path: '/', label: 'Inicio', icon: Home, end: true },
     { path: '/ventas', label: 'Ventas', icon: CreditCard, end: false },
     { path: '/clientes', label: 'Clientes', icon: Building2, end: false },
+    { path: '/facturacion', label: 'Facturacion', icon: ReceiptText, end: false },
     { path: '/proveedores', label: 'Proveedores', icon: Factory, end: false },
     { path: '/fabricante', label: 'Fabricante', icon: FlaskConical, end: false },
     { path: '/inventario', label: 'Inventario', icon: PackageSearch, end: false },

@@ -311,6 +311,51 @@ class AbonoNoEncontradoError(VentaError):
         )
 
 
+class FacturacionError(MallorError):
+    """
+    Excepción base para errores de facturación electrónica.
+    """
+
+    def __init__(self, message: str, code: str = "facturacion_error"):
+        super().__init__(message, code)
+
+
+class FacturacionConfiguracionError(FacturacionError):
+    """
+    Error cuando falta o es inválida la configuración de Factus/DIAN.
+    """
+
+
+class FacturacionValidacionError(FacturacionError):
+    """
+    Error cuando la venta o sus datos no cumplen requisitos de facturación.
+    """
+
+
+class FacturacionComunicacionError(FacturacionError):
+    """
+    Error de conectividad o timeout con Factus.
+    """
+
+
+class FacturacionAutenticacionError(FacturacionError):
+    """
+    Error autenticando contra Factus.
+    """
+
+
+class FacturacionDocumentoNoEncontradoError(FacturacionError):
+    """
+    Error cuando el documento electrónico no existe localmente.
+    """
+
+
+class FacturacionOperacionError(FacturacionError):
+    """
+    Error devuelto por Factus para una operación de negocio.
+    """
+
+
 class ClienteError(MallorError):
     """
     Excepción base para errores de dominio en el módulo de clientes.

@@ -1,13 +1,28 @@
 from decimal import Decimal
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.core.exceptions import ValidationError
 
 from cliente.models import Cliente
-from core.exceptions import AbonoNoPermitidoError, VentaNoCancelableError
+from core.exceptions import (
+    AbonoNoPermitidoError,
+    FacturacionComunicacionError,
+    FacturacionValidacionError,
+    VentaNoCancelableError,
+)
 from inventario.models import HistorialInventario, Producto
 from usuario.models import Usuario
-from ventas.models import Abono, DetalleVenta, Venta
+from ventas.factus_transformers import build_factus_bill_payload
+from ventas.facturacion_services import FacturacionElectronicaService
+from ventas.models import (
+    Abono,
+    DetalleVenta,
+    FacturacionElectronicaConfig,
+    FactusNumberingRange,
+    Venta,
+    VentaFacturaElectronica,
+)
 from ventas.serializers import (
     AbonoCreateSerializer,
     DetalleVentaSerializer,
@@ -687,3 +702,169 @@ class VentaServiceTest(TestCase):
         self.assertEqual(estadisticas['unidades_vendidas'], Decimal('1.00'))
         self.assertEqual(len(ventas_periodo), 1)
         self.assertEqual(len(ventas_producto), 1)
+
+
+class FacturacionElectronicaTest(TestCase):
+    def setUp(self):
+        self.usuario = Usuario.objects.create_user(
+            username='factus',
+            email='factus@example.com',
+            password='password-seguro-123',
+        )
+        self.cliente = Cliente.objects.create(
+            tipo_documento=Cliente.TipoDocumento.NIT,
+            numero_documento='900123456',
+            digito_verificacion='7',
+            nombre='Cliente Factus',
+            razon_social='Cliente Factus SAS',
+            telefono='3005556677',
+            direccion='Calle 10 # 20-30',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            municipio_codigo='11001',
+            tipo_cliente=Cliente.TipoCliente.JURIDICO,
+            responsable_iva=True,
+        )
+        self.producto = Producto.objects.create(
+            nombre='Producto Facturable',
+            codigo_barras='7701234567890',
+            unidad_medida_codigo='94',
+            estandar_codigo='999',
+            existencias=Decimal('20.00'),
+            precio_compra=Decimal('50.00'),
+            precio_venta=Decimal('100.00'),
+            iva=Decimal('19.00'),
+        )
+        self.rango = FactusNumberingRange.objects.create(
+            factus_id=101,
+            document_code='01',
+            prefix='SETP',
+            from_number=1,
+            to_number=5000,
+            current_number=10,
+            resolution_number='18760000001',
+            is_active=True,
+        )
+        self.config = FacturacionElectronicaConfig.get_solo()
+        self.config.is_enabled = True
+        self.config.auto_emitir_al_terminar = False
+        self.config.active_bill_range = self.rango
+        self.config.save()
+
+    def _crear_venta_facturable(self):
+        return VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'factura_electronica': True,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('1.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+    @staticmethod
+    def _build_adapter():
+        class DummyAdapter:
+            pass
+
+        return DummyAdapter()
+
+    def test_venta_create_serializer_requiere_municipio_para_facturar(self):
+        cliente = Cliente.objects.create(
+            tipo_documento=Cliente.TipoDocumento.CC,
+            numero_documento='11223344',
+            nombre='Cliente sin municipio',
+            telefono='3000000000',
+            direccion='Calle 1',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_cliente=Cliente.TipoCliente.NATURAL,
+        )
+        serializer = VentaCreateSerializer(data={
+            'cliente': cliente.id,
+            'estado': Venta.Estado.TERMINADA,
+            'metodo_pago': Venta.MetodoPago.EFECTIVO,
+            'factura_electronica': True,
+            'usuario_registro': self.usuario.id,
+            'detalles': [
+                {
+                    'producto': self.producto.id,
+                    'cantidad': '1.00',
+                }
+            ],
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('cliente', serializer.errors)
+
+    def test_build_factus_bill_payload_incluye_mapeos_minimos(self):
+        venta = self._crear_venta_facturable()
+
+        payload = build_factus_bill_payload(venta, self.rango.factus_id)
+
+        self.assertEqual(payload['document'], '01')
+        self.assertEqual(payload['operation_type'], '10')
+        self.assertEqual(payload['numbering_range_id'], self.rango.factus_id)
+        self.assertEqual(payload['customer']['municipality_code'], '11001')
+        self.assertEqual(payload['items'][0]['unit_measure_code'], '94')
+        self.assertEqual(payload['items'][0]['standard_code'], '999')
+
+    def test_build_factus_bill_payload_valida_cliente_sin_municipio(self):
+        self.cliente.municipio_codigo = ''
+        self.cliente.save(update_fields=['municipio_codigo'])
+        venta = self._crear_venta_facturable()
+
+        with self.assertRaises(FacturacionValidacionError):
+            build_factus_bill_payload(venta, self.rango.factus_id)
+
+    def test_emitir_factura_persiste_documento_y_sincroniza_venta(self):
+        venta = self._crear_venta_facturable()
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        with patch.object(
+            service.adapter,
+            'emitir_factura',
+            return_value={
+                'data': {
+                    'number': 'SETP-11',
+                    'cufe': 'CUFE-123',
+                    'resolution_number': '18760000001',
+                },
+            },
+            create=True,
+        ):
+            documento = service.emitir_factura(venta.id)
+
+        venta.refresh_from_db()
+        self.assertEqual(documento.status, VentaFacturaElectronica.Status.EMITIDA)
+        self.assertEqual(documento.bill_number, 'SETP-11')
+        self.assertEqual(venta.numero_factura_electronica, 'SETP-11')
+        self.assertTrue(
+            VentaFacturaElectronica.objects.filter(venta=venta).exists(),
+        )
+
+    def test_emitir_factura_en_error_no_revierte_venta(self):
+        venta = self._crear_venta_facturable()
+        total_antes = venta.total
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        with patch.object(
+            service.adapter,
+            'emitir_factura',
+            side_effect=FacturacionComunicacionError('Timeout Factus'),
+            create=True,
+        ):
+            with self.assertRaises(FacturacionComunicacionError):
+                service.emitir_factura(venta.id)
+
+        venta.refresh_from_db()
+        documento = VentaFacturaElectronica.objects.get(venta=venta)
+        self.assertEqual(venta.total, total_antes)
+        self.assertEqual(venta.estado, Venta.Estado.TERMINADA)
+        self.assertEqual(documento.status, VentaFacturaElectronica.Status.ERROR)

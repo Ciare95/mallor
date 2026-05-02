@@ -377,6 +377,9 @@ class UsuarioService:
                 'ver_abono',
                 'listar_abonos',
                 'ver_informe_ventas',
+                'crear_factura',
+                'ver_factura',
+                'listar_facturas',
             }
 
             if accion in acciones_operativas:
