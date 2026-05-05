@@ -50,6 +50,9 @@ def _format_decimal(value: Decimal) -> str:
 
 
 def build_reference_code(venta: Venta) -> str:
+    documento = getattr(venta, 'factura_documento', None)
+    if documento and documento.reference_code:
+        return documento.reference_code
     return f'VENTA-{venta.id}'
 
 
@@ -119,8 +122,10 @@ def build_factus_bill_payload(
     numbering_range_id: int,
     *,
     send_email: bool = False,
+    reference_code: Optional[str] = None,
 ) -> Dict[str, Any]:
     validar_venta_facturable(venta)
+    factus_reference_code = reference_code or build_reference_code(venta)
     cliente = venta.cliente
     due_date = timezone.localdate()
     if venta.metodo_pago == Venta.MetodoPago.CREDITO:
@@ -162,7 +167,7 @@ def build_factus_bill_payload(
         })
 
     payload = {
-        'reference_code': build_reference_code(venta),
+        'reference_code': factus_reference_code,
         'document': DOCUMENT_CODE,
         'numbering_range_id': numbering_range_id,
         'operation_type': OPERATION_TYPE,
@@ -170,7 +175,7 @@ def build_factus_bill_payload(
         'payment_details': [{
             'payment_form': payment_form,
             'payment_method_code': payment_method_code,
-            'reference_code': build_reference_code(venta),
+            'reference_code': factus_reference_code,
             'amount': _format_decimal(venta.total),
             'due_date': due_date.isoformat(),
         }],
@@ -255,4 +260,3 @@ def build_credit_note_payload(
         'customization_id': '20',
         'observation': reason,
     }
-

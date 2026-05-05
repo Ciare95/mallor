@@ -961,15 +961,21 @@ class FacturacionViewSet(RolePermissionMixin, viewsets.ViewSet):
 
     @action(detail=False, methods=['get', 'put', 'patch'], url_path='configuracion')
     def configuracion(self, request: Request) -> Response:
-        config = FacturacionElectronicaService.get_config()
+        config = FacturacionElectronicaService.get_config(
+            getattr(request, 'empresa', None),
+        )
         if request.method == 'GET':
-            serializer = FacturacionElectronicaConfigSerializer(config)
+            serializer = FacturacionElectronicaConfigSerializer(
+                config,
+                context={'request': request},
+            )
             return Response(serializer.data)
 
         serializer = FacturacionElectronicaConfigSerializer(
             config,
             data=request.data,
             partial=request.method == 'PATCH',
+            context={'request': request},
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -999,7 +1005,9 @@ class FacturacionViewSet(RolePermissionMixin, viewsets.ViewSet):
 
     @action(detail=False, methods=['get'], url_path='rangos')
     def rangos(self, request: Request) -> Response:
-        queryset = FactusNumberingRange.objects.all().order_by(
+        queryset = FactusNumberingRange.objects.filter(
+            empresa=getattr(request, 'empresa', None),
+        ).order_by(
             'is_credit_note_range',
             'prefix',
         )

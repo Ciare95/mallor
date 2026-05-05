@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import logging
 from typing import Any, Dict, Optional
 
@@ -22,8 +24,18 @@ class FactusAdapter(FacturacionPort):
     REFRESH_CACHE_KEY = 'factus_refresh_token'
     TOKEN_BUFFER_SECONDS = 300
 
-    def __init__(self):
-        self.config = settings.FACTUS_CONFIG
+    def __init__(self, *, empresa=None, config: Optional[Dict[str, Any]] = None):
+        self.empresa = empresa
+        self.config = config or self._resolve_config(empresa)
+        cache_suffix = hashlib.sha256(
+            '|'.join([
+                self.config.get('BASE_URL', ''),
+                self.config.get('CLIENT_ID', ''),
+                self.config.get('USERNAME', ''),
+            ]).encode('utf-8'),
+        ).hexdigest()[:16]
+        self.token_cache_key = f'{self.TOKEN_CACHE_KEY}:{cache_suffix}'
+        self.refresh_cache_key = f'{self.REFRESH_CACHE_KEY}:{cache_suffix}'
         self.base_url = self.config['BASE_URL'].rstrip('/')
         self.timeout = self.config['TIMEOUT']
         self.max_retries = self.config['MAX_RETRIES']
@@ -37,6 +49,36 @@ class FactusAdapter(FacturacionPort):
                 'Configuracion Factus incompleta en variables de entorno.',
                 code='factus_config_incompleta',
             )
+
+    @staticmethod
+    def _resolve_config(empresa=None) -> Dict[str, Any]:
+        if empresa is None:
+            from empresa.context import get_empresa_actual
+
+            empresa = get_empresa_actual()
+
+        if empresa is not None:
+            from ventas.models import FacturacionElectronicaConfig, FactusCredential
+
+            facturacion_config = FacturacionElectronicaConfig.get_solo(empresa)
+            credential = FactusCredential.objects.filter(
+                empresa=empresa,
+                environment=facturacion_config.environment,
+                activo=True,
+            ).first()
+            if credential:
+                return {
+                    'BASE_URL': credential.base_url,
+                    'CLIENT_ID': credential.client_id,
+                    'CLIENT_SECRET': credential.client_secret,
+                    'USERNAME': credential.username,
+                    'PASSWORD': credential.password,
+                    'TIMEOUT': credential.timeout,
+                    'MAX_RETRIES': credential.max_retries,
+                    'VERIFY_SSL': credential.verify_ssl,
+                }
+
+        return settings.FACTUS_CONFIG
 
     def _request(
         self,
@@ -124,9 +166,9 @@ class FactusAdapter(FacturacionPort):
             )
 
         cache_timeout = max(expires_in - self.TOKEN_BUFFER_SECONDS, 60)
-        cache.set(self.TOKEN_CACHE_KEY, access_token, cache_timeout)
+        cache.set(self.token_cache_key, access_token, cache_timeout)
         if refresh_token:
-            cache.set(self.REFRESH_CACHE_KEY, refresh_token, 60 * 60 * 24)
+            cache.set(self.refresh_cache_key, refresh_token, 60 * 60 * 24)
         return access_token
 
     def _obtain_access_token(self) -> str:
@@ -143,7 +185,7 @@ class FactusAdapter(FacturacionPort):
         return self._store_tokens(response.json())
 
     def _refresh_access_token(self) -> str:
-        refresh_token = cache.get(self.REFRESH_CACHE_KEY)
+        refresh_token = cache.get(self.refresh_cache_key)
         if not refresh_token:
             return self._obtain_access_token()
 
@@ -159,7 +201,7 @@ class FactusAdapter(FacturacionPort):
         return self._store_tokens(response.json())
 
     def _get_access_token(self) -> str:
-        token = cache.get(self.TOKEN_CACHE_KEY)
+        token = cache.get(self.token_cache_key)
         if token:
             return token
         return self._obtain_access_token()
@@ -172,7 +214,15 @@ class FactusAdapter(FacturacionPort):
         return response.json()
 
     def listar_rangos(self) -> Dict[str, Any]:
-        response = self._request('GET', '/v2/numbering-ranges/dian')
+        try:
+            response = self._request('GET', '/v2/numbering-ranges/dian')
+        except FacturacionOperacionError as exc:
+            if exc.code != 'factus_http_404':
+                raise
+            logger.info(
+                'Factus no devolvio rangos DIAN asociados; usando listado general.',
+            )
+            response = self._request('GET', '/v2/numbering-ranges')
         return response.json()
 
     def consultar_adquiriente(
@@ -198,6 +248,40 @@ class FactusAdapter(FacturacionPort):
         )
         return response.json()
 
+    @staticmethod
+    def _decode_document_file(
+        response: requests.Response,
+        encoded_key: str,
+        default_filename: str,
+        content_type: str,
+    ) -> Dict[str, Any]:
+        response_content_type = response.headers.get('Content-Type', '')
+        if not response_content_type.startswith('application/json'):
+            return {
+                'content': response.content,
+                'content_type': content_type,
+                'filename': default_filename,
+            }
+
+        payload = response.json()
+        data = payload.get('data') or {}
+        encoded_content = data.get(encoded_key)
+        if not encoded_content:
+            raise FacturacionOperacionError(
+                'Factus no devolvio el archivo solicitado.',
+                code='factus_archivo_no_disponible',
+            )
+
+        filename = data.get('file_name') or default_filename
+        if '.' not in filename:
+            filename = default_filename
+
+        return {
+            'content': base64.b64decode(encoded_content),
+            'content_type': content_type,
+            'filename': filename,
+        }
+
     def consultar_factura(self, bill_number: str) -> Dict[str, Any]:
         response = self._request('GET', f'/v2/bills/{bill_number}')
         return response.json()
@@ -208,11 +292,12 @@ class FactusAdapter(FacturacionPort):
             f'/v2/bills/{bill_number}/download-pdf',
             stream=True,
         )
-        return {
-            'content': response.content,
-            'content_type': response.headers.get('Content-Type', 'application/pdf'),
-            'filename': f'{bill_number}.pdf',
-        }
+        return self._decode_document_file(
+            response,
+            'pdf_base_64_encoded',
+            f'{bill_number}.pdf',
+            'application/pdf',
+        )
 
     def descargar_xml(self, bill_number: str) -> Dict[str, Any]:
         response = self._request(
@@ -220,11 +305,12 @@ class FactusAdapter(FacturacionPort):
             f'/v2/bills/{bill_number}/download-xml',
             stream=True,
         )
-        return {
-            'content': response.content,
-            'content_type': response.headers.get('Content-Type', 'application/xml'),
-            'filename': f'{bill_number}.xml',
-        }
+        return self._decode_document_file(
+            response,
+            'xml_base_64_encoded',
+            f'{bill_number}.xml',
+            'application/xml',
+        )
 
     def enviar_email(self, bill_number: str, email: str) -> Dict[str, Any]:
         response = self._request(
@@ -245,4 +331,3 @@ class FactusAdapter(FacturacionPort):
     def consultar_nota_credito(self, note_number: str) -> Dict[str, Any]:
         response = self._request('GET', f'/v2/credit-notes/{note_number}')
         return response.json()
-

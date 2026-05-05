@@ -17,6 +17,7 @@ from core.exceptions import (
     CategoriaNoEncontradaError,
     CategoriaConProductosError,
 )
+from empresa.context import get_empresa_actual_or_default
 
 from .models import (
     Categoria,
@@ -89,10 +90,12 @@ class CategoriaService:
 
     @staticmethod
     def crear_categoria(data: Dict[str, Any]) -> Categoria:
+        empresa = get_empresa_actual_or_default()
         nombre = data.get('nombre', '').strip().upper()
-        if Categoria.objects.filter(nombre__iexact=nombre).exists():
+        if Categoria.objects.filter(empresa=empresa, nombre__iexact=nombre).exists():
             raise ProductoDuplicadoError('nombre', nombre)
         return Categoria.objects.create(
+            empresa=empresa,
             nombre=nombre,
             descripcion=data.get('descripcion', ''),
         )
@@ -100,13 +103,16 @@ class CategoriaService:
     @staticmethod
     def obtener_categoria(categoria_id: int) -> Categoria:
         try:
-            return Categoria.objects.get(id=categoria_id)
+            return Categoria.objects.get(
+                id=categoria_id,
+                empresa=get_empresa_actual_or_default(),
+            )
         except Categoria.DoesNotExist:
             raise CategoriaNoEncontradaError(categoria_id)
 
     @staticmethod
     def listar_categorias(filtros: Optional[Dict[str, Any]] = None) -> List[Categoria]:
-        queryset = Categoria.objects.all()
+        queryset = Categoria.objects.filter(empresa=get_empresa_actual_or_default())
         if filtros:
             q_objects = Q()
             if filtros.get('q'):
@@ -122,7 +128,10 @@ class CategoriaService:
         nombre = data.get('nombre')
         if nombre:
             nombre = nombre.strip().upper()
-            if Categoria.objects.filter(nombre__iexact=nombre).exclude(id=categoria_id).exists():
+            if Categoria.objects.filter(
+                empresa=get_empresa_actual_or_default(),
+                nombre__iexact=nombre,
+            ).exclude(id=categoria_id).exists():
                 raise ProductoDuplicadoError('nombre', nombre)
             categoria.nombre = nombre
         if 'descripcion' in data:
@@ -169,9 +178,14 @@ class ProductoService:
         """
         codigo_interno = data.get('codigo_interno')
         codigo_barras = data.get('codigo_barras', '')
+        empresa = get_empresa_actual_or_default()
+        data['empresa'] = empresa
 
         if codigo_interno is not None:
-            if Producto.objects.filter(codigo_interno=codigo_interno).exists():
+            if Producto.objects.filter(
+                empresa=empresa,
+                codigo_interno=codigo_interno,
+            ).exists():
                 raise ProductoDuplicadoError(
                     'código interno', codigo_interno
                 )
@@ -179,7 +193,10 @@ class ProductoService:
         if codigo_barras:
             codigo_barras = codigo_barras.strip()
             data['codigo_barras'] = codigo_barras
-            if Producto.objects.filter(codigo_barras=codigo_barras).exists():
+            if Producto.objects.filter(
+                empresa=empresa,
+                codigo_barras=codigo_barras,
+            ).exists():
                 raise ProductoDuplicadoError(
                     'código de barras', codigo_barras
                 )
@@ -204,7 +221,7 @@ class ProductoService:
         try:
             return Producto.objects.select_related(
                 'categoria'
-            ).get(id=producto_id)
+            ).get(id=producto_id, empresa=get_empresa_actual_or_default())
         except Producto.DoesNotExist:
             raise ProductoNoEncontradoError(producto_id)
 
@@ -223,7 +240,9 @@ class ProductoService:
         Returns:
             List[Producto]: Lista de productos filtrados
         """
-        queryset = Producto.objects.select_related('categoria').all()
+        queryset = Producto.objects.select_related('categoria').filter(
+            empresa=get_empresa_actual_or_default(),
+        )
 
         if not filtros:
             return list(queryset.order_by('nombre'))
@@ -309,6 +328,7 @@ class ProductoService:
             codigo_barras = codigo_barras.strip()
             data['codigo_barras'] = codigo_barras
             if Producto.objects.filter(
+                empresa=get_empresa_actual_or_default(),
                 codigo_barras=codigo_barras
             ).exclude(id=producto_id).exists():
                 raise ProductoDuplicadoError(
@@ -318,6 +338,7 @@ class ProductoService:
         codigo_interno = data.get('codigo_interno')
         if codigo_interno is not None:
             if Producto.objects.filter(
+                empresa=get_empresa_actual_or_default(),
                 codigo_interno=codigo_interno
             ).exclude(id=producto_id).exists():
                 raise ProductoDuplicadoError(
@@ -384,7 +405,7 @@ class ProductoService:
 
         return list(
             Producto.objects.select_related('categoria')
-            .filter(q_objects)
+            .filter(q_objects, empresa=get_empresa_actual_or_default())
             .order_by('nombre')[:50]
         )
 
@@ -452,6 +473,7 @@ class StockService:
             precio_unitario = producto.precio_compra
 
         historial = HistorialInventario.objects.create(
+            empresa=producto.empresa,
             producto=producto,
             tipo_movimiento=tipo,
             cantidad=cantidad,
@@ -524,6 +546,7 @@ class StockService:
         diferencia = nueva_cantidad - producto.existencias
 
         historial = HistorialInventario.objects.create(
+            empresa=producto.empresa,
             producto=producto,
             tipo_movimiento=HistorialInventario.TIPO_AJUSTE,
             cantidad=diferencia,
@@ -568,12 +591,15 @@ class FacturaCompraService:
             ProductoNoEncontradoError: Si un producto no existe
         """
         detalles_data = data.pop('detalles', [])
+        empresa = get_empresa_actual_or_default()
+        data['empresa'] = empresa
 
         if not detalles_data:
             raise FacturaSinDetallesError(0)
 
         if 'proveedor' not in data or data['proveedor'] is None:
             proveedor_default, _ = Proveedor.objects.get_or_create(
+                empresa=empresa,
                 numero_documento='0000000000',
                 defaults={
                     'razon_social': 'PROVEEDOR GENERAL',
@@ -593,6 +619,7 @@ class FacturaCompraService:
         for detalle_data in detalles_data:
             DetalleFacturaCompra.objects.create(
                 factura=factura,
+                empresa=empresa,
                 **detalle_data
             )
 
@@ -603,7 +630,7 @@ class FacturaCompraService:
             'detalles__producto__categoria'
         ).select_related(
             'proveedor', 'usuario_registro'
-        ).get(id=factura.id)
+        ).get(id=factura.id, empresa=empresa)
 
     @staticmethod
     @transaction.atomic
@@ -634,7 +661,7 @@ class FacturaCompraService:
         try:
             factura = FacturaCompra.objects.prefetch_related(
                 'detalles__producto'
-            ).get(id=factura_id)
+            ).get(id=factura_id, empresa=get_empresa_actual_or_default())
         except FacturaCompra.DoesNotExist:
             raise FacturaNoEncontradaError(factura_id)
 
@@ -696,7 +723,7 @@ class FacturaCompraService:
             'movimientos_inventario',
         ).select_related(
             'proveedor', 'usuario_registro'
-        ).get(id=factura.id)
+        ).get(id=factura.id, empresa=get_empresa_actual_or_default())
 
     @staticmethod
     def obtener_factura(factura_id: int) -> FacturaCompra:
@@ -718,7 +745,7 @@ class FacturaCompraService:
                 'movimientos_inventario',
             ).select_related(
                 'proveedor', 'usuario_registro'
-            ).get(id=factura_id)
+            ).get(id=factura_id, empresa=get_empresa_actual_or_default())
         except FacturaCompra.DoesNotExist:
             raise FacturaNoEncontradaError(factura_id)
 
@@ -738,7 +765,9 @@ class FacturaCompraService:
         """
         queryset = FacturaCompra.objects.select_related(
             'proveedor', 'usuario_registro'
-        ).prefetch_related('detalles')
+        ).prefetch_related('detalles').filter(
+            empresa=get_empresa_actual_or_default(),
+        )
 
         if not filtros:
             return list(queryset.order_by('-fecha_registro'))

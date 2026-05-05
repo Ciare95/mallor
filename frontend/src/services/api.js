@@ -8,4 +8,12 @@ const api = axios.create({
   },
 });
 
+api.interceptors.request.use((config) => {
+  const empresaId = localStorage.getItem('mallor_empresa_activa_id');
+  if (empresaId) {
+    config.headers['X-Empresa-Id'] = empresaId;
+  }
+  return config;
+});
+
 export default api;

@@ -8,6 +8,7 @@ from cliente.models import Cliente
 from core.exceptions import (
     AbonoNoPermitidoError,
     FacturacionComunicacionError,
+    FacturacionOperacionError,
     FacturacionValidacionError,
     VentaNoCancelableError,
 )
@@ -868,3 +869,60 @@ class FacturacionElectronicaTest(TestCase):
         self.assertEqual(venta.total, total_antes)
         self.assertEqual(venta.estado, Venta.Estado.TERMINADA)
         self.assertEqual(documento.status, VentaFacturaElectronica.Status.ERROR)
+
+    def test_emitir_factura_rota_referencia_si_factus_deja_pendiente_dian(self):
+        venta = self._crear_venta_facturable()
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        with patch.object(
+            service.adapter,
+            'emitir_factura',
+            side_effect=FacturacionOperacionError(
+                'Factus respondio 409: Se encontro una factura pendiente por enviar a la DIAN',
+                code='factus_http_409',
+            ),
+            create=True,
+        ):
+            with self.assertRaises(FacturacionOperacionError):
+                service.emitir_factura(venta.id)
+
+        documento = VentaFacturaElectronica.objects.get(venta=venta)
+        self.assertEqual(documento.status, VentaFacturaElectronica.Status.ERROR)
+        self.assertEqual(documento.reference_code, f'VENTA-{venta.id}-R1')
+
+    def test_reintentar_usa_referencia_rotada_por_conflicto_pendiente_dian(self):
+        venta = self._crear_venta_facturable()
+        documento = VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.ERROR,
+            reference_code=f'VENTA-{venta.id}',
+            last_error_code='factus_http_409',
+            last_error_message=(
+                'Factus respondio 409: Se encontro una factura pendiente '
+                'por enviar a la DIAN'
+            ),
+        )
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        with patch.object(
+            service.adapter,
+            'emitir_factura',
+            return_value={
+                'data': {
+                    'number': 'SETP-12',
+                    'cufe': 'CUFE-456',
+                    'resolution_number': '18760000001',
+                },
+            },
+            create=True,
+        ) as emitir:
+            documento = service.reintentar_emision(venta.id)
+
+        payload = emitir.call_args.args[0]
+        self.assertEqual(payload['reference_code'], f'VENTA-{venta.id}-R1')
+        self.assertEqual(
+            payload['payment_details'][0]['reference_code'],
+            f'VENTA-{venta.id}-R1',
+        )
+        self.assertEqual(documento.status, VentaFacturaElectronica.Status.EMITIDA)
+        self.assertEqual(documento.reference_code, f'VENTA-{venta.id}-R1')

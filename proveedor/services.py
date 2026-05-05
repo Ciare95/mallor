@@ -10,6 +10,7 @@ from core.exceptions import (
     ProveedorDuplicadoError,
     ProveedorNoEncontradoError,
 )
+from empresa.context import get_empresa_actual_or_default
 from inventario.models import FacturaCompra
 from proveedor.models import Proveedor
 
@@ -24,16 +25,17 @@ class ProveedorService:
 
     @staticmethod
     def _queryset_base():
-        return Proveedor.objects.all()
+        return Proveedor.objects.filter(empresa=get_empresa_actual_or_default())
 
     @staticmethod
     def _queryset_historial(proveedor_id: int):
+        empresa = get_empresa_actual_or_default()
         return FacturaCompra.objects.select_related(
             'proveedor',
             'usuario_registro',
         ).prefetch_related(
             'detalles__producto',
-        ).filter(proveedor_id=proveedor_id)
+        ).filter(proveedor_id=proveedor_id, empresa=empresa)
 
     @staticmethod
     def _to_bool(value):
@@ -148,7 +150,10 @@ class ProveedorService:
 
     @staticmethod
     def _calcular_estadisticas(proveedor: Proveedor) -> Dict[str, Any]:
-        queryset = FacturaCompra.objects.filter(proveedor=proveedor)
+        queryset = FacturaCompra.objects.filter(
+            proveedor=proveedor,
+            empresa=get_empresa_actual_or_default(),
+        )
         procesadas = queryset.filter(estado=FacturaCompra.ESTADO_PROCESADA)
         pendientes = queryset.filter(estado=FacturaCompra.ESTADO_PENDIENTE)
 
@@ -229,6 +234,7 @@ class ProveedorService:
     @transaction.atomic
     def crear_proveedor(data: Dict[str, Any]) -> Proveedor:
         datos = data.copy()
+        datos['empresa'] = get_empresa_actual_or_default()
         ProveedorService.validar_documento_unico(
             datos.get('numero_documento'),
         )
@@ -326,6 +332,7 @@ class ProveedorService:
             return True
 
         queryset = Proveedor.objects.filter(
+            empresa=get_empresa_actual_or_default(),
             numero_documento=numero_documento,
         )
 

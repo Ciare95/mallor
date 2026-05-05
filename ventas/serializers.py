@@ -612,6 +612,26 @@ class FacturacionElectronicaConfigSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        empresa = getattr(self.instance, 'empresa', None)
+        if empresa is None:
+            request = self.context.get('request') if self.context else None
+            empresa = getattr(request, 'empresa', None)
+        if empresa is not None:
+            self.fields['active_bill_range_id'].queryset = (
+                FactusNumberingRange.objects.filter(
+                    empresa=empresa,
+                    is_credit_note_range=False,
+                )
+            )
+            self.fields['active_credit_note_range_id'].queryset = (
+                FactusNumberingRange.objects.filter(
+                    empresa=empresa,
+                    is_credit_note_range=True,
+                )
+            )
     active_credit_note_range_id = serializers.PrimaryKeyRelatedField(
         queryset=FactusNumberingRange.objects.filter(
             is_credit_note_range=True,

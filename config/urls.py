@@ -23,6 +23,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     
     # API REST
+    path('api/', include('empresa.urls')),
     path('api/', include('usuario.urls')),
     path('api/inventario/', include('inventario.urls')),
     path('api/fabricante/', include('fabricante.urls')),

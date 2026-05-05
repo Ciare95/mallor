@@ -25,6 +25,14 @@ class Proveedor(models.Model):
         CREDITO_30 = 'CREDITO_30', _('Credito 30 dias')
         CREDITO_60 = 'CREDITO_60', _('Credito 60 dias')
 
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='proveedores',
+        verbose_name=_('empresa'),
+    )
     tipo_documento = models.CharField(
         _('tipo de documento'),
         max_length=3,
@@ -35,7 +43,6 @@ class Proveedor(models.Model):
     numero_documento = models.CharField(
         _('numero de documento'),
         max_length=20,
-        unique=True,
         help_text=_('Numero unico de identificacion del proveedor.'),
     )
     razon_social = models.CharField(
@@ -133,12 +140,19 @@ class Proveedor(models.Model):
         verbose_name = _('proveedor')
         verbose_name_plural = _('proveedores')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['numero_documento']),
             models.Index(fields=['tipo_documento']),
             models.Index(fields=['razon_social']),
             models.Index(fields=['ciudad']),
             models.Index(fields=['forma_pago']),
             models.Index(fields=['activo']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'tipo_documento', 'numero_documento'],
+                name='proveedor_empresa_documento_unique',
+            ),
         ]
 
     def __str__(self):
@@ -193,6 +207,24 @@ class Proveedor(models.Model):
         self._normalizar_campos_texto()
         self._validar_campos_obligatorios()
 
+    def validate_unique(self, exclude=None):
+        super().validate_unique(exclude=exclude)
+        if not self.empresa_id or not self.tipo_documento or not self.numero_documento:
+            return
+        queryset = type(self).objects.filter(
+            empresa=self.empresa,
+            tipo_documento=self.tipo_documento,
+            numero_documento=self.numero_documento,
+        )
+        if self.pk:
+            queryset = queryset.exclude(pk=self.pk)
+        if queryset.exists():
+            raise ValidationError({
+                'numero_documento': _(
+                    'Ya existe un proveedor con este documento en la empresa.'
+                ),
+            })
+
     def _normalizar_campos_texto(self):
         campos = [
             'numero_documento',
@@ -238,5 +270,9 @@ class Proveedor(models.Model):
             raise ValidationError(errores)
 
     def save(self, *args, **kwargs):
+        if self.empresa_id is None:
+            from empresa.context import get_empresa_actual_or_default
+
+            self.empresa = get_empresa_actual_or_default()
         self.full_clean()
         super().save(*args, **kwargs)

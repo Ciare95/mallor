@@ -12,14 +12,22 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / '.env')
+except ImportError:
+    pass
+
+
+def _get_bool_env(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
 # Quick-start development settings - unsuitable for production
@@ -29,7 +37,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-txm643xxb+-75c0_vvpb4e87t804x(i!zrmse6q#=ai@70m=jp')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+DEBUG = _get_bool_env('DEBUG', True)
 
 ALLOWED_HOSTS = []
 
@@ -38,6 +46,7 @@ ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'django.contrib.admin',
+    'empresa',
     'usuario',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -68,6 +77,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'empresa.middleware.EmpresaActivaMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -164,7 +174,7 @@ FACTUS_CONFIG = {
     'PASSWORD': os.getenv('FACTUS_PASSWORD', ''),
     'TIMEOUT': int(os.getenv('FACTUS_TIMEOUT', '30')),
     'MAX_RETRIES': int(os.getenv('FACTUS_MAX_RETRIES', '2')),
-    'VERIFY_SSL': os.getenv('FACTUS_VERIFY_SSL', 'True') == 'True',
+    'VERIFY_SSL': _get_bool_env('FACTUS_VERIFY_SSL', True),
 }
 
 LOGGING = {
@@ -212,6 +222,7 @@ CORS_ALLOW_HEADERS = [
     'origin',
     'user-agent',
     'x-csrftoken',
+    'x-empresa-id',
     'x-requested-with',
 ]
 

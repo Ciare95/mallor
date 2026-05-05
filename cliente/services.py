@@ -10,6 +10,7 @@ from django.utils.dateparse import parse_date
 from django.utils.translation import gettext_lazy as _
 
 from cliente.models import Cliente
+from empresa.context import get_empresa_actual_or_default
 from core.exceptions import (
     ClienteConVentasError,
     ClienteCreditoInsuficienteError,
@@ -30,17 +31,18 @@ class ClienteService:
 
     @staticmethod
     def _queryset_base():
-        return Cliente.objects.all()
+        return Cliente.objects.filter(empresa=get_empresa_actual_or_default())
 
     @staticmethod
     def _queryset_historial(cliente_id: int):
+        empresa = get_empresa_actual_or_default()
         return Venta.objects.select_related(
             'cliente',
             'usuario_registro',
         ).prefetch_related(
             'detalles__producto',
             'abonos__usuario_registro',
-        ).filter(cliente_id=cliente_id)
+        ).filter(cliente_id=cliente_id, empresa=empresa)
 
     @staticmethod
     def _to_date(value):
@@ -259,6 +261,7 @@ class ClienteService:
         Crea un cliente aplicando las reglas de negocio del dominio.
         """
         datos = data.copy()
+        datos['empresa'] = get_empresa_actual_or_default()
         ClienteService.validar_documento_unico(
             datos.get('tipo_documento'),
             datos.get('numero_documento'),
@@ -438,6 +441,7 @@ class ClienteService:
             return True
 
         queryset = Cliente.objects.filter(
+            empresa=get_empresa_actual_or_default(),
             tipo_documento=tipo_documento,
             numero_documento=str(numero_documento).strip(),
         )

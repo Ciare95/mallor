@@ -28,6 +28,7 @@ from core.exceptions import (
 )
 from inventario.models import HistorialInventario, Producto
 from usuario.models import Usuario
+from empresa.context import get_empresa_actual_or_default
 from ventas.models import Abono, DetalleVenta, Venta
 
 
@@ -304,7 +305,8 @@ class VentaService:
 
     @staticmethod
     def _queryset_base():
-        return Venta.objects.select_related(
+        empresa = get_empresa_actual_or_default()
+        return Venta.objects.filter(empresa=empresa).select_related(
             'cliente',
             'usuario_registro',
             'factura_documento',
@@ -317,6 +319,7 @@ class VentaService:
 
     @staticmethod
     def _obtener_venta_para_actualizar(venta_id: int) -> Venta:
+        empresa = get_empresa_actual_or_default()
         try:
             return Venta.objects.select_for_update(of=('self',)).select_related(
                 'usuario_registro',
@@ -326,7 +329,7 @@ class VentaService:
                 'factura_documento__intentos',
                 'abonos',
                 'detalles__producto',
-            ).get(pk=venta_id)
+            ).get(pk=venta_id, empresa=empresa)
         except Venta.DoesNotExist as exc:
             raise VentaNoEncontradaError(venta_id) from exc
 
@@ -394,9 +397,16 @@ class VentaService:
             datos_venta,
             usuario,
         )
+        empresa = get_empresa_actual_or_default()
         cliente = _VentaInventarioService.obtener_cliente(
             datos_venta.pop('cliente', None),
         )
+        if cliente and cliente.empresa_id and cliente.empresa_id != empresa.id:
+            raise VentaError(
+                _('El cliente no pertenece a la empresa activa.'),
+                code='venta_cliente_empresa_invalida',
+            )
+        datos_venta['empresa'] = empresa
         datos_venta['usuario_registro'] = usuario_registro
         datos_venta['cliente'] = cliente
         datos_venta.pop('detalles', None)

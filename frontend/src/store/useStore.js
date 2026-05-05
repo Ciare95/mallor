@@ -11,9 +11,22 @@ export const useAppStore = create((set) => ({
   // ─── UI Global ──────────────────────────────────────────────────────────────
   sidebarOpen: true,
   loading: false,
+  empresaActivaId: localStorage.getItem('mallor_empresa_activa_id') || null,
+  empresaActiva: null,
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setLoading: (loading) => set({ loading }),
+  setEmpresaActiva: (empresa) => {
+    if (empresa?.id) {
+      localStorage.setItem('mallor_empresa_activa_id', String(empresa.id));
+    } else {
+      localStorage.removeItem('mallor_empresa_activa_id');
+    }
+    set({
+      empresaActiva: empresa || null,
+      empresaActivaId: empresa?.id ? String(empresa.id) : null,
+    });
+  },
 
   // ─── Usuarios (estado de selección para pasar entre vistas) ────────────────
   /**
@@ -32,5 +45,7 @@ export const useAppStore = create((set) => ({
       sidebarOpen: true,
       loading: false,
       usuarioActivo: null,
+      empresaActiva: null,
+      empresaActivaId: null,
     }),
 }));

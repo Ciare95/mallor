@@ -1,4 +1,6 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
   Building2,
@@ -14,11 +16,47 @@ import {
   Users,
 } from 'lucide-react';
 import { useAppStore } from '../store/useStore';
+import {
+  listarEmpresas,
+  seleccionarEmpresa,
+} from '../services/empresas.service';
 
 export default function Layout() {
   const location = useLocation();
   const sidebarOpen = useAppStore((state) => state.sidebarOpen);
   const toggleSidebar = useAppStore((state) => state.toggleSidebar);
+  const empresaActivaId = useAppStore((state) => state.empresaActivaId);
+  const empresaActiva = useAppStore((state) => state.empresaActiva);
+  const setEmpresaActiva = useAppStore((state) => state.setEmpresaActiva);
+  const queryClient = useQueryClient();
+
+  const empresasQuery = useQuery({
+    queryKey: ['empresas'],
+    queryFn: listarEmpresas,
+  });
+
+  const empresas = empresasQuery.data?.results || [];
+
+  useEffect(() => {
+    if (!empresas.length) {
+      return;
+    }
+    const seleccionada = empresas.find(
+      (empresa) => String(empresa.id) === String(empresaActivaId),
+    );
+    const activaBackend = empresas.find(
+      (empresa) => empresa.id === empresasQuery.data?.empresa_activa,
+    );
+    setEmpresaActiva(seleccionada || activaBackend || empresas[0]);
+  }, [empresas, empresaActivaId, empresasQuery.data?.empresa_activa, setEmpresaActiva]);
+
+  const seleccionarEmpresaMutation = useMutation({
+    mutationFn: seleccionarEmpresa,
+    onSuccess: (empresa) => {
+      setEmpresaActiva(empresa);
+      queryClient.invalidateQueries();
+    },
+  });
 
   const navItems = [
     { path: '/', label: 'Inicio', icon: Home, end: true },
@@ -130,6 +168,25 @@ export default function Layout() {
               </div>
 
               <div className="hidden items-center gap-3 md:flex">
+                <label className="flex items-center gap-2 rounded-full border border-app bg-white/70 px-3 py-1.5">
+                  <span className="text-[10px] uppercase tracking-[0.22em] text-muted">
+                    Empresa
+                  </span>
+                  <select
+                    value={empresaActiva?.id || ''}
+                    onChange={(event) =>
+                      seleccionarEmpresaMutation.mutate(event.target.value)
+                    }
+                    className="bg-transparent text-[12px] font-semibold text-main outline-none"
+                    disabled={empresasQuery.isLoading || empresas.length <= 1}
+                  >
+                    {empresas.map((empresa) => (
+                      <option key={empresa.id} value={empresa.id}>
+                        {empresa.nombre_comercial || empresa.razon_social}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 <div className="app-pill border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]">
                   Backend conectado
                 </div>

@@ -27,10 +27,17 @@ class Venta(models.Model):
         TRANSFERENCIA = 'TRANSFERENCIA', _('Transferencia')
         CREDITO = 'CREDITO', _('Credito')
 
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='ventas',
+        verbose_name=_('empresa'),
+    )
     numero_venta = models.CharField(
         _('numero de venta'),
         max_length=30,
-        unique=True,
         blank=True,
         help_text=_('Numero unico de venta generado automaticamente.'),
     )
@@ -157,6 +164,7 @@ class Venta(models.Model):
         verbose_name = _('venta')
         verbose_name_plural = _('ventas')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['numero_venta']),
             models.Index(fields=['fecha_venta']),
             models.Index(fields=['estado']),
@@ -165,15 +173,24 @@ class Venta(models.Model):
             models.Index(fields=['cliente']),
             models.Index(fields=['usuario_registro']),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'numero_venta'],
+                name='venta_empresa_numero_unique',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.numero_venta} - {self.get_estado_display()}"
 
     @classmethod
-    def _obtener_siguiente_consecutivo(cls):
-        ultima_venta = cls.objects.exclude(
+    def _obtener_siguiente_consecutivo(cls, empresa=None):
+        queryset = cls.objects.exclude(
             numero_venta='',
-        ).order_by('-id').only('numero_venta').first()
+        )
+        if empresa is not None:
+            queryset = queryset.filter(empresa=empresa)
+        ultima_venta = queryset.order_by('-id').only('numero_venta').first()
 
         if not ultima_venta or not ultima_venta.numero_venta:
             return 1
@@ -187,7 +204,7 @@ class Venta(models.Model):
         """
         Genera el numero consecutivo de venta.
         """
-        return f"V-{self._obtener_siguiente_consecutivo():08d}"
+        return f"V-{self._obtener_siguiente_consecutivo(self.empresa):08d}"
 
     def _obtener_agregados_detalles(self):
         if not hasattr(self, 'detalles'):
@@ -288,6 +305,11 @@ class Venta(models.Model):
         Aplica reglas previas al guardado del modelo.
         """
         from cliente.models import Cliente
+
+        if self.empresa_id is None:
+            from empresa.context import get_empresa_actual_or_default
+
+            self.empresa = get_empresa_actual_or_default()
 
         if not self.numero_venta:
             self.numero_venta = self.generar_numero_venta()
@@ -645,11 +667,73 @@ class FactusEnvironment(models.TextChoices):
     PRODUCCION = 'PRODUCCION', _('Produccion')
 
 
+class FactusCredential(models.Model):
+    """
+    Credenciales Factus por empresa y ambiente.
+    """
+
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.CASCADE,
+        related_name='factus_credentials',
+        verbose_name=_('empresa'),
+    )
+    environment = models.CharField(
+        _('ambiente'),
+        max_length=20,
+        choices=FactusEnvironment.choices,
+        default=FactusEnvironment.SANDBOX,
+    )
+    base_url = models.URLField(default='https://api-sandbox.factus.com.co')
+    client_id = models.CharField(max_length=255)
+    client_secret = models.TextField()
+    username = models.CharField(max_length=255)
+    password = models.TextField()
+    timeout = models.PositiveIntegerField(default=30)
+    max_retries = models.PositiveIntegerField(default=2)
+    verify_ssl = models.BooleanField(default=True)
+    activo = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'factus_credentials'
+        verbose_name = _('credencial Factus')
+        verbose_name_plural = _('credenciales Factus')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'environment'],
+                name='factus_credential_empresa_environment_unique',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['empresa', 'environment']),
+            models.Index(fields=['activo']),
+        ]
+
+    def __str__(self):
+        return f'{self.empresa} - {self.environment}'
+
+    @property
+    def client_id_masked(self):
+        if not self.client_id:
+            return ''
+        return f'***{self.client_id[-4:]}'
+
+
 class FacturacionElectronicaConfig(models.Model):
     """
     Configuración funcional de facturación electrónica.
     """
 
+    empresa = models.OneToOneField(
+        'empresa.Empresa',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='facturacion_config',
+        verbose_name=_('empresa'),
+    )
     is_enabled = models.BooleanField(
         _('facturacion habilitada'),
         default=False,
@@ -704,16 +788,27 @@ class FacturacionElectronicaConfig(models.Model):
         db_table = 'facturacion_electronica_config'
         verbose_name = _('configuracion de facturacion electronica')
         verbose_name_plural = _('configuracion de facturacion electronica')
+        indexes = [
+            models.Index(fields=['empresa']),
+        ]
 
     def clean(self):
-        if self.pk is None and FacturacionElectronicaConfig.objects.exists():
+        if self.empresa_id:
+            return
+        if self.pk is None and FacturacionElectronicaConfig.objects.filter(
+            empresa__isnull=True,
+        ).exists():
             raise ValidationError(
                 _('Solo puede existir una configuracion de facturacion.'),
             )
 
     @classmethod
-    def get_solo(cls):
-        obj, _ = cls.objects.get_or_create(pk=1)
+    def get_solo(cls, empresa=None):
+        if empresa is None:
+            from empresa.context import get_empresa_actual_or_default
+
+            empresa = get_empresa_actual_or_default()
+        obj, _ = cls.objects.get_or_create(empresa=empresa)
         return obj
 
 
@@ -722,7 +817,15 @@ class FactusNumberingRange(models.Model):
     Rango de numeración sincronizado desde Factus.
     """
 
-    factus_id = models.PositiveIntegerField(unique=True)
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='factus_numbering_ranges',
+        verbose_name=_('empresa'),
+    )
+    factus_id = models.PositiveIntegerField()
     document_code = models.CharField(max_length=10, default='01')
     prefix = models.CharField(max_length=20)
     from_number = models.PositiveIntegerField(default=0)
@@ -741,9 +844,16 @@ class FactusNumberingRange(models.Model):
         verbose_name = _('rango de numeracion Factus')
         verbose_name_plural = _('rangos de numeracion Factus')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['factus_id']),
             models.Index(fields=['document_code']),
             models.Index(fields=['is_active']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'factus_id'],
+                name='factus_range_empresa_factus_id_unique',
+            ),
         ]
 
     def __str__(self):
@@ -766,12 +876,20 @@ class VentaFacturaElectronica(models.Model):
         on_delete=models.CASCADE,
         related_name='factura_documento',
     )
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='facturas_electronicas',
+        verbose_name=_('empresa'),
+    )
     status = models.CharField(
         max_length=30,
         choices=Status.choices,
         default=Status.PENDIENTE_ENVIO,
     )
-    reference_code = models.CharField(max_length=100, unique=True)
+    reference_code = models.CharField(max_length=100)
     bill_number = models.CharField(max_length=100, blank=True)
     cufe = models.CharField(max_length=255, blank=True)
     numbering_range = models.ForeignKey(
@@ -798,13 +916,25 @@ class VentaFacturaElectronica(models.Model):
         verbose_name = _('factura electronica de venta')
         verbose_name_plural = _('facturas electronicas de ventas')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['status']),
             models.Index(fields=['bill_number']),
             models.Index(fields=['cufe']),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'reference_code'],
+                name='factura_electronica_empresa_reference_unique',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.venta.numero_venta} - {self.status}'
+
+    def save(self, *args, **kwargs):
+        if self.empresa_id is None and self.venta_id:
+            self.empresa = self.venta.empresa
+        super().save(*args, **kwargs)
 
     def sync_venta_fields(self):
         self.venta.numero_factura_electronica = self.bill_number
@@ -840,6 +970,14 @@ class FacturaElectronicaIntento(models.Model):
         null=True,
         blank=True,
     )
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='factura_electronica_intentos',
+        verbose_name=_('empresa'),
+    )
     action = models.CharField(max_length=30, choices=Action.choices)
     is_success = models.BooleanField(default=False)
     response_status_code = models.PositiveIntegerField(null=True, blank=True)
@@ -853,6 +991,11 @@ class FacturaElectronicaIntento(models.Model):
         verbose_name = _('intento de factura electronica')
         verbose_name_plural = _('intentos de factura electronica')
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['empresa']),
+            models.Index(fields=['action']),
+            models.Index(fields=['is_success']),
+        ]
 
     def __str__(self):
         return f'{self.action} - {"OK" if self.is_success else "ERROR"}'
