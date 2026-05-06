@@ -10,6 +10,7 @@
 - [ÉPICA 7: Módulo de Fabricante (Plan Premium)](#épica-7-módulo-de-fabricante-plan-premium)
 - [ÉPICA 8: Módulo de Informes y Estadísticas](#épica-8-módulo-de-informes-y-estadísticas)
 - [ÉPICA 9: Integración Facturación Electrónica (Factus)](#épica-9-integración-facturación-electrónica-factus)
+- [EPICA 9.5: Cierre Multitenant SaaS](#epica-95-cierre-multitenant-saas)
 - [ÉPICA 10: Módulo de IA](#épica-10-módulo-de-ia)
 - [ÉPICA 11: Testing y Calidad](#épica-11-testing-y-calidad)
 - [ÉPICA 12: Autenticación JWT](#épica-12-autenticación-jwt)
@@ -2808,6 +2809,237 @@ Integrar facturación electrónica en el flujo de ventas.
 
 ---
 
+## EPICA 9.5: Cierre Multitenant SaaS
+
+### Descripcion de la Epica
+Cerrar el modulo multitenant antes de iniciar la Epica 10 de IA. Mallor debe permitir operar como SaaS multiempresa en una sola base de datos, donde cada empresa tiene usuarios, datos fiscales, clientes, inventario, ventas, documentos electronicos, rangos Factus y permisos aislados.
+
+Esta epica intermedia deja claro como se da de alta una nueva empresa, como se administra su informacion y como se garantiza que la IA futura consulte solo el contexto de la empresa activa.
+
+### Objetivos
+- Definir y construir el flujo de alta de nuevas empresas SaaS.
+- Permitir que cada empresa administre su informacion fiscal y comercial.
+- Gestionar usuarios, membresias y roles por empresa.
+- Validar que el encabezado de documentos locales use los datos de la empresa activa.
+- Consolidar reglas de aislamiento antes de conectar IA a los datos del negocio.
+- Documentar el procedimiento operativo para onboarding de clientes.
+
+---
+
+#### Tarea 9.5.1: Definir Politica de Onboarding SaaS
+**Prioridad:** Alta | **Estimacion:** 2 Story Points | **Etiquetas:** Producto, Requisitos, SaaS
+
+**Decision recomendada:**
+Para esta fase se adopta onboarding administrado por Mallor. Un administrador interno crea la empresa y el primer usuario propietario. El autoregistro publico queda diferido hasta que existan verificacion de correo, recuperacion de cuenta, control de planes, pagos, auditoria y reglas de abuso.
+
+**Flujo operativo inicial:**
+1. Cliente solicita acceso a Mallor.
+2. Administrador interno crea la empresa.
+3. Administrador interno crea el primer usuario.
+4. El usuario queda asociado a la empresa como `PROPIETARIO`.
+5. El usuario inicia sesion y completa configuracion.
+6. La empresa configura Factus, rangos, clientes, productos y ventas.
+
+**Criterios de aceptacion:**
+- [ ] Documento de decision creado o actualizado.
+- [ ] Queda claro si el alta de empresa es manual o por autoregistro.
+- [ ] Queda definido quien crea el primer usuario.
+- [ ] Queda definido que rol inicial recibe el primer usuario.
+- [ ] Queda documentado que el autoregistro queda fuera de alcance de esta fase.
+
+---
+
+#### Tarea 9.5.2: Administracion Interna de Empresas
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Backend, Frontend, SaaS
+
+**Descripcion:**
+Crear una vista administrativa para que un superadmin o administrador interno de Mallor pueda crear y gestionar empresas cliente.
+
+**Campos minimos de Empresa:**
+- NIT
+- Digito de verificacion
+- Razon social
+- Nombre comercial
+- Email
+- Telefono
+- Direccion
+- Codigo de municipio
+- Ambiente de facturacion
+- Estado activo/inactivo
+
+**Funcionalidades:**
+- Crear empresa.
+- Editar empresa.
+- Activar/inactivar empresa.
+- Ver usuarios asociados.
+- Ver estado de configuracion Factus.
+- Crear primer usuario propietario.
+
+**Criterios de aceptacion:**
+- [ ] Existe pantalla o endpoint administrativo para crear empresas.
+- [ ] Solo un usuario autorizado de Mallor puede crear empresas.
+- [ ] No se permite duplicar NIT.
+- [ ] Al crear empresa se puede crear o asociar un usuario propietario.
+- [ ] Una empresa inactiva no puede operar ventas ni facturacion.
+
+---
+
+#### Tarea 9.5.3: Gestion de Usuarios por Empresa
+**Prioridad:** Alta | **Estimacion:** 5 Story Points | **Etiquetas:** Backend, Frontend, Seguridad
+
+**Descripcion:**
+Permitir que un propietario o administrador de empresa gestione usuarios dentro de su propia empresa sin poder afectar empresas ajenas.
+
+**Roles por empresa:**
+- `PROPIETARIO`: controla empresa, usuarios, Factus y datos fiscales.
+- `ADMIN`: gestiona operacion y configuracion, excepto transferencia de propiedad.
+- `EMPLEADO`: opera ventas, inventario y consultas segun permisos.
+
+**Funcionalidades:**
+- Listar usuarios de la empresa activa.
+- Crear usuario dentro de la empresa activa.
+- Editar rol dentro de la empresa.
+- Activar/inactivar membresia.
+- Evitar eliminar o degradar al ultimo propietario.
+- Permitir que un usuario pertenezca a varias empresas.
+
+**Criterios de aceptacion:**
+- [ ] Un propietario puede crear empleados para su empresa.
+- [ ] Un administrador no puede editar usuarios de otra empresa.
+- [ ] Un empleado no puede gestionar usuarios ni Factus.
+- [ ] No se puede dejar una empresa sin propietario activo.
+- [ ] El selector de empresa sigue funcionando para usuarios multiempresa.
+
+---
+
+#### Tarea 9.5.4: Pantalla Mi Empresa
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Frontend, Backend, UX
+
+**Descripcion:**
+Crear una pantalla de configuracion para que cada empresa edite su informacion comercial y fiscal.
+
+**Ruta sugerida:**
+`Configuracion > Mi empresa`
+
+**Campos editables por propietario/admin:**
+- Razon social
+- Nombre comercial
+- Email
+- Telefono
+- Direccion
+- Codigo de municipio
+- Digito de verificacion
+- Ambiente de facturacion
+
+**Reglas:**
+- El NIT debe requerir cuidado especial: permitir edicion solo a `PROPIETARIO` o superadmin.
+- Los datos deben usarse en encabezados de documentos locales, reportes y vistas operativas.
+- La informacion debe coincidir con RUT/DIAN/Factus cuando se use facturacion electronica.
+
+**Criterios de aceptacion:**
+- [ ] La empresa puede ver sus datos actuales.
+- [ ] Propietario/admin puede editar informacion permitida.
+- [ ] Empleado solo puede consultar o no acceder, segun permisos.
+- [ ] Cambios quedan asociados solo a la empresa activa.
+- [ ] Los formularios muestran validaciones claras.
+
+---
+
+#### Tarea 9.5.5: Encabezados y Datos de Empresa en Documentos
+**Prioridad:** Media | **Estimacion:** 3 Story Points | **Etiquetas:** Backend, Frontend, Reportes
+
+**Descripcion:**
+Asegurar que los documentos generados por Mallor usen los datos de la empresa activa como encabezado.
+
+**Documentos afectados:**
+- Recibos POS.
+- Reportes PDF/Excel.
+- Comprobantes internos.
+- Vistas imprimibles.
+- Documentos locales que no sean el PDF oficial generado por Factus.
+
+**Nota fiscal:**
+El PDF oficial de factura electronica viene de Factus y debe reflejar los datos registrados ante Factus/DIAN. Mallor debe usar los datos de `Empresa` para documentos propios y para validar consistencia operativa.
+
+**Criterios de aceptacion:**
+- [ ] Recibos y reportes muestran razon social o nombre comercial de la empresa activa.
+- [ ] Se muestra NIT y datos de contacto cuando aplique.
+- [ ] Una empresa no puede generar documentos con datos de otra.
+- [ ] Las descargas respetan `empresa_id`.
+
+---
+
+#### Tarea 9.5.6: Endurecimiento de Permisos Multitenant
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Backend, Seguridad, Testing
+
+**Descripcion:**
+Completar pruebas y reglas de seguridad para confirmar que ningun endpoint permita acceso cruzado entre empresas.
+
+**Escenarios minimos:**
+- Usuario de Empresa A no consulta cliente de Empresa B.
+- Usuario de Empresa A no consulta venta de Empresa B.
+- Usuario de Empresa A no descarga PDF/XML de Empresa B.
+- Usuario de Empresa A no modifica productos de Empresa B.
+- Usuario de Empresa A no ve configuracion Factus de Empresa B.
+- Usuario sin membresia no puede seleccionar Empresa B via `X-Empresa-Id`.
+
+**Criterios de aceptacion:**
+- [ ] Pruebas de acceso cruzado agregadas para endpoints criticos.
+- [ ] Todos los querysets operativos filtran por empresa activa.
+- [ ] Los errores devuelven 403 o 404 segun corresponda.
+- [ ] No se filtran datos sensibles en mensajes de error.
+
+---
+
+#### Tarea 9.5.7: Documentacion Operativa Multitenant
+**Prioridad:** Media | **Estimacion:** 2 Story Points | **Etiquetas:** Documentacion, Operaciones
+
+**Descripcion:**
+Actualizar la documentacion para que cualquier desarrollador o administrador entienda como dar de alta y operar una nueva empresa.
+
+**Documentos a actualizar o crear:**
+- `docs/MULTITENANT_FACTUS.md`
+- Guia de alta de cliente SaaS
+- Checklist de cierre de Epica 9
+
+**Contenido minimo:**
+- Modelo de datos: `Empresa` y `EmpresaUsuario`.
+- Roles por empresa.
+- Flujo de seleccion de empresa activa.
+- Alta manual de nueva empresa.
+- Configuracion Factus por empresa.
+- Pruebas obligatorias antes de pasar a Epica 10.
+
+**Criterios de aceptacion:**
+- [ ] Documentacion actualizada con estado real del modulo.
+- [ ] Ya no aparecen como pendientes tareas implementadas.
+- [ ] Existe checklist claro para alta de nueva empresa.
+- [ ] Existe checklist para validar aislamiento antes de IA.
+
+---
+
+#### Tarea 9.5.8: Criterio de Cierre Antes de Epica 10
+**Prioridad:** Alta | **Estimacion:** 1 Story Point | **Etiquetas:** QA, Producto
+
+**Criterio final de aceptacion:**
+Antes de iniciar la Epica 10, Mallor debe demostrar el siguiente flujo completo:
+
+1. Crear empresa nueva.
+2. Crear usuario propietario para esa empresa.
+3. Iniciar sesion con ese usuario.
+4. Ver solo los datos de esa empresa.
+5. Editar informacion fiscal/comercial de la empresa.
+6. Configurar credenciales Factus sandbox.
+7. Sincronizar rango.
+8. Crear cliente, producto y venta.
+9. Emitir factura electronica.
+10. Confirmar que otra empresa no puede ver venta, cliente, producto, PDF/XML ni configuracion Factus.
+
+**Motivo de bloqueo para Epica 10:**
+La IA consultara datos del negocio. Si el contexto de empresa y permisos no esta cerrado, la IA podria mezclar o exponer informacion entre empresas.
+
+---
+
 ## ÉPICA 10: Módulo de IA
 
 ### 📋 Descripción de la Épica
@@ -4857,7 +5089,7 @@ npm install --save-dev vite-plugin-compression
 
 ## Resumen de Épicas
 
-### Total de Story Points: ~210 SP
+### Total de Story Points: ~226 SP
 
 1. **ÉPICA 1: Configuración Inicial** - 16 SP
 2. **ÉPICA 2: Módulo de Usuarios** - 17 SP
@@ -4868,10 +5100,11 @@ npm install --save-dev vite-plugin-compression
 7. **ÉPICA 7: Módulo de Fabricante** - 27 SP
 8. **ÉPICA 8: Módulo de Informes** - 41 SP
 9. **ÉPICA 9: Integración Factus** - 29 SP
-10. **ÉPICA 10: Módulo de IA** - 34 SP
-11. **ÉPICA 11: Testing y Calidad** - 39 SP
-12. **ÉPICA 12: Autenticación JWT** - 23 SP
-13. **ÉPICA 13: Deployment** - 32 SP
+10. **EPICA 9.5: Cierre Multitenant SaaS** - 25 SP
+11. **ÉPICA 10: Módulo de IA** - 34 SP
+12. **ÉPICA 11: Testing y Calidad** - 39 SP
+13. **ÉPICA 12: Autenticación JWT** - 23 SP
+14. **ÉPICA 13: Deployment** - 32 SP
 
 ### Estimación de Tiempo
 - Con un equipo de 2-3 desarrolladores
