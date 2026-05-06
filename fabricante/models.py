@@ -6,6 +6,8 @@ from django.db.models import Sum
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from empresa.context import get_empresa_actual_or_default
+
 from .utils import (
     calcular_costo_por_unidad_destino,
     convertir_unidad,
@@ -36,6 +38,14 @@ class Ingrediente(models.Model):
         UNIDADES = 'UNIDADES', _('Unidades')
 
     id = models.AutoField(primary_key=True)
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='ingredientes_fabricacion',
+        verbose_name=_('empresa'),
+    )
     nombre = models.CharField(
         _('nombre'),
         max_length=200,
@@ -98,10 +108,17 @@ class Ingrediente(models.Model):
         verbose_name = _('ingrediente')
         verbose_name_plural = _('ingredientes')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['nombre']),
             models.Index(fields=['unidad_medida']),
             models.Index(fields=['proveedor']),
             models.Index(fields=['stock_actual']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'nombre'],
+                name='ingrediente_empresa_nombre_unique',
+            ),
         ]
 
     def __str__(self):
@@ -166,6 +183,8 @@ class Ingrediente(models.Model):
             raise ValidationError(errores)
 
     def save(self, *args, **kwargs):
+        if self.empresa_id is None:
+            self.empresa = get_empresa_actual_or_default()
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -176,6 +195,14 @@ class InventarioIngredientes(models.Model):
     """
 
     id = models.AutoField(primary_key=True)
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='movimientos_ingredientes_fabricacion',
+        verbose_name=_('empresa'),
+    )
     ingrediente = models.ForeignKey(
         Ingrediente,
         on_delete=models.PROTECT,
@@ -223,6 +250,7 @@ class InventarioIngredientes(models.Model):
         verbose_name = _('ingreso de inventario de ingrediente')
         verbose_name_plural = _('ingresos de inventario de ingredientes')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['ingrediente']),
             models.Index(fields=['fecha_ingreso']),
             models.Index(fields=['factura']),
@@ -255,6 +283,8 @@ class InventarioIngredientes(models.Model):
 
     def save(self, *args, **kwargs):
         ingrediente_anterior_id = None
+        if self.empresa_id is None and self.ingrediente_id:
+            self.empresa = self.ingrediente.empresa
 
         if self.pk:
             ingrediente_anterior_id = type(self).objects.filter(
@@ -304,6 +334,14 @@ class ProductoFabricado(models.Model):
         UNIDADES = 'UNIDADES', _('Unidades')
 
     id = models.AutoField(primary_key=True)
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='productos_fabricados_empresa',
+        verbose_name=_('empresa'),
+    )
     nombre = models.CharField(
         _('nombre'),
         max_length=200,
@@ -411,9 +449,16 @@ class ProductoFabricado(models.Model):
         verbose_name = _('producto fabricado')
         verbose_name_plural = _('productos fabricados')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['nombre']),
             models.Index(fields=['unidad_medida']),
             models.Index(fields=['producto_final']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'nombre'],
+                name='producto_fabricado_empresa_nombre_unique',
+            ),
         ]
 
     def __str__(self):
@@ -564,10 +609,21 @@ class ProductoFabricado(models.Model):
                 'El tiempo de produccion no puede ser negativo.'
             )
 
+        if (
+            self.empresa_id and
+            self.producto_final_id and
+            self.producto_final.empresa_id != self.empresa_id
+        ):
+            errores['producto_final'] = _(
+                'El producto final debe pertenecer a la misma empresa.'
+            )
+
         if errores:
             raise ValidationError(errores)
 
     def save(self, *args, **kwargs):
+        if self.empresa_id is None:
+            self.empresa = get_empresa_actual_or_default()
         self.actualizar_campos_calculados()
         self.full_clean()
         super().save(*args, **kwargs)
@@ -585,6 +641,14 @@ class IngredientesProducto(models.Model):
     """
 
     id = models.AutoField(primary_key=True)
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='recetas_fabricacion',
+        verbose_name=_('empresa'),
+    )
     producto_fabricado = models.ForeignKey(
         ProductoFabricado,
         on_delete=models.CASCADE,
@@ -625,6 +689,7 @@ class IngredientesProducto(models.Model):
         verbose_name = _('ingrediente de producto')
         verbose_name_plural = _('ingredientes de producto')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['producto_fabricado']),
             models.Index(fields=['ingrediente']),
         ]
@@ -674,11 +739,22 @@ class IngredientesProducto(models.Model):
                 'ingrediente seleccionado.'
             )
 
+        if (
+            self.producto_fabricado_id and
+            self.ingrediente_id and
+            self.producto_fabricado.empresa_id != self.ingrediente.empresa_id
+        ):
+            errores['ingrediente'] = _(
+                'El ingrediente y el producto fabricado deben pertenecer a la misma empresa.'
+            )
+
         if errores:
             raise ValidationError(errores)
 
     def save(self, *args, **kwargs):
         producto_fabricado_anterior_id = None
+        if self.empresa_id is None and self.producto_fabricado_id:
+            self.empresa = self.producto_fabricado.empresa
 
         if self.pk:
             producto_fabricado_anterior_id = type(self).objects.filter(
@@ -717,6 +793,14 @@ class PresentacionProductoFabricado(models.Model):
     """
 
     id = models.AutoField(primary_key=True)
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='presentaciones_fabricacion',
+        verbose_name=_('empresa'),
+    )
     producto_fabricado = models.ForeignKey(
         ProductoFabricado,
         on_delete=models.CASCADE,
@@ -800,9 +884,16 @@ class PresentacionProductoFabricado(models.Model):
         verbose_name = _('presentacion de producto fabricado')
         verbose_name_plural = _('presentaciones de productos fabricados')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['producto_fabricado']),
             models.Index(fields=['unidad_medida']),
             models.Index(fields=['producto_inventario']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'producto_fabricado', 'nombre'],
+                name='presentacion_empresa_producto_nombre_unique',
+            ),
         ]
 
     def __str__(self):
@@ -885,10 +976,21 @@ class PresentacionProductoFabricado(models.Model):
                 'base del lote fabricado.'
             )
 
+        if (
+            self.empresa_id and
+            self.producto_inventario_id and
+            self.producto_inventario.empresa_id != self.empresa_id
+        ):
+            errores['producto_inventario'] = _(
+                'El producto de inventario debe pertenecer a la misma empresa.'
+            )
+
         if errores:
             raise ValidationError(errores)
 
     def save(self, *args, **kwargs):
+        if self.empresa_id is None and self.producto_fabricado_id:
+            self.empresa = self.producto_fabricado.empresa
         self.actualizar_campos_calculados()
         self.full_clean()
         super().save(*args, **kwargs)
@@ -900,6 +1002,14 @@ class MovimientoEmpaquePresentacion(models.Model):
     """
 
     id = models.AutoField(primary_key=True)
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='movimientos_empaque_empresa',
+        verbose_name=_('empresa'),
+    )
     presentacion = models.ForeignKey(
         PresentacionProductoFabricado,
         on_delete=models.PROTECT,
@@ -937,6 +1047,7 @@ class MovimientoEmpaquePresentacion(models.Model):
         verbose_name = _('movimiento de empaque')
         verbose_name_plural = _('movimientos de empaque')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['presentacion']),
             models.Index(fields=['fecha_empaque']),
         ]
@@ -961,5 +1072,7 @@ class MovimientoEmpaquePresentacion(models.Model):
             raise ValidationError(errores)
 
     def save(self, *args, **kwargs):
+        if self.empresa_id is None and self.presentacion_id:
+            self.empresa = self.presentacion.empresa
         self.full_clean()
         super().save(*args, **kwargs)

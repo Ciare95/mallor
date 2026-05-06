@@ -60,6 +60,8 @@ class EmpresaUsuarioSerializer(serializers.ModelSerializer):
 
 class FactusCredentialSerializer(serializers.ModelSerializer):
     client_id_masked = serializers.CharField(read_only=True)
+    has_client_secret = serializers.BooleanField(read_only=True)
+    has_password = serializers.BooleanField(read_only=True)
     client_secret = serializers.CharField(write_only=True, required=False)
     password = serializers.CharField(write_only=True, required=False)
 
@@ -72,15 +74,23 @@ class FactusCredentialSerializer(serializers.ModelSerializer):
             'base_url',
             'client_id',
             'client_id_masked',
+            'has_client_secret',
             'client_secret',
             'username',
+            'has_password',
             'password',
             'timeout',
             'max_retries',
             'verify_ssl',
             'activo',
         ]
-        read_only_fields = ['id', 'empresa', 'client_id_masked']
+        read_only_fields = [
+            'id',
+            'empresa',
+            'client_id_masked',
+            'has_client_secret',
+            'has_password',
+        ]
 
     def update(self, instance, validated_data):
         for field in ('client_secret', 'password'):

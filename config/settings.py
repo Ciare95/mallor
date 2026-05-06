@@ -176,6 +176,7 @@ FACTUS_CONFIG = {
     'MAX_RETRIES': int(os.getenv('FACTUS_MAX_RETRIES', '2')),
     'VERIFY_SSL': _get_bool_env('FACTUS_VERIFY_SSL', True),
 }
+MALLOR_DATA_ENCRYPTION_KEY = os.getenv('MALLOR_DATA_ENCRYPTION_KEY', '')
 
 LOGGING = {
     'version': 1,

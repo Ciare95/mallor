@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.test import TestCase
 from rest_framework.test import APIClient, APITestCase
 
+from empresa.models import Empresa, EmpresaUsuario
 from inventario.models import FacturaCompra
 from proveedor.serializers import (
     ProveedorCreateSerializer,
@@ -171,14 +172,34 @@ class ProveedorServiceTest(ProveedorBaseTestCase):
 
 class ProveedorApiTest(APITestCase):
     def setUp(self):
+        self.empresa = Empresa.get_default()
+        self.otra_empresa = Empresa.objects.create(
+            nit='901000201',
+            razon_social='Otra Empresa Proveedor SAS',
+        )
+        self.password = 'secret123'
         self.usuario = Usuario.objects.create_user(
             username='admin',
             email='admin@mallor.com',
-            password='secret123',
+            password=self.password,
             role=Usuario.Rol.ADMIN,
         )
+        EmpresaUsuario.objects.get_or_create(
+            empresa=self.empresa,
+            usuario=self.usuario,
+            defaults={'rol': EmpresaUsuario.Rol.ADMIN, 'activo': True},
+        )
+        EmpresaUsuario.objects.create(
+            empresa=self.otra_empresa,
+            usuario=self.usuario,
+            rol=EmpresaUsuario.Rol.ADMIN,
+            activo=True,
+        )
         self.client = APIClient()
-        self.client.force_authenticate(user=self.usuario)
+        self.client.login(
+            username=self.usuario.username,
+            password=self.password,
+        )
         self.proveedor = Proveedor.objects.create(
             tipo_documento=Proveedor.TipoDocumento.NIT,
             numero_documento='900123456',
@@ -283,3 +304,11 @@ class ProveedorApiTest(APITestCase):
         self.assertEqual(response.status_code, 204)
         self.proveedor.refresh_from_db()
         self.assertFalse(self.proveedor.activo)
+
+    def test_no_expone_proveedor_de_otra_empresa(self):
+        response = self.client.get(
+            f'/api/proveedores/{self.proveedor.id}/',
+            HTTP_X_EMPRESA_ID=str(self.otra_empresa.id),
+        )
+
+        self.assertEqual(response.status_code, 404)

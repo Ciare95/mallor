@@ -720,6 +720,31 @@ class FactusCredential(models.Model):
             return ''
         return f'***{self.client_id[-4:]}'
 
+    @property
+    def has_client_secret(self):
+        return bool(self.client_secret)
+
+    @property
+    def has_password(self):
+        return bool(self.password)
+
+    def get_client_secret(self):
+        from ventas.security import decrypt_value
+
+        return decrypt_value(self.client_secret)
+
+    def get_password(self):
+        from ventas.security import decrypt_value
+
+        return decrypt_value(self.password)
+
+    def save(self, *args, **kwargs):
+        from ventas.security import encrypt_value
+
+        self.client_secret = encrypt_value(self.client_secret)
+        self.password = encrypt_value(self.password)
+        super().save(*args, **kwargs)
+
 
 class FacturacionElectronicaConfig(models.Model):
     """

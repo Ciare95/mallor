@@ -1,17 +1,35 @@
+import { Suspense, lazy } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
 import Layout from '../components/Layout';
-import HomePage from '../pages/HomePage';
-import AboutPage from '../pages/AboutPage';
-import UsuariosPage from '../pages/usuarios/UsuariosPage';
-import ProductosPage from '../pages/inventario/ProductosPage';
-import VentasPage from '../pages/ventas/VentasPage';
-import ClientesPage from '../pages/clientes/ClientesPage';
-import FacturacionPage from '../pages/facturacion/FacturacionPage';
-import ProveedoresPage from '../pages/proveedores/ProveedoresPage';
-import FabricantePage from '../pages/fabricante/FabricantePage';
-import DashboardInformesPage from '../pages/informes/DashboardPage';
-import CierresCajaPage from '../pages/informes/CierresCajaPage';
-import ReportesPage from '../pages/informes/ReportesPage';
+
+const HomePage = lazy(() => import('../pages/HomePage'));
+const AboutPage = lazy(() => import('../pages/AboutPage'));
+const UsuariosPage = lazy(() => import('../pages/usuarios/UsuariosPage'));
+const ProductosPage = lazy(() => import('../pages/inventario/ProductosPage'));
+const VentasPage = lazy(() => import('../pages/ventas/VentasPage'));
+const ClientesPage = lazy(() => import('../pages/clientes/ClientesPage'));
+const FacturacionPage = lazy(() => import('../pages/facturacion/FacturacionPage'));
+const ProveedoresPage = lazy(() => import('../pages/proveedores/ProveedoresPage'));
+const FabricantePage = lazy(() => import('../pages/fabricante/FabricantePage'));
+const DashboardInformesPage = lazy(() => import('../pages/informes/DashboardPage'));
+const CierresCajaPage = lazy(() => import('../pages/informes/CierresCajaPage'));
+const ReportesPage = lazy(() => import('../pages/informes/ReportesPage'));
+
+function withSuspense(Component) {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto flex min-h-[45vh] w-full max-w-[1600px] items-center justify-center px-4 py-10 sm:px-6 xl:px-8">
+          <div className="rounded-2xl border border-app bg-panel/85 px-6 py-4 text-sm font-semibold text-soft">
+            Cargando modulo...
+          </div>
+        </div>
+      }
+    >
+      <Component />
+    </Suspense>
+  );
+}
 
 export const router = createBrowserRouter([
   {
@@ -20,51 +38,51 @@ export const router = createBrowserRouter([
     children: [
       {
         index: true,
-        element: <HomePage />,
+        element: withSuspense(HomePage),
       },
       {
         path: 'about',
-        element: <AboutPage />,
+        element: withSuspense(AboutPage),
       },
       {
         path: 'usuarios',
-        element: <UsuariosPage />,
+        element: withSuspense(UsuariosPage),
       },
       {
         path: 'inventario',
-        element: <ProductosPage />,
+        element: withSuspense(ProductosPage),
       },
       {
         path: 'ventas',
-        element: <VentasPage />,
+        element: withSuspense(VentasPage),
       },
       {
         path: 'clientes',
-        element: <ClientesPage />,
+        element: withSuspense(ClientesPage),
       },
       {
         path: 'facturacion',
-        element: <FacturacionPage />,
+        element: withSuspense(FacturacionPage),
       },
       {
         path: 'proveedores',
-        element: <ProveedoresPage />,
+        element: withSuspense(ProveedoresPage),
       },
       {
         path: 'fabricante',
-        element: <FabricantePage />,
+        element: withSuspense(FabricantePage),
       },
       {
         path: 'informes',
-        element: <DashboardInformesPage />,
+        element: withSuspense(DashboardInformesPage),
       },
       {
         path: 'informes/cierres',
-        element: <CierresCajaPage />,
+        element: withSuspense(CierresCajaPage),
       },
       {
         path: 'informes/reportes',
-        element: <ReportesPage />,
+        element: withSuspense(ReportesPage),
       },
     ],
   },

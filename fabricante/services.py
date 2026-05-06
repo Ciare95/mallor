@@ -11,6 +11,7 @@ from core.exceptions import (
     ProduccionNoPermitidaError,
     RecetaInvalidaError,
 )
+from empresa.context import get_empresa_actual_or_default
 from fabricante.models import (
     COST_QUANTIZER,
     Ingrediente,
@@ -42,10 +43,16 @@ class IngredienteService:
             ) from exc
 
     @staticmethod
+    def _empresa_actual():
+        return get_empresa_actual_or_default()
+
+    @staticmethod
     def obtener_ingrediente(ingrediente_id: int) -> Ingrediente:
+        empresa = IngredienteService._empresa_actual()
         try:
             return Ingrediente.objects.select_related('proveedor').get(
                 pk=ingrediente_id,
+                empresa=empresa,
             )
         except Ingrediente.DoesNotExist as exc:
             raise IngredienteNoEncontradoError(ingrediente_id) from exc
@@ -54,6 +61,7 @@ class IngredienteService:
     @transaction.atomic
     def crear_ingrediente(data: Dict[str, Any]) -> Ingrediente:
         datos = data.copy()
+        empresa = IngredienteService._empresa_actual()
         nombre = str(datos.get('nombre', '')).strip()
 
         if not nombre:
@@ -61,12 +69,22 @@ class IngredienteService:
                 'Debe proporcionar un nombre para el ingrediente.'
             )
 
-        if Ingrediente.objects.filter(nombre__iexact=nombre).exists():
+        if Ingrediente.objects.filter(
+            empresa=empresa,
+            nombre__iexact=nombre,
+        ).exists():
             raise RecetaInvalidaError(
                 'Ya existe un ingrediente registrado con ese nombre.'
             )
 
+        proveedor = datos.get('proveedor')
+        if proveedor is not None and proveedor.empresa_id != empresa.id:
+            raise RecetaInvalidaError(
+                'El proveedor debe pertenecer a la empresa activa.'
+            )
+
         datos['nombre'] = nombre
+        datos['empresa'] = empresa
         return Ingrediente.objects.create(**datos)
 
     @staticmethod
@@ -93,7 +111,9 @@ class IngredienteService:
     def listar_ingredientes(
         filtros: Optional[Dict[str, Any]] = None,
     ) -> List[Ingrediente]:
-        queryset = Ingrediente.objects.select_related('proveedor').all()
+        queryset = Ingrediente.objects.select_related('proveedor').filter(
+            empresa=IngredienteService._empresa_actual(),
+        )
 
         if not filtros:
             return list(queryset.order_by('nombre'))
@@ -167,6 +187,7 @@ class IngredienteService:
     def ingredientes_bajo_stock() -> List[Ingrediente]:
         return list(
             Ingrediente.objects.select_related('proveedor').filter(
+                empresa=IngredienteService._empresa_actual(),
                 stock_actual__lte=F('stock_minimo'),
             ).order_by('stock_actual', 'nombre')
         )
@@ -179,19 +200,26 @@ class ProductoFabricadoService:
 
     @staticmethod
     def _base_queryset():
+        empresa = get_empresa_actual_or_default()
         return ProductoFabricado.objects.select_related(
             'producto_final',
+        ).filter(
+            empresa=empresa,
         ).prefetch_related(
             Prefetch(
                 'receta',
                 queryset=IngredientesProducto.objects.select_related(
                     'ingrediente',
+                ).filter(
+                    empresa=empresa,
                 ),
             ),
             Prefetch(
                 'presentaciones',
                 queryset=PresentacionProductoFabricado.objects.select_related(
                     'producto_inventario',
+                ).filter(
+                    empresa=empresa,
                 ),
             ),
         )
@@ -357,6 +385,7 @@ class ProductoFabricadoService:
         receta: List[Dict[str, Any]],
         presentaciones: Optional[List[Dict[str, Any]]] = None,
     ) -> ProductoFabricado:
+        empresa = get_empresa_actual_or_default()
         ProductoFabricadoService._validar_receta(receta)
         presentaciones_normalizadas = (
             ProductoFabricadoService._normalizar_presentaciones(
@@ -364,13 +393,23 @@ class ProductoFabricadoService:
             )
         )
 
-        producto = ProductoFabricado.objects.create(**data)
+        producto_final = data.get('producto_final')
+        if producto_final is not None and producto_final.empresa_id != empresa.id:
+            raise RecetaInvalidaError(
+                'El producto final debe pertenecer a la empresa activa.'
+            )
+
+        producto = ProductoFabricado.objects.create(
+            empresa=empresa,
+            **data,
+        )
 
         for item in receta:
             ingrediente = ProductoFabricadoService._obtener_ingrediente_desde_item(
                 item,
             )
             IngredientesProducto.objects.create(
+                empresa=empresa,
                 producto_fabricado=producto,
                 ingrediente=ingrediente,
                 cantidad_necesaria=ProductoFabricadoService._to_decimal(
@@ -382,6 +421,7 @@ class ProductoFabricadoService:
 
         for item in presentaciones_normalizadas:
             PresentacionProductoFabricado.objects.create(
+                empresa=empresa,
                 producto_fabricado=producto,
                 nombre=item.get('nombre'),
                 cantidad_por_unidad=ProductoFabricadoService._to_decimal(
@@ -870,6 +910,7 @@ class ProductoFabricadoService:
             producto_inventario.save()
         else:
             producto_inventario = Producto.objects.create(
+                empresa=producto_fabricado.empresa,
                 existencias=ZERO,
                 **datos_producto,
             )
@@ -926,6 +967,7 @@ class ProductoFabricadoService:
             producto_inventario.save()
         else:
             producto_inventario = Producto.objects.create(
+                empresa=presentacion.empresa,
                 existencias=ZERO,
                 **datos_producto,
             )

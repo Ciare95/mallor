@@ -70,9 +70,9 @@ class FactusAdapter(FacturacionPort):
                 return {
                     'BASE_URL': credential.base_url,
                     'CLIENT_ID': credential.client_id,
-                    'CLIENT_SECRET': credential.client_secret,
+                    'CLIENT_SECRET': credential.get_client_secret(),
                     'USERNAME': credential.username,
-                    'PASSWORD': credential.password,
+                    'PASSWORD': credential.get_password(),
                     'TIMEOUT': credential.timeout,
                     'MAX_RETRIES': credential.max_retries,
                     'VERIFY_SSL': credential.verify_ssl,

@@ -3,8 +3,10 @@ from unittest.mock import patch
 
 from django.test import TestCase
 from django.core.exceptions import ValidationError
+from rest_framework.test import APIClient
 
 from cliente.models import Cliente
+from empresa.models import Empresa, EmpresaUsuario
 from core.exceptions import (
     AbonoNoPermitidoError,
     FacturacionComunicacionError,
@@ -926,3 +928,50 @@ class FacturacionElectronicaTest(TestCase):
         )
         self.assertEqual(documento.status, VentaFacturaElectronica.Status.EMITIDA)
         self.assertEqual(documento.reference_code, f'VENTA-{venta.id}-R1')
+
+
+class VentaTenantApiTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.empresa = Empresa.get_default()
+        self.otra_empresa = Empresa.objects.create(
+            nit='901000203',
+            razon_social='Otra Empresa Ventas SAS',
+        )
+        self.password = 'Secret123'
+        self.usuario = Usuario.objects.create_user(
+            username='ventas_tenant',
+            email='ventas_tenant@mallor.test',
+            password=self.password,
+            role=Usuario.Rol.ADMIN,
+        )
+        EmpresaUsuario.objects.get_or_create(
+            empresa=self.empresa,
+            usuario=self.usuario,
+            defaults={'rol': EmpresaUsuario.Rol.ADMIN, 'activo': True},
+        )
+        EmpresaUsuario.objects.create(
+            empresa=self.otra_empresa,
+            usuario=self.usuario,
+            rol=EmpresaUsuario.Rol.ADMIN,
+            activo=True,
+        )
+        self.client.login(
+            username=self.usuario.username,
+            password=self.password,
+        )
+        self.venta = Venta.objects.create(
+            subtotal=Decimal('100.00'),
+            impuestos=Decimal('19.00'),
+            total=Decimal('119.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+
+    def test_no_expone_venta_de_otra_empresa(self):
+        response = self.client.get(
+            f'/api/ventas/{self.venta.id}/',
+            HTTP_X_EMPRESA_ID=str(self.otra_empresa.id),
+        )
+
+        self.assertEqual(response.status_code, 404)
