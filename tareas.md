@@ -2841,11 +2841,11 @@ Para esta fase se adopta onboarding administrado por Mallor. Un administrador in
 6. La empresa configura Factus, rangos, clientes, productos y ventas.
 
 **Criterios de aceptacion:**
-- [ ] Documento de decision creado o actualizado.
-- [ ] Queda claro si el alta de empresa es manual o por autoregistro.
-- [ ] Queda definido quien crea el primer usuario.
-- [ ] Queda definido que rol inicial recibe el primer usuario.
-- [ ] Queda documentado que el autoregistro queda fuera de alcance de esta fase.
+- [x] Documento de decision creado o actualizado.
+- [x] Queda claro si el alta de empresa es manual o por autoregistro.
+- [x] Queda definido quien crea el primer usuario.
+- [x] Queda definido que rol inicial recibe el primer usuario.
+- [x] Queda documentado que el autoregistro queda fuera de alcance de esta fase.
 
 ---
 
@@ -2876,11 +2876,11 @@ Crear una vista administrativa para que un superadmin o administrador interno de
 - Crear primer usuario propietario.
 
 **Criterios de aceptacion:**
-- [ ] Existe pantalla o endpoint administrativo para crear empresas.
-- [ ] Solo un usuario autorizado de Mallor puede crear empresas.
-- [ ] No se permite duplicar NIT.
-- [ ] Al crear empresa se puede crear o asociar un usuario propietario.
-- [ ] Una empresa inactiva no puede operar ventas ni facturacion.
+- [x] Existe pantalla o endpoint administrativo para crear empresas.
+- [x] Solo un usuario autorizado de Mallor puede crear empresas.
+- [x] No se permite duplicar NIT.
+- [x] Al crear empresa se puede crear o asociar un usuario propietario.
+- [x] Una empresa inactiva no puede operar ventas ni facturacion.
 
 ---
 
@@ -2904,11 +2904,11 @@ Permitir que un propietario o administrador de empresa gestione usuarios dentro 
 - Permitir que un usuario pertenezca a varias empresas.
 
 **Criterios de aceptacion:**
-- [ ] Un propietario puede crear empleados para su empresa.
-- [ ] Un administrador no puede editar usuarios de otra empresa.
-- [ ] Un empleado no puede gestionar usuarios ni Factus.
-- [ ] No se puede dejar una empresa sin propietario activo.
-- [ ] El selector de empresa sigue funcionando para usuarios multiempresa.
+- [x] Un propietario puede crear empleados para su empresa.
+- [x] Un administrador no puede editar usuarios de otra empresa.
+- [x] Un empleado no puede gestionar usuarios ni Factus.
+- [x] No se puede dejar una empresa sin propietario activo.
+- [x] El selector de empresa sigue funcionando para usuarios multiempresa.
 
 ---
 
@@ -2937,11 +2937,11 @@ Crear una pantalla de configuracion para que cada empresa edite su informacion c
 - La informacion debe coincidir con RUT/DIAN/Factus cuando se use facturacion electronica.
 
 **Criterios de aceptacion:**
-- [ ] La empresa puede ver sus datos actuales.
-- [ ] Propietario/admin puede editar informacion permitida.
-- [ ] Empleado solo puede consultar o no acceder, segun permisos.
-- [ ] Cambios quedan asociados solo a la empresa activa.
-- [ ] Los formularios muestran validaciones claras.
+- [x] La empresa puede ver sus datos actuales.
+- [x] Propietario/admin puede editar informacion permitida.
+- [x] Empleado solo puede consultar o no acceder, segun permisos.
+- [x] Cambios quedan asociados solo a la empresa activa.
+- [x] Los formularios muestran validaciones claras.
 
 ---
 
@@ -2962,10 +2962,10 @@ Asegurar que los documentos generados por Mallor usen los datos de la empresa ac
 El PDF oficial de factura electronica viene de Factus y debe reflejar los datos registrados ante Factus/DIAN. Mallor debe usar los datos de `Empresa` para documentos propios y para validar consistencia operativa.
 
 **Criterios de aceptacion:**
-- [ ] Recibos y reportes muestran razon social o nombre comercial de la empresa activa.
-- [ ] Se muestra NIT y datos de contacto cuando aplique.
-- [ ] Una empresa no puede generar documentos con datos de otra.
-- [ ] Las descargas respetan `empresa_id`.
+- [x] Recibos y reportes muestran razon social o nombre comercial de la empresa activa.
+- [x] Se muestra NIT y datos de contacto cuando aplique.
+- [x] Una empresa no puede generar documentos con datos de otra.
+- [x] Las descargas respetan `empresa_id`.
 
 ---
 
@@ -2984,10 +2984,10 @@ Completar pruebas y reglas de seguridad para confirmar que ningun endpoint permi
 - Usuario sin membresia no puede seleccionar Empresa B via `X-Empresa-Id`.
 
 **Criterios de aceptacion:**
-- [ ] Pruebas de acceso cruzado agregadas para endpoints criticos.
-- [ ] Todos los querysets operativos filtran por empresa activa.
-- [ ] Los errores devuelven 403 o 404 segun corresponda.
-- [ ] No se filtran datos sensibles en mensajes de error.
+- [x] Pruebas de acceso cruzado agregadas para endpoints criticos.
+- [x] Todos los querysets operativos filtran por empresa activa.
+- [x] Los errores devuelven 403 o 404 segun corresponda.
+- [x] No se filtran datos sensibles en mensajes de error.
 
 ---
 
@@ -3011,10 +3011,10 @@ Actualizar la documentacion para que cualquier desarrollador o administrador ent
 - Pruebas obligatorias antes de pasar a Epica 10.
 
 **Criterios de aceptacion:**
-- [ ] Documentacion actualizada con estado real del modulo.
-- [ ] Ya no aparecen como pendientes tareas implementadas.
-- [ ] Existe checklist claro para alta de nueva empresa.
-- [ ] Existe checklist para validar aislamiento antes de IA.
+- [x] Documentacion actualizada con estado real del modulo.
+- [x] Ya no aparecen como pendientes tareas implementadas.
+- [x] Existe checklist claro para alta de nueva empresa.
+- [x] Existe checklist para validar aislamiento antes de IA.
 
 ---
 

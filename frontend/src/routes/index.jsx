@@ -5,6 +5,8 @@ import Layout from '../components/Layout';
 const HomePage = lazy(() => import('../pages/HomePage'));
 const AboutPage = lazy(() => import('../pages/AboutPage'));
 const UsuariosPage = lazy(() => import('../pages/usuarios/UsuariosPage'));
+const MiEmpresaPage = lazy(() => import('../pages/MiEmpresaPage'));
+const EmpresasAdminPage = lazy(() => import('../pages/EmpresasAdminPage'));
 const ProductosPage = lazy(() => import('../pages/inventario/ProductosPage'));
 const VentasPage = lazy(() => import('../pages/ventas/VentasPage'));
 const ClientesPage = lazy(() => import('../pages/clientes/ClientesPage'));
@@ -47,6 +49,14 @@ export const router = createBrowserRouter([
       {
         path: 'usuarios',
         element: withSuspense(UsuariosPage),
+      },
+      {
+        path: 'mi-empresa',
+        element: withSuspense(MiEmpresaPage),
+      },
+      {
+        path: 'empresas-admin',
+        element: withSuspense(EmpresasAdminPage),
       },
       {
         path: 'inventario',

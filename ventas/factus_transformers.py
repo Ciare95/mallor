@@ -144,12 +144,10 @@ def build_factus_bill_payload(
     for detalle in venta.detalles.select_related('producto').all():
         producto = detalle.producto
         code_reference = producto.codigo_barras or producto.codigo_interno_formateado
-        taxes = []
-        if producto.iva > Decimal('0.00'):
-            taxes.append({
-                'code': TAX_CODE_IVA,
-                'rate': _format_decimal(producto.iva),
-            })
+        taxes = [{
+            'code': TAX_CODE_IVA,
+            'rate': _format_decimal(producto.iva),
+        }]
 
         items.append({
             'code_reference': code_reference,

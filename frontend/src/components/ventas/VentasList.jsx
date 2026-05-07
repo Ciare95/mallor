@@ -23,6 +23,7 @@ import {
   printVentasDocument,
 } from '../../utils/ventas';
 import { useVentasStore } from '../../store/useVentasStore';
+import { useAppStore } from '../../store/useStore';
 import { EmptyState, PaginationBar, SectionShell, StatusBadge } from './shared';
 
 export default function VentasList({
@@ -35,6 +36,7 @@ export default function VentasList({
 }) {
   const filtros = useVentasStore((state) => state.filtrosVentas);
   const setFiltros = useVentasStore((state) => state.setFiltrosVentas);
+  const empresaActiva = useAppStore((state) => state.empresaActiva);
   const deferredSearch = useDeferredValue(filtros.q);
 
   const ventasQuery = useQuery({
@@ -105,6 +107,7 @@ export default function VentasList({
           ),
         },
       ],
+      empresa: empresaActiva,
     });
   };
 

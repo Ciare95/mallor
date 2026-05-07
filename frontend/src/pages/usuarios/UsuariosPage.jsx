@@ -1,4 +1,4 @@
-import UsuariosPageComponent from '../../components/usuarios/UsuariosPage';
+import EmpresaUsuariosPage from './EmpresaUsuariosPage';
 
 /**
  * Página de gestión de usuarios.
@@ -7,5 +7,5 @@ import UsuariosPageComponent from '../../components/usuarios/UsuariosPage';
  * Delega toda la lógica al componente UsuariosPage.
  */
 export default function UsuariosPage() {
-  return <UsuariosPageComponent />;
+  return <EmpresaUsuariosPage />;
 }

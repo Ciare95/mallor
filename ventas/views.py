@@ -19,8 +19,9 @@ from core.exceptions import (
     VentaError,
     VentaNoEncontradaError,
 )
+from empresa.context import get_empresa_actual_or_default
+from empresa.services import EmpresaService
 from inventario.serializers import HistorialInventarioSerializer
-from usuario.services import UsuarioService
 from usuario.utils import RolePermissionMixin
 from ventas.serializers import (
     AbonoCreateSerializer,
@@ -70,7 +71,11 @@ class BaseVentasPermission(permissions.BasePermission):
             view_action,
             fallback_action or view_action,
         )
-        return UsuarioService.validar_permisos(request.user, accion)
+        return EmpresaService.validar_permiso_operacion(
+            request.user,
+            getattr(request, 'empresa', None),
+            accion,
+        )
 
     def has_object_permission(self, request: Request, view, obj) -> bool:
         return self.has_permission(request, view)
@@ -606,6 +611,11 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
                 f"attachment; filename={payload['filename']}"
             )
             return response
+        except FacturacionDocumentoNoEncontradoError as exc:
+            return Response(
+                {'error': exc.message},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         except FacturacionError as exc:
             return Response(
                 {'error': _error_message(exc)},
@@ -625,6 +635,11 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
                 f"attachment; filename={payload['filename']}"
             )
             return response
+        except FacturacionDocumentoNoEncontradoError as exc:
+            return Response(
+                {'error': exc.message},
+                status=status.HTTP_404_NOT_FOUND,
+            )
         except FacturacionError as exc:
             return Response(
                 {'error': _error_message(exc)},
@@ -959,10 +974,15 @@ class FacturacionViewSet(RolePermissionMixin, viewsets.ViewSet):
     def _service(self) -> FacturacionElectronicaService:
         return FacturacionElectronicaService()
 
+    @staticmethod
+    def _empresa_activa(request: Request):
+        empresa = getattr(getattr(request, '_request', None), 'empresa', None)
+        return empresa or get_empresa_actual_or_default()
+
     @action(detail=False, methods=['get', 'put', 'patch'], url_path='configuracion')
     def configuracion(self, request: Request) -> Response:
         config = FacturacionElectronicaService.get_config(
-            getattr(request, 'empresa', None),
+            self._empresa_activa(request),
         )
         if request.method == 'GET':
             serializer = FacturacionElectronicaConfigSerializer(
@@ -1006,7 +1026,7 @@ class FacturacionViewSet(RolePermissionMixin, viewsets.ViewSet):
     @action(detail=False, methods=['get'], url_path='rangos')
     def rangos(self, request: Request) -> Response:
         queryset = FactusNumberingRange.objects.filter(
-            empresa=getattr(request, 'empresa', None),
+            empresa=self._empresa_activa(request),
         ).order_by(
             'is_credit_note_range',
             'prefix',

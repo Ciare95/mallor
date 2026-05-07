@@ -81,7 +81,7 @@ class ProductoModelTest(TestCase):
         Verifica que se pueda crear un producto con datos válidos.
         """
         producto = Producto.objects.create(
-            codigo_interno='MED001',
+            codigo_interno=1001,
             nombre='Paracetamol 500mg',
             categoria=self.categoria,
             existencias=100,
@@ -90,7 +90,7 @@ class ProductoModelTest(TestCase):
             iva=19.00
         )
         
-        self.assertEqual(producto.codigo_interno, 'MED001')
+        self.assertEqual(producto.codigo_interno, 1001)
         self.assertEqual(producto.nombre, 'Paracetamol 500mg')
         self.assertEqual(producto.categoria, self.categoria)
         self.assertEqual(producto.existencias, 100)
@@ -99,14 +99,14 @@ class ProductoModelTest(TestCase):
         self.assertEqual(producto.iva, 19.00)
         self.assertIsNotNone(producto.created_at)
         self.assertIsNotNone(producto.updated_at)
-        self.assertEqual(str(producto), 'Paracetamol 500mg (MED001)')
+        self.assertEqual(str(producto), 'Paracetamol 500mg (00001001)')
     
     def test_codigo_interno_unico(self):
         """
         Verifica que no se puedan crear dos productos con el mismo código interno.
         """
         Producto.objects.create(
-            codigo_interno='COD001',
+            codigo_interno=1002,
             nombre='Producto 1',
             existencias=10,
             precio_compra=10.00,
@@ -115,7 +115,7 @@ class ProductoModelTest(TestCase):
         
         with self.assertRaises(Exception):
             Producto.objects.create(
-                codigo_interno='COD001',
+                codigo_interno=1002,
                 nombre='Producto 2',
                 existencias=5,
                 precio_compra=8.00,
@@ -127,7 +127,7 @@ class ProductoModelTest(TestCase):
         Verifica el cálculo del valor en inventario.
         """
         producto = Producto.objects.create(
-            codigo_interno='TEST001',
+            codigo_interno=1003,
             nombre='Producto Test',
             existencias=50,
             precio_compra=30.00,
@@ -142,7 +142,7 @@ class ProductoModelTest(TestCase):
         Verifica el cálculo del valor de venta.
         """
         producto = Producto.objects.create(
-            codigo_interno='TEST002',
+            codigo_interno=1004,
             nombre='Producto Test 2',
             existencias=20,
             precio_compra=25.00,
@@ -157,7 +157,7 @@ class ProductoModelTest(TestCase):
         Verifica la actualización del stock.
         """
         producto = Producto.objects.create(
-            codigo_interno='TEST003',
+            codigo_interno=1005,
             nombre='Producto Test 3',
             existencias=100,
             precio_compra=10.00,
@@ -183,7 +183,7 @@ class ProductoModelTest(TestCase):
         Verifica la validación de stock disponible.
         """
         producto = Producto.objects.create(
-            codigo_interno='TEST004',
+            codigo_interno=1006,
             nombre='Producto Test 4',
             existencias=30,
             precio_compra=5.00,
@@ -199,7 +199,7 @@ class ProductoModelTest(TestCase):
         Verifica que las existencias no puedan ser negativas.
         """
         producto = Producto(
-            codigo_interno='TEST005',
+            codigo_interno=1007,
             nombre='Producto Test 5',
             existencias=-10,
             precio_compra=10.00,
@@ -215,7 +215,7 @@ class ProductoModelTest(TestCase):
         """
         # Precio de compra negativo
         producto = Producto(
-            codigo_interno='TEST006',
+            codigo_interno=1008,
             nombre='Producto Test 6',
             existencias=10,
             precio_compra=-5.00,
@@ -227,7 +227,7 @@ class ProductoModelTest(TestCase):
         
         # Precio de venta negativo
         producto = Producto(
-            codigo_interno='TEST007',
+            codigo_interno=1009,
             nombre='Producto Test 7',
             existencias=10,
             precio_compra=5.00,
@@ -243,7 +243,7 @@ class ProductoModelTest(TestCase):
         """
         # IVA negativo
         producto = Producto(
-            codigo_interno='TEST008',
+            codigo_interno=1010,
             nombre='Producto Test 8',
             existencias=10,
             precio_compra=10.00,
@@ -256,7 +256,7 @@ class ProductoModelTest(TestCase):
         
         # IVA mayor a 100
         producto = Producto(
-            codigo_interno='TEST009',
+            codigo_interno=1011,
             nombre='Producto Test 9',
             existencias=10,
             precio_compra=10.00,
@@ -272,7 +272,7 @@ class ProductoModelTest(TestCase):
         Verifica la relación con categoría.
         """
         producto = Producto.objects.create(
-            codigo_interno='TEST010',
+            codigo_interno=1012,
             nombre='Producto Test 10',
             categoria=self.categoria,
             existencias=10,
@@ -288,7 +288,7 @@ class ProductoModelTest(TestCase):
         Verifica que un producto pueda crearse sin categoría.
         """
         producto = Producto.objects.create(
-            codigo_interno='TEST011',
+            codigo_interno=1013,
             nombre='Producto Test 11',
             existencias=10,
             precio_compra=10.00,
@@ -302,21 +302,21 @@ class ProductoModelTest(TestCase):
         Verifica que el orden por defecto sea por nombre.
         """
         Producto.objects.create(
-            codigo_interno='Z001',
+            codigo_interno=1014,
             nombre='Zeta',
             existencias=10,
             precio_compra=10.00,
             precio_venta=15.00
         )
         Producto.objects.create(
-            codigo_interno='A001',
+            codigo_interno=1015,
             nombre='Alfa',
             existencias=10,
             precio_compra=10.00,
             precio_venta=15.00
         )
         Producto.objects.create(
-            codigo_interno='B001',
+            codigo_interno=1016,
             nombre='Beta',
             existencias=10,
             precio_compra=10.00,

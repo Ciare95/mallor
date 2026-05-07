@@ -1,4 +1,5 @@
 import logging
+import zlib
 from typing import Any, Dict, Optional
 
 from django.db import transaction
@@ -13,6 +14,7 @@ from core.exceptions import (
 )
 from ventas.adapters.factus_adapter import FactusAdapter
 from empresa.context import get_empresa_actual_or_default
+from empresa.services import EmpresaService
 from ventas.factus_transformers import (
     build_credit_note_payload,
     build_factus_bill_payload,
@@ -82,6 +84,25 @@ def _normalize_range_document_code(value: Any) -> str:
         'nota de eliminacion de nomina': '28',
     }
     return mapping.get(raw, '')
+
+
+def _resolve_range_factus_id(row: Dict[str, Any]) -> Optional[int]:
+    factus_id = row.get('id') or row.get('numbering_range_id')
+    if factus_id:
+        return int(factus_id)
+
+    fallback_parts = [
+        row.get('prefix') or '',
+        row.get('resolution_number') or '',
+        row.get('from') or row.get('from_number') or '',
+        row.get('to') or row.get('to_number') or '',
+    ]
+    fallback_key = '|'.join(str(part).strip() for part in fallback_parts if part)
+    if not fallback_key:
+        return None
+
+    synthetic_id = zlib.crc32(fallback_key.encode('utf-8')) % 2147483647
+    return synthetic_id or 1
 
 
 class FacturacionElectronicaService:
@@ -218,6 +239,7 @@ class FacturacionElectronicaService:
 
     def validar_conexion(self) -> Dict[str, Any]:
         empresa = get_empresa_actual_or_default()
+        EmpresaService.validar_empresa_activa(empresa)
         config = self.get_config(empresa)
         payload = self._adapter_for_empresa(empresa).validar_conexion()
         config.company_snapshot = payload
@@ -242,6 +264,7 @@ class FacturacionElectronicaService:
     @transaction.atomic
     def sincronizar_rangos(self) -> Dict[str, Any]:
         empresa = get_empresa_actual_or_default()
+        EmpresaService.validar_empresa_activa(empresa)
         config = self.get_config(empresa)
         adapter = self._adapter_for_empresa(empresa)
         rangos_response = adapter.listar_rangos()
@@ -251,7 +274,7 @@ class FacturacionElectronicaService:
         synced_ids = []
 
         for row in rows:
-            factus_id = row.get('id') or row.get('numbering_range_id')
+            factus_id = _resolve_range_factus_id(row)
             if not factus_id:
                 continue
             document_code = _normalize_range_document_code(
@@ -312,6 +335,7 @@ class FacturacionElectronicaService:
 
     def emitir_factura(self, venta_id: int) -> VentaFacturaElectronica:
         empresa = get_empresa_actual_or_default()
+        EmpresaService.validar_empresa_activa(empresa)
         config = self._require_enabled_config(empresa)
         venta = Venta.objects.select_related('cliente').prefetch_related(
             'detalles__producto',

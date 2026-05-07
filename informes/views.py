@@ -16,6 +16,7 @@ from core.exceptions import (
     InformeError,
     InformeNoEncontradoError,
 )
+from empresa.services import EmpresaService
 from usuario.utils import RolePermissionMixin
 
 from .models import Informe
@@ -58,11 +59,10 @@ class AdminRolePermission(permissions.BasePermission):
     """
 
     def has_permission(self, request: Request, view) -> bool:
-        usuario = getattr(request, 'user', None)
-        return bool(
-            usuario
-            and usuario.is_authenticated
-            and getattr(usuario, 'is_admin', False)
+        return EmpresaService.validar_permiso_operacion(
+            getattr(request, 'user', None),
+            getattr(request, 'empresa', None),
+            'ver_informe_financiero',
         )
 
 
@@ -90,7 +90,7 @@ class BaseInformesViewSet(RolePermissionMixin, viewsets.ViewSet):
     Base comun para los endpoints del modulo informes.
     """
 
-    required_roles = ['ADMIN']
+    required_roles = None
     permission_classes = [AdminRolePermission]
     pagination_class = InformesPagination
 

@@ -6,9 +6,14 @@ from rest_framework.response import Response
 
 from empresa.models import Empresa
 from empresa.serializers import (
+    EmpresaAdminCreateSerializer,
+    EmpresaAdminSerializer,
     EmpresaSeleccionSerializer,
     EmpresaSerializer,
+    EmpresaUsuarioCreateSerializer,
     FactusCredentialSerializer,
+    EmpresaUsuarioSerializer,
+    EmpresaUsuarioUpdateSerializer,
 )
 from empresa.services import EmpresaService
 from ventas.models import FactusCredential
@@ -68,13 +73,182 @@ class EmpresaViewSet(viewsets.ViewSet):
         serializer.save()
         return Response(serializer.data)
 
+    @action(detail=False, methods=['get', 'post'], url_path='admin')
+    def admin_empresas(self, request: Request) -> Response:
+        try:
+            EmpresaService.validar_admin_interno(request.user)
+        except PermissionDenied as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+        if request.method == 'GET':
+            queryset = Empresa.objects.all().order_by('razon_social')
+            serializer = EmpresaAdminSerializer(
+                queryset,
+                many=True,
+                context={'request': request},
+            )
+            return Response({'results': serializer.data})
+
+        serializer = EmpresaAdminCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        propietario_data = serializer.validated_data.pop('propietario', None)
+        try:
+            empresa = EmpresaService.crear_empresa_admin(
+                serializer.validated_data,
+                propietario_data=propietario_data,
+                usuario_solicitante=request.user,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        response_serializer = EmpresaAdminSerializer(
+            empresa,
+            context={'request': request},
+        )
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+    @action(
+        detail=False,
+        methods=['get', 'patch'],
+        url_path=r'admin/(?P<empresa_id>[^/.]+)',
+    )
+    def admin_empresa_detalle(
+        self,
+        request: Request,
+        empresa_id: int = None,
+    ) -> Response:
+        try:
+            EmpresaService.validar_admin_interno(request.user)
+            empresa = Empresa.objects.get(pk=empresa_id)
+        except PermissionDenied as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except Empresa.DoesNotExist:
+            return Response(
+                {'error': 'Empresa no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if request.method == 'GET':
+            serializer = EmpresaAdminSerializer(
+                empresa,
+                context={'request': request},
+            )
+            return Response(serializer.data)
+
+        serializer = EmpresaAdminSerializer(
+            empresa,
+            data=request.data,
+            partial=True,
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        empresa = EmpresaService.actualizar_empresa_admin(
+            empresa,
+            serializer.validated_data,
+            usuario_solicitante=request.user,
+        )
+        return Response(
+            EmpresaAdminSerializer(
+                empresa,
+                context={'request': request},
+            ).data,
+        )
+
+    @action(detail=True, methods=['get', 'post'], url_path='usuarios')
+    def usuarios(self, request: Request, pk: int = None) -> Response:
+        empresa = self._get_empresa_permitida(request, pk)
+        if empresa is None:
+            return Response(
+                {'error': 'Empresa no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if not self._can_admin_empresa(request, empresa):
+            return Response(
+                {'error': 'No tiene permisos para administrar usuarios.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if request.method == 'GET':
+            serializer = EmpresaUsuarioSerializer(
+                EmpresaService.membresias_empresa(empresa),
+                many=True,
+            )
+            return Response({'results': serializer.data})
+
+        serializer = EmpresaUsuarioCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            membresia = EmpresaService.crear_o_actualizar_membresia(
+                empresa,
+                serializer.validated_data,
+                usuario_solicitante=request.user,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            EmpresaUsuarioSerializer(membresia).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=True,
+        methods=['patch'],
+        url_path=r'usuarios/(?P<membresia_id>[^/.]+)',
+    )
+    def usuario_membresia(
+        self,
+        request: Request,
+        pk: int = None,
+        membresia_id: int = None,
+    ) -> Response:
+        empresa = self._get_empresa_permitida(request, pk)
+        if empresa is None:
+            return Response(
+                {'error': 'Empresa no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if not self._can_admin_empresa(request, empresa):
+            return Response(
+                {'error': 'No tiene permisos para administrar usuarios.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        membresia = EmpresaService.membresias_empresa(empresa).filter(
+            pk=membresia_id,
+        ).first()
+        if membresia is None:
+            return Response(
+                {'error': 'Membresia no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = EmpresaUsuarioUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            membresia = EmpresaService.actualizar_membresia(
+                membresia,
+                serializer.validated_data,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(EmpresaUsuarioSerializer(membresia).data)
+
     def _get_empresa_permitida(self, request: Request, pk: int):
+        if EmpresaService.es_admin_interno(request.user):
+            try:
+                return Empresa.objects.get(pk=pk)
+            except Empresa.DoesNotExist:
+                return None
         try:
             return EmpresaService.empresas_usuario(request.user).get(pk=pk)
         except Empresa.DoesNotExist:
             return None
 
     def _can_admin_empresa(self, request: Request, empresa: Empresa) -> bool:
+        if EmpresaService.es_admin_interno(request.user):
+            return True
         return EmpresaService.rol_usuario(
             request.user,
             empresa,

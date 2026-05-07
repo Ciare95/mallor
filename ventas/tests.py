@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from rest_framework.test import APIClient
 
 from cliente.models import Cliente
+from empresa.context import reset_empresa_actual, set_empresa_actual
 from empresa.models import Empresa, EmpresaUsuario
 from core.exceptions import (
     AbonoNoPermitidoError,
@@ -817,6 +818,22 @@ class FacturacionElectronicaTest(TestCase):
         self.assertEqual(payload['customer']['municipality_code'], '11001')
         self.assertEqual(payload['items'][0]['unit_measure_code'], '94')
         self.assertEqual(payload['items'][0]['standard_code'], '999')
+        self.assertEqual(
+            payload['items'][0]['taxes'],
+            [{'code': '01', 'rate': '19.00'}],
+        )
+
+    def test_build_factus_bill_payload_incluye_taxes_con_iva_cero(self):
+        self.producto.iva = Decimal('0.00')
+        self.producto.save(update_fields=['iva'])
+        venta = self._crear_venta_facturable()
+
+        payload = build_factus_bill_payload(venta, self.rango.factus_id)
+
+        self.assertEqual(
+            payload['items'][0]['taxes'],
+            [{'code': '01', 'rate': '0.00'}],
+        )
 
     def test_build_factus_bill_payload_valida_cliente_sin_municipio(self):
         self.cliente.municipio_codigo = ''
@@ -851,6 +868,47 @@ class FacturacionElectronicaTest(TestCase):
         self.assertTrue(
             VentaFacturaElectronica.objects.filter(venta=venta).exists(),
         )
+
+    def test_sincronizar_rangos_acepta_payload_dian_sin_id(self):
+        empresa = Empresa.get_default()
+        token = set_empresa_actual(empresa)
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        try:
+            with patch.object(
+                service.adapter,
+                'listar_rangos',
+                return_value={
+                    'data': [
+                        {
+                            'prefix': 'SEDS',
+                            'from': '984000000',
+                            'to': '985000000',
+                            'resolution_number': '18760000001',
+                            'start_date': '2026-01-01',
+                            'end_date': '2026-12-31',
+                        },
+                    ],
+                },
+                create=True,
+            ), patch.object(
+                service.adapter,
+                'ver_empresa',
+                return_value={'data': {'company': 'Ciare Company'}},
+                create=True,
+            ):
+                payload = service.sincronizar_rangos()
+        finally:
+            reset_empresa_actual(token)
+
+        self.assertEqual(payload['count'], 1)
+        rango = FactusNumberingRange.objects.get(
+            empresa=empresa,
+            prefix='SEDS',
+        )
+        self.assertEqual(rango.document_code, '01')
+        self.assertEqual(rango.from_number, 984000000)
+        self.assertEqual(rango.to_number, 985000000)
 
     def test_emitir_factura_en_error_no_revierte_venta(self):
         venta = self._crear_venta_facturable()

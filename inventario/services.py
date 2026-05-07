@@ -884,6 +884,7 @@ class ReporteService:
             return ReporteService.productos_bajo_stock(Decimal('0'))[:limite]
 
         ventas_qs = Venta.objects.filter(
+            empresa=get_empresa_actual_or_default(),
             estado__in=['TERMINADA', 'PENDIENTE']
         )
 

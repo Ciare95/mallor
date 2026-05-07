@@ -29,6 +29,7 @@ from core.exceptions import (
 from inventario.models import HistorialInventario, Producto
 from usuario.models import Usuario
 from empresa.context import get_empresa_actual_or_default
+from empresa.services import EmpresaService
 from ventas.models import Abono, DetalleVenta, Venta
 
 
@@ -139,7 +140,10 @@ class _VentaInventarioService:
                 producto_id = producto
 
             try:
-                producto_obj = Producto.objects.get(pk=producto_id)
+                producto_obj = Producto.objects.get(
+                    pk=producto_id,
+                    empresa=get_empresa_actual_or_default(),
+                )
             except Producto.DoesNotExist as exc:
                 raise ProductoNoEncontradoError(producto_id) from exc
 
@@ -219,6 +223,7 @@ class _VentaInventarioService:
             stock_requerido[detalle['producto'].id] += detalle['cantidad']
 
         productos = Producto.objects.select_for_update().filter(
+            empresa=get_empresa_actual_or_default(),
             id__in=stock_requerido.keys(),
         ).in_bulk()
 
@@ -398,6 +403,7 @@ class VentaService:
             usuario,
         )
         empresa = get_empresa_actual_or_default()
+        EmpresaService.validar_empresa_activa(empresa)
         cliente = _VentaInventarioService.obtener_cliente(
             datos_venta.pop('cliente', None),
         )
@@ -419,6 +425,7 @@ class VentaService:
             detalle_creacion = detalle_data.copy()
             detalle_creacion['producto'] = Producto.objects.get(
                 pk=detalle_data['producto'].pk,
+                empresa=empresa,
             )
             detalle = DetalleVenta.objects.create(
                 venta=venta,
@@ -601,6 +608,7 @@ class VentaService:
                 detalle_creacion = detalle_data.copy()
                 detalle_creacion['producto'] = Producto.objects.get(
                     pk=detalle_data['producto'].pk,
+                    empresa=venta.empresa,
                 )
                 detalle = DetalleVenta.objects.create(
                     venta=venta,
@@ -639,6 +647,7 @@ class VentaService:
         for detalle in detalles:
             producto = Producto.objects.select_for_update().get(
                 pk=detalle.producto_id,
+                empresa=venta.empresa,
             )
             producto.actualizar_stock(detalle.cantidad)
             _VentaInventarioService.registrar_historial_entrada(
@@ -850,6 +859,7 @@ class AbonoService:
     @staticmethod
     def calcular_total_por_cobrar() -> Decimal:
         total = Venta.objects.filter(
+            empresa=get_empresa_actual_or_default(),
             estado=Venta.Estado.TERMINADA,
             saldo_pendiente__gt=Decimal('0.00'),
         ).aggregate(
@@ -934,8 +944,9 @@ class VentaReporteService:
         fecha_inicio: Optional[date] = None,
         fecha_fin: Optional[date] = None,
     ) -> List[DetalleVenta]:
+        empresa = get_empresa_actual_or_default()
         try:
-            Producto.objects.get(pk=producto_id)
+            Producto.objects.get(pk=producto_id, empresa=empresa)
         except Producto.DoesNotExist as exc:
             raise ProductoNoEncontradoError(producto_id) from exc
 
@@ -948,6 +959,7 @@ class VentaReporteService:
             venta__estado=Venta.Estado.CANCELADA,
         ).filter(
             producto_id=producto_id,
+            venta__empresa=empresa,
         )
 
         if fecha_inicio:
@@ -959,7 +971,8 @@ class VentaReporteService:
 
     @staticmethod
     def ventas_por_cliente(cliente_id: int) -> List[Venta]:
-        if not Cliente.objects.filter(pk=cliente_id).exists():
+        empresa = get_empresa_actual_or_default()
+        if not Cliente.objects.filter(pk=cliente_id, empresa=empresa).exists():
             raise VentaError(
                 _('El cliente solicitado no existe.'),
                 code='cliente_no_encontrado',

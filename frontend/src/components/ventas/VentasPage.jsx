@@ -24,6 +24,7 @@ import {
   VENTA_DETALLE_TABS,
   useVentasStore,
 } from '../../store/useVentasStore';
+import { useAppStore } from '../../store/useStore';
 import {
   buildVentaPayload,
   printVentaTicket,
@@ -57,6 +58,7 @@ export default function VentasPage() {
   } = useVentasStore();
   const [abonoError, setAbonoError] = useState(null);
   const [posFocusSignal, setPosFocusSignal] = useState(0);
+  const empresaActiva = useAppStore((state) => state.empresaActiva);
 
   const invalidateVentas = () => {
     queryClient.invalidateQueries({ queryKey: ['ventas'] });
@@ -79,7 +81,7 @@ export default function VentasPage() {
       invalidateVentas();
       toast.success(`Venta ${venta.numero_venta} registrada`);
       if (draft.imprimirTicket) {
-        printVentaTicket(venta);
+        printVentaTicket(venta, empresaActiva);
       }
       resetDraft();
       setVentaSeleccionada(null);

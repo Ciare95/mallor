@@ -19,11 +19,13 @@ import {
   printVentasDocument,
 } from '../../utils/ventas';
 import { useVentasStore } from '../../store/useVentasStore';
+import { useAppStore } from '../../store/useStore';
 import { EmptyState, PaginationBar, SectionShell, StatusBadge } from './shared';
 
 export default function CuentasPorCobrar({ onAbonar, onOpenVenta }) {
   const filtros = useVentasStore((state) => state.filtrosCartera);
   const setFiltros = useVentasStore((state) => state.setFiltrosCartera);
+  const empresaActiva = useAppStore((state) => state.empresaActiva);
 
   const cuentasQuery = useQuery({
     queryKey: ['ventas', 'cartera', filtros],
@@ -92,6 +94,7 @@ export default function CuentasPorCobrar({ onAbonar, onOpenVenta }) {
         { label: 'Total visible', value: formatCurrency(totalVisible) },
         { label: 'Vencidas', value: `${agedCount}` },
       ],
+      empresa: empresaActiva,
     });
   };
 

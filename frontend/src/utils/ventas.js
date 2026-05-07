@@ -354,6 +354,7 @@ export const printVentasDocument = ({
   subtitle,
   rows,
   totals = [],
+  empresa,
 }) => {
   const popup = window.open('', '_blank', 'width=980,height=760');
   if (!popup) {
@@ -376,6 +377,16 @@ export const printVentasDocument = ({
       </table>
     `
     : '<p>Sin datos para imprimir.</p>';
+  const empresaNombre =
+    empresa?.nombre_comercial || empresa?.razon_social || 'Mallor';
+  const empresaMeta = [
+    empresa?.nit
+      ? `NIT ${empresa.nit}${empresa.digito_verificacion ? `-${empresa.digito_verificacion}` : ''}`
+      : null,
+    empresa?.telefono,
+    empresa?.email,
+    empresa?.direccion,
+  ].filter(Boolean).join(' · ');
 
   popup.document.write(`
     <html>
@@ -385,6 +396,9 @@ export const printVentasDocument = ({
           body { font-family: Arial, sans-serif; margin: 32px; color: #0f172a; }
           h1 { margin: 0 0 8px; }
           p { margin: 0 0 24px; color: #475569; }
+          .company { border-bottom: 1px solid #cbd5e1; margin-bottom: 18px; padding-bottom: 12px; }
+          .company strong { display: block; font-size: 18px; }
+          .company span { display: block; margin-top: 4px; color: #475569; font-size: 12px; }
           .totals { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
           table { width: 100%; border-collapse: collapse; }
           th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; font-size: 12px; }
@@ -392,6 +406,10 @@ export const printVentasDocument = ({
         </style>
       </head>
       <body>
+        <div class="company">
+          <strong>${empresaNombre}</strong>
+          <span>${empresaMeta}</span>
+        </div>
         <h1>${title}</h1>
         <p>${subtitle || ''}</p>
         <div class="totals">${totalMarkup}</div>
@@ -404,7 +422,7 @@ export const printVentasDocument = ({
   popup.print();
 };
 
-export const printVentaTicket = (venta) => {
+export const printVentaTicket = (venta, empresa) => {
   const popup = window.open('', '_blank', 'width=420,height=720');
   if (!popup || !venta) {
     return;
@@ -421,6 +439,11 @@ export const printVentaTicket = (venta) => {
       `,
     )
     .join('');
+  const empresaNombre =
+    empresa?.nombre_comercial || empresa?.razon_social || 'Mallor';
+  const empresaNit = empresa?.nit
+    ? `NIT ${empresa.nit}${empresa.digito_verificacion ? `-${empresa.digito_verificacion}` : ''}`
+    : '';
 
   popup.document.write(`
     <html>
@@ -436,7 +459,9 @@ export const printVentaTicket = (venta) => {
         </style>
       </head>
       <body>
-        <h1>Mallor</h1>
+        <h1>${empresaNombre}</h1>
+        <p>${empresaNit}</p>
+        <p>${empresa?.telefono || ''}</p>
         <h2>Ticket de venta</h2>
         <div class="meta">
           <div>Venta: ${venta.numero_venta}</div>

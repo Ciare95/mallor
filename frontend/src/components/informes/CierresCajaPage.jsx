@@ -24,6 +24,7 @@ import CierresList from './CierresList';
 import DetalleCierre from './DetalleCierre';
 import GenerarCierreForm from './GenerarCierreForm';
 import InformesModuleNav from './InformesModuleNav';
+import { useAppStore } from '../../store/useStore';
 
 const TODAY = new Date().toISOString().slice(0, 10);
 
@@ -35,6 +36,7 @@ const createExpenseState = () => ({
 });
 
 export default function CierresCajaPage() {
+  const empresaActiva = useAppStore((state) => state.empresaActiva);
   const queryClient = useQueryClient();
   const { toasts, toast, closeToast } = useToast();
   const [filters, setFilters] = useState({
@@ -280,7 +282,7 @@ export default function CierresCajaPage() {
         cierreId === selectedCierreId && detalleQuery.data
           ? detalleQuery.data
           : await obtenerCierreCaja(cierreId);
-      openPrintWindow(cierre);
+      openPrintWindow(cierre, empresaActiva);
     } catch (error) {
       toast.error(
         extractApiError(error, 'No fue posible preparar la impresion del cierre.'),
@@ -369,7 +371,7 @@ function buildManualExpense(expense = {}) {
   };
 }
 
-function openPrintWindow(cierre) {
+function openPrintWindow(cierre, empresa) {
   if (!cierre) {
     return;
   }
@@ -402,6 +404,15 @@ function openPrintWindow(cierre) {
       `,
     )
     .join('');
+  const empresaNombre =
+    empresa?.nombre_comercial || empresa?.razon_social || 'Mallor';
+  const empresaMeta = [
+    empresa?.nit
+      ? `NIT ${empresa.nit}${empresa.digito_verificacion ? `-${empresa.digito_verificacion}` : ''}`
+      : null,
+    empresa?.telefono,
+    empresa?.email,
+  ].filter(Boolean).join(' · ');
 
   popup.document.write(`
     <html>
@@ -422,7 +433,8 @@ function openPrintWindow(cierre) {
       </head>
       <body>
         <div class="header">
-          <h1>Mallor</h1>
+          <h1>${empresaNombre}</h1>
+          <div class="eyebrow">${empresaMeta}</div>
           <div class="eyebrow">Cierre de caja diario</div>
         </div>
 

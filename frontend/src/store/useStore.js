@@ -1,9 +1,21 @@
 import { create } from 'zustand';
 
+const storedUser = localStorage.getItem('user');
+const initialUser = (() => {
+  if (!storedUser) {
+    return null;
+  }
+  try {
+    return JSON.parse(storedUser);
+  } catch {
+    return null;
+  }
+})();
+
 export const useAppStore = create((set) => ({
   // ─── Autenticación ──────────────────────────────────────────────────────────
-  user: null,
-  token: null,
+  user: initialUser,
+  token: localStorage.getItem('token') || null,
 
   setUser: (user) => set({ user }),
   setToken: (token) => set({ token }),

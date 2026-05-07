@@ -48,6 +48,9 @@ class UsuarioPermission(permissions.BasePermission):
                 return False  # No permitir creación sin autenticación si ya hay usuarios
             return False
 
+        if view.action == 'me':
+            return True
+
         # Obtener acción de la vista
         accion = self._map_view_action_to_business_action(view.action)
         
