@@ -12,14 +12,22 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / '.env')
+except ImportError:
+    pass
+
+
+def _get_bool_env(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
 # Quick-start development settings - unsuitable for production
@@ -29,7 +37,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-txm643xxb+-75c0_vvpb4e87t804x(i!zrmse6q#=ai@70m=jp')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
+DEBUG = _get_bool_env('DEBUG', True)
 
 ALLOWED_HOSTS = []
 
@@ -38,6 +46,7 @@ ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'django.contrib.admin',
+    'empresa',
     'usuario',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -68,6 +77,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'empresa.middleware.EmpresaActivaMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -151,13 +161,56 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.AllowAny',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.BasicAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ],
+}
+
+FACTUS_CONFIG = {
+    'BASE_URL': os.getenv('FACTUS_BASE_URL', 'https://api-sandbox.factus.com.co'),
+    'CLIENT_ID': os.getenv('FACTUS_CLIENT_ID', ''),
+    'CLIENT_SECRET': os.getenv('FACTUS_CLIENT_SECRET', ''),
+    'USERNAME': os.getenv('FACTUS_USERNAME', ''),
+    'PASSWORD': os.getenv('FACTUS_PASSWORD', ''),
+    'TIMEOUT': int(os.getenv('FACTUS_TIMEOUT', '30')),
+    'MAX_RETRIES': int(os.getenv('FACTUS_MAX_RETRIES', '2')),
+    'VERIFY_SSL': _get_bool_env('FACTUS_VERIFY_SSL', True),
+}
+MALLOR_DATA_ENCRYPTION_KEY = os.getenv('MALLOR_DATA_ENCRYPTION_KEY', '')
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {name} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'mallor.factus': {
+            'handlers': ['console'],
+            'level': os.getenv('FACTUS_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+    },
 }
 
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
@@ -177,6 +230,7 @@ CORS_ALLOW_HEADERS = [
     'origin',
     'user-agent',
     'x-csrftoken',
+    'x-empresa-id',
     'x-requested-with',
 ]
 

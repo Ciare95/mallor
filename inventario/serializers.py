@@ -82,6 +82,7 @@ class ProductoSerializer(serializers.ModelSerializer):
             'codigo_barras', 'nombre', 'categoria', 'categoria_id',
             'marca', 'descripcion', 'existencias', 'invima',
             'precio_compra', 'precio_venta', 'iva',
+            'unidad_medida_codigo', 'estandar_codigo',
             'imagen', 'fecha_ingreso', 'fecha_caducidad',
             'valor_inventario', 'valor_venta_total', 'margen_ganancia',
             'created_at', 'updated_at',
@@ -121,7 +122,8 @@ class ProductoListSerializer(serializers.ModelSerializer):
             'id', 'codigo_interno', 'codigo_interno_formateado',
             'codigo_barras', 'nombre', 'categoria_nombre',
             'marca', 'existencias', 'precio_compra', 'precio_venta',
-            'iva', 'valor_inventario',
+            'iva', 'unidad_medida_codigo', 'estandar_codigo',
+            'valor_inventario',
         ]
 
     def get_valor_inventario(self, obj):
@@ -136,6 +138,7 @@ class ProductoCreateSerializer(serializers.ModelSerializer):
             'categoria', 'marca', 'descripcion',
             'existencias', 'invima',
             'precio_compra', 'precio_venta', 'iva',
+            'unidad_medida_codigo', 'estandar_codigo',
             'imagen', 'fecha_caducidad',
         ]
 
@@ -192,6 +195,14 @@ class ProductoCreateSerializer(serializers.ModelSerializer):
                 {'precio_venta': 'Advertencia: El precio de venta es menor '
                                   'que el precio de compra'}
             )
+        if not (data.get('unidad_medida_codigo') or '').strip():
+            raise serializers.ValidationError(
+                {'unidad_medida_codigo': 'El codigo de unidad es obligatorio'}
+            )
+        if not (data.get('estandar_codigo') or '').strip():
+            raise serializers.ValidationError(
+                {'estandar_codigo': 'El codigo estandar es obligatorio'}
+            )
         return data
 
 
@@ -203,6 +214,7 @@ class ProductoUpdateSerializer(serializers.ModelSerializer):
             'categoria', 'marca', 'descripcion',
             'existencias', 'invima',
             'precio_compra', 'precio_venta', 'iva',
+            'unidad_medida_codigo', 'estandar_codigo',
             'imagen', 'fecha_caducidad',
         ]
         read_only_fields = ['codigo_interno']
@@ -255,6 +267,22 @@ class ProductoUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {'precio_venta': 'Advertencia: El precio de venta es menor '
                                   'que el precio de compra'}
+            )
+        unidad = data.get(
+            'unidad_medida_codigo',
+            getattr(self.instance, 'unidad_medida_codigo', ''),
+        )
+        estandar = data.get(
+            'estandar_codigo',
+            getattr(self.instance, 'estandar_codigo', ''),
+        )
+        if not (unidad or '').strip():
+            raise serializers.ValidationError(
+                {'unidad_medida_codigo': 'El codigo de unidad es obligatorio'}
+            )
+        if not (estandar or '').strip():
+            raise serializers.ValidationError(
+                {'estandar_codigo': 'El codigo estandar es obligatorio'}
             )
         return data
 

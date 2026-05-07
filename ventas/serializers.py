@@ -9,7 +9,15 @@ from rest_framework import serializers
 from cliente.models import Cliente
 from inventario.models import Producto
 from usuario.models import Usuario
-from ventas.models import Abono, DetalleVenta, Venta
+from ventas.models import (
+    Abono,
+    DetalleVenta,
+    FacturacionElectronicaConfig,
+    FacturaElectronicaIntento,
+    FactusNumberingRange,
+    Venta,
+    VentaFacturaElectronica,
+)
 
 
 class ProductoVentaInfoSerializer(serializers.ModelSerializer):
@@ -30,6 +38,8 @@ class ProductoVentaInfoSerializer(serializers.ModelSerializer):
             'marca',
             'precio_venta',
             'iva',
+            'unidad_medida_codigo',
+            'estandar_codigo',
         ]
         read_only_fields = fields
 
@@ -50,9 +60,11 @@ class ClienteVentaInfoSerializer(serializers.ModelSerializer):
             'id',
             'tipo_documento',
             'numero_documento',
+            'digito_verificacion',
             'nombre_completo',
             'telefono',
             'email',
+            'municipio_codigo',
         ]
         read_only_fields = fields
 
@@ -227,6 +239,7 @@ class VentaSerializer(serializers.ModelSerializer):
         read_only=True,
     )
     puede_facturar = serializers.SerializerMethodField()
+    factura_documento = serializers.SerializerMethodField()
 
     class Meta:
         model = Venta
@@ -252,6 +265,7 @@ class VentaSerializer(serializers.ModelSerializer):
             'detalles',
             'detalles_count',
             'puede_facturar',
+            'factura_documento',
             'created_at',
             'updated_at',
         ]
@@ -259,6 +273,12 @@ class VentaSerializer(serializers.ModelSerializer):
 
     def get_puede_facturar(self, obj):
         return obj.puede_facturar()
+
+    def get_factura_documento(self, obj):
+        documento = getattr(obj, 'factura_documento', None)
+        if documento is None:
+            return None
+        return VentaFacturaElectronicaSerializer(documento).data
 
 
 class VentaCreateSerializer(serializers.ModelSerializer):
@@ -307,6 +327,8 @@ class VentaCreateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         detalles = attrs.get('detalles', [])
         descuento_global = attrs.get('descuento', Decimal('0.00'))
+        factura_electronica = attrs.get('factura_electronica', False)
+        cliente = attrs.get('cliente')
         stock_requerido = defaultdict(lambda: Decimal('0.00'))
         subtotal = Decimal('0.00')
 
@@ -331,6 +353,16 @@ class VentaCreateSerializer(serializers.ModelSerializer):
                     'de la venta.'
                 ),
             })
+
+        if factura_electronica:
+            cliente_validar = cliente or Cliente.get_consumidor_final()
+            if not cliente_validar.municipio_codigo:
+                raise serializers.ValidationError({
+                    'cliente': _(
+                        'El cliente debe tener codigo de municipio para '
+                        'facturacion electronica.'
+                    ),
+                })
 
         return attrs
 
@@ -421,6 +453,19 @@ class VentaUpdateSerializer(serializers.ModelSerializer):
                 'numero_factura_electronica': _(
                     'La factura electronica debe estar activa para '
                     'registrar un numero de factura.'
+                ),
+            })
+
+        factura_electronica = attrs.get(
+            'factura_electronica',
+            instance.factura_electronica,
+        )
+        cliente = attrs.get('cliente', instance.cliente)
+        if factura_electronica and cliente and not cliente.municipio_codigo:
+            raise serializers.ValidationError({
+                'cliente': _(
+                    'El cliente debe tener codigo de municipio para '
+                    'facturacion electronica.'
                 ),
             })
 
@@ -532,3 +577,135 @@ class AbonoCreateSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         return AbonoSerializer(instance).data
+
+
+class FactusNumberingRangeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FactusNumberingRange
+        fields = [
+            'id',
+            'factus_id',
+            'document_code',
+            'prefix',
+            'from_number',
+            'to_number',
+            'current_number',
+            'resolution_number',
+            'start_date',
+            'end_date',
+            'is_active',
+            'is_credit_note_range',
+            'synced_at',
+        ]
+        read_only_fields = fields
+
+
+class FacturacionElectronicaConfigSerializer(serializers.ModelSerializer):
+    active_bill_range = FactusNumberingRangeSerializer(read_only=True)
+    active_credit_note_range = FactusNumberingRangeSerializer(read_only=True)
+    active_bill_range_id = serializers.PrimaryKeyRelatedField(
+        queryset=FactusNumberingRange.objects.filter(
+            is_credit_note_range=False,
+        ),
+        source='active_bill_range',
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        empresa = getattr(self.instance, 'empresa', None)
+        if empresa is None:
+            request = self.context.get('request') if self.context else None
+            empresa = getattr(request, 'empresa', None)
+        if empresa is not None:
+            self.fields['active_bill_range_id'].queryset = (
+                FactusNumberingRange.objects.filter(
+                    empresa=empresa,
+                    is_credit_note_range=False,
+                )
+            )
+            self.fields['active_credit_note_range_id'].queryset = (
+                FactusNumberingRange.objects.filter(
+                    empresa=empresa,
+                    is_credit_note_range=True,
+                )
+            )
+    active_credit_note_range_id = serializers.PrimaryKeyRelatedField(
+        queryset=FactusNumberingRange.objects.filter(
+            is_credit_note_range=True,
+        ),
+        source='active_credit_note_range',
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = FacturacionElectronicaConfig
+        fields = [
+            'is_enabled',
+            'environment',
+            'auto_emitir_al_terminar',
+            'auto_enviar_email',
+            'active_bill_range',
+            'active_credit_note_range',
+            'active_bill_range_id',
+            'active_credit_note_range_id',
+            'company_snapshot',
+            'last_connection_status',
+            'last_connection_checked_at',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'company_snapshot',
+            'last_connection_status',
+            'last_connection_checked_at',
+            'created_at',
+            'updated_at',
+        ]
+
+
+class FacturaElectronicaIntentoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FacturaElectronicaIntento
+        fields = [
+            'id',
+            'action',
+            'is_success',
+            'response_status_code',
+            'error_message',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class VentaFacturaElectronicaSerializer(serializers.ModelSerializer):
+    numbering_range = FactusNumberingRangeSerializer(read_only=True)
+    intentos = FacturaElectronicaIntentoSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = VentaFacturaElectronica
+        fields = [
+            'id',
+            'status',
+            'reference_code',
+            'bill_number',
+            'cufe',
+            'numbering_range',
+            'resolution_number',
+            'validated_at',
+            'email_last_sent_at',
+            'last_error_code',
+            'last_error_message',
+            'request_payload',
+            'response_payload',
+            'credit_note_number',
+            'credit_note_payload',
+            'intentos',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = fields

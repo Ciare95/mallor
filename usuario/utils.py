@@ -360,6 +360,10 @@ PERMISOS = {
     'FACTURA_VER': 'ver_factura',
     'FACTURA_ANULAR': 'anular_factura',
     'FACTURA_LISTAR': 'listar_facturas',
+    'FACTURACION_CONFIG_VER': 'ver_configuracion_facturacion',
+    'FACTURACION_CONFIG_ACTUALIZAR': 'actualizar_configuracion_facturacion',
+    'FACTURACION_VALIDAR_CONEXION': 'validar_conexion_facturacion',
+    'FACTURACION_SINCRONIZAR_RANGOS': 'sincronizar_rangos_facturacion',
     
     # Informes
     'INFORME_VER_FINANCIERO': 'ver_informe_financiero',

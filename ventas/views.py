@@ -1,6 +1,7 @@
 from datetime import date
 from typing import Any, Dict, Optional
 
+from django.http import HttpResponse
 from django.utils.dateparse import parse_date
 from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions, status, viewsets
@@ -12,23 +13,31 @@ from rest_framework.response import Response
 
 from core.exceptions import (
     AbonoNoEncontradoError,
+    FacturacionDocumentoNoEncontradoError,
+    FacturacionError,
     ProductoNoEncontradoError,
     VentaError,
     VentaNoEncontradaError,
 )
+from empresa.context import get_empresa_actual_or_default
+from empresa.services import EmpresaService
 from inventario.serializers import HistorialInventarioSerializer
-from usuario.services import UsuarioService
 from usuario.utils import RolePermissionMixin
 from ventas.serializers import (
     AbonoCreateSerializer,
     AbonoListSerializer,
     AbonoSerializer,
     DetalleVentaSerializer,
+    FacturacionElectronicaConfigSerializer,
+    FactusNumberingRangeSerializer,
     VentaCreateSerializer,
+    VentaFacturaElectronicaSerializer,
     VentaListSerializer,
     VentaSerializer,
     VentaUpdateSerializer,
 )
+from ventas.facturacion_services import FacturacionElectronicaService
+from ventas.models import FactusNumberingRange
 from ventas.services import AbonoService, VentaReporteService, VentaService
 
 
@@ -62,7 +71,11 @@ class BaseVentasPermission(permissions.BasePermission):
             view_action,
             fallback_action or view_action,
         )
-        return UsuarioService.validar_permisos(request.user, accion)
+        return EmpresaService.validar_permiso_operacion(
+            request.user,
+            getattr(request, 'empresa', None),
+            accion,
+        )
 
     def has_object_permission(self, request: Request, view, obj) -> bool:
         return self.has_permission(request, view)
@@ -81,6 +94,13 @@ class VentaPermission(BaseVentasPermission):
         'historial': 'ver_venta',
         'buscar': 'listar_ventas',
         'abonos': 'registrar_abono',
+        'factura': 'ver_factura',
+        'emitir_factura': 'crear_factura',
+        'reenviar_factura': 'crear_factura',
+        'factura_pdf': 'ver_factura',
+        'factura_xml': 'ver_factura',
+        'factura_email': 'crear_factura',
+        'factura_nota_credito': 'anular_factura',
     }
 
 
@@ -98,6 +118,15 @@ class ReporteVentasPermission(BaseVentasPermission):
         'producto': 'ver_informe_ventas',
         'cuentas_por_cobrar': 'ver_informe_ventas',
         'estadisticas': 'ver_informe_ventas',
+    }
+
+
+class FacturacionPermission(BaseVentasPermission):
+    action_mapping = {
+        'configuracion': 'ver_configuracion_facturacion',
+        'validar_conexion': 'validar_conexion_facturacion',
+        'sincronizar_rangos': 'sincronizar_rangos_facturacion',
+        'rangos': 'ver_configuracion_facturacion',
     }
 
 
@@ -522,6 +551,135 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
             )
 
 
+    @action(detail=True, methods=['get'], url_path='factura')
+    def factura(self, request: Request, pk: int = None) -> Response:
+        service = FacturacionElectronicaService()
+        try:
+            if request.query_params.get('sync') == 'true':
+                documento = service.consultar_estado(int(pk))
+            else:
+                documento = service.obtener_documento(int(pk))
+            serializer = VentaFacturaElectronicaSerializer(documento)
+            return Response(serializer.data)
+        except FacturacionDocumentoNoEncontradoError as exc:
+            return Response(
+                {'error': exc.message},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except FacturacionError as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=['post'], url_path='factura/emitir')
+    def emitir_factura(self, request: Request, pk: int = None) -> Response:
+        service = FacturacionElectronicaService()
+        try:
+            documento = service.emitir_factura(int(pk))
+            serializer = VentaFacturaElectronicaSerializer(documento)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except FacturacionError as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=['post'], url_path='factura/reintentar')
+    def reenviar_factura(self, request: Request, pk: int = None) -> Response:
+        service = FacturacionElectronicaService()
+        try:
+            documento = service.reintentar_emision(int(pk))
+            serializer = VentaFacturaElectronicaSerializer(documento)
+            return Response(serializer.data)
+        except FacturacionError as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=['get'], url_path='factura/pdf')
+    def factura_pdf(self, request: Request, pk: int = None) -> Response:
+        service = FacturacionElectronicaService()
+        try:
+            payload = service.descargar_pdf(int(pk))
+            response = HttpResponse(
+                payload['content'],
+                content_type=payload['content_type'],
+            )
+            response['Content-Disposition'] = (
+                f"attachment; filename={payload['filename']}"
+            )
+            return response
+        except FacturacionDocumentoNoEncontradoError as exc:
+            return Response(
+                {'error': exc.message},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except FacturacionError as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=['get'], url_path='factura/xml')
+    def factura_xml(self, request: Request, pk: int = None) -> Response:
+        service = FacturacionElectronicaService()
+        try:
+            payload = service.descargar_xml(int(pk))
+            response = HttpResponse(
+                payload['content'],
+                content_type=payload['content_type'],
+            )
+            response['Content-Disposition'] = (
+                f"attachment; filename={payload['filename']}"
+            )
+            return response
+        except FacturacionDocumentoNoEncontradoError as exc:
+            return Response(
+                {'error': exc.message},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except FacturacionError as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=['post'], url_path='factura/enviar-email')
+    def factura_email(self, request: Request, pk: int = None) -> Response:
+        service = FacturacionElectronicaService()
+        try:
+            documento = service.enviar_email(
+                int(pk),
+                email=request.data.get('email'),
+            )
+            serializer = VentaFacturaElectronicaSerializer(documento)
+            return Response(serializer.data)
+        except FacturacionError as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=['post'], url_path='factura/nota-credito')
+    def factura_nota_credito(self, request: Request, pk: int = None) -> Response:
+        service = FacturacionElectronicaService()
+        try:
+            documento = service.crear_nota_credito(
+                int(pk),
+                reason=request.data.get('reason') or request.data.get('motivo') or '',
+                concept_code=request.data.get('concept_code', '1'),
+            )
+            serializer = VentaFacturaElectronicaSerializer(documento)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        except FacturacionError as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
 class AbonoViewSet(RolePermissionMixin, viewsets.ViewSet):
     required_roles = None
     permission_classes = [AbonoPermission]
@@ -807,3 +965,71 @@ class VentaReporteViewSet(RolePermissionMixin, viewsets.ViewSet):
                 {'error': _error_message(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+
+class FacturacionViewSet(RolePermissionMixin, viewsets.ViewSet):
+    required_roles = None
+    permission_classes = [FacturacionPermission]
+
+    def _service(self) -> FacturacionElectronicaService:
+        return FacturacionElectronicaService()
+
+    @staticmethod
+    def _empresa_activa(request: Request):
+        empresa = getattr(getattr(request, '_request', None), 'empresa', None)
+        return empresa or get_empresa_actual_or_default()
+
+    @action(detail=False, methods=['get', 'put', 'patch'], url_path='configuracion')
+    def configuracion(self, request: Request) -> Response:
+        config = FacturacionElectronicaService.get_config(
+            self._empresa_activa(request),
+        )
+        if request.method == 'GET':
+            serializer = FacturacionElectronicaConfigSerializer(
+                config,
+                context={'request': request},
+            )
+            return Response(serializer.data)
+
+        serializer = FacturacionElectronicaConfigSerializer(
+            config,
+            data=request.data,
+            partial=request.method == 'PATCH',
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['post'], url_path='validar-conexion')
+    def validar_conexion(self, request: Request) -> Response:
+        try:
+            payload = self._service().validar_conexion()
+            return Response(payload)
+        except FacturacionError as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=False, methods=['post'], url_path='sincronizar-rangos')
+    def sincronizar_rangos(self, request: Request) -> Response:
+        try:
+            payload = self._service().sincronizar_rangos()
+            return Response(payload)
+        except FacturacionError as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=False, methods=['get'], url_path='rangos')
+    def rangos(self, request: Request) -> Response:
+        queryset = FactusNumberingRange.objects.filter(
+            empresa=self._empresa_activa(request),
+        ).order_by(
+            'is_credit_note_range',
+            'prefix',
+        )
+        serializer = FactusNumberingRangeSerializer(queryset, many=True)
+        return Response(serializer.data)

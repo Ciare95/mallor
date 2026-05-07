@@ -30,6 +30,14 @@ class Cliente(models.Model):
         SIMPLIFICADO = 'SIMPLIFICADO', _('Simplificado')
         COMUN = 'COMUN', _('Comun')
 
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='clientes',
+        verbose_name=_('empresa'),
+    )
     tipo_documento = models.CharField(
         _('tipo de documento'),
         max_length=10,
@@ -96,6 +104,18 @@ class Cliente(models.Model):
         blank=True,
         help_text=_('Codigo postal del cliente.'),
     )
+    municipio_codigo = models.CharField(
+        _('codigo de municipio'),
+        max_length=10,
+        blank=True,
+        help_text=_('Codigo DIAN/Factus del municipio del cliente.'),
+    )
+    digito_verificacion = models.CharField(
+        _('digito de verificacion'),
+        max_length=5,
+        blank=True,
+        help_text=_('Digito de verificacion para NIT cuando aplique.'),
+    )
     tipo_cliente = models.CharField(
         _('tipo de cliente'),
         max_length=10,
@@ -161,6 +181,7 @@ class Cliente(models.Model):
         verbose_name = _('cliente')
         verbose_name_plural = _('clientes')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['numero_documento']),
             models.Index(fields=['tipo_documento']),
             models.Index(fields=['nombre']),
@@ -170,7 +191,7 @@ class Cliente(models.Model):
         ]
         constraints = [
             models.UniqueConstraint(
-                fields=['tipo_documento', 'numero_documento'],
+                fields=['empresa', 'tipo_documento', 'numero_documento'],
                 name='cliente_tipo_numero_documento_unique',
             ),
             models.CheckConstraint(
@@ -246,7 +267,11 @@ class Cliente(models.Model):
         """
         Obtiene o crea el cliente por defecto Consumidor Final.
         """
+        from empresa.context import get_empresa_actual_or_default
+
+        empresa = get_empresa_actual_or_default()
         cliente, _ = cls.objects.get_or_create(
+            empresa=empresa,
             tipo_documento=cls.TipoDocumento.CC,
             numero_documento=cls.CONSUMIDOR_FINAL_DOCUMENTO,
             defaults={
@@ -255,6 +280,7 @@ class Cliente(models.Model):
                 'direccion': 'No especificada',
                 'ciudad': 'No especificada',
                 'departamento': 'No especificado',
+                'municipio_codigo': '11001',
                 'tipo_cliente': cls.TipoCliente.NATURAL,
                 'regimen_tributario': '',
                 'responsable_iva': False,
@@ -269,6 +295,7 @@ class Cliente(models.Model):
             return
 
         queryset = type(self).objects.filter(
+            empresa=self.empresa,
             tipo_documento=self.tipo_documento,
             numero_documento=self.numero_documento,
         )
@@ -328,6 +355,15 @@ class Cliente(models.Model):
                 'departamento': _('El departamento es obligatorio.'),
             })
 
+        if self.tipo_documento == self.TipoDocumento.NIT:
+            dv = (self.digito_verificacion or '').strip()
+            if dv and not dv.isdigit():
+                raise ValidationError({
+                    'digito_verificacion': _(
+                        'El digito de verificacion debe ser numerico.'
+                    ),
+                })
+
         if (
             self.tipo_cliente == self.TipoCliente.NATURAL
             and not self.nombre.strip()
@@ -349,6 +385,10 @@ class Cliente(models.Model):
             })
 
     def save(self, *args, **kwargs):
+        if self.empresa_id is None:
+            from empresa.context import get_empresa_actual_or_default
+
+            self.empresa = get_empresa_actual_or_default()
         self.credito_disponible = self._calcular_credito_disponible_actual()
         self.full_clean()
         super().save(*args, **kwargs)

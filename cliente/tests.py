@@ -8,6 +8,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from cliente.models import Cliente
+from empresa.models import Empresa, EmpresaUsuario
 from cliente.serializers import (
     ClienteCreateSerializer,
     ClienteDetailSerializer,
@@ -540,17 +541,40 @@ class ClienteServiceTest(TestCase):
 class ClienteApiTest(TestCase):
     def setUp(self):
         self.client_api = APIClient()
+        self.empresa = Empresa.get_default()
+        self.otra_empresa = Empresa.objects.create(
+            nit='901000200',
+            razon_social='Otra Empresa Cliente SAS',
+        )
+        self.admin_password = 'Admin1234'
+        self.empleado_password = 'Admin1234'
         self.admin = Usuario.objects.create_user(
             username='cliente_admin',
             email='cliente_admin@example.com',
-            password='Admin1234',
+            password=self.admin_password,
             role=Usuario.Rol.ADMIN,
         )
         self.empleado = Usuario.objects.create_user(
             username='cliente_empleado',
             email='cliente_empleado@example.com',
-            password='Admin1234',
+            password=self.empleado_password,
             role=Usuario.Rol.EMPLEADO,
+        )
+        EmpresaUsuario.objects.get_or_create(
+            empresa=self.empresa,
+            usuario=self.admin,
+            defaults={'rol': EmpresaUsuario.Rol.ADMIN, 'activo': True},
+        )
+        EmpresaUsuario.objects.get_or_create(
+            empresa=self.empresa,
+            usuario=self.empleado,
+            defaults={'rol': EmpresaUsuario.Rol.EMPLEADO, 'activo': True},
+        )
+        EmpresaUsuario.objects.create(
+            empresa=self.otra_empresa,
+            usuario=self.admin,
+            rol=EmpresaUsuario.Rol.ADMIN,
+            activo=True,
         )
         self.cliente = Cliente.objects.create(
             tipo_documento=Cliente.TipoDocumento.CC,
@@ -591,7 +615,13 @@ class ClienteApiTest(TestCase):
         self.venta.refresh_from_db()
 
     def autenticar(self, usuario):
-        self.client_api.force_authenticate(user=usuario)
+        password = (
+            self.admin_password
+            if usuario == self.admin
+            else self.empleado_password
+        )
+        self.client_api.logout()
+        self.client_api.login(username=usuario.username, password=password)
 
     def test_listar_clientes_con_filtros_y_paginacion(self):
         self.autenticar(self.empleado)
@@ -707,3 +737,13 @@ class ClienteApiTest(TestCase):
         self.assertEqual(morosos_admin.status_code, status.HTTP_200_OK)
         self.assertEqual(mejores_admin.data['count'], 1)
         self.assertEqual(morosos_admin.data['count'], 1)
+
+    def test_no_expone_clientes_de_otra_empresa_al_cambiar_tenant(self):
+        self.autenticar(self.admin)
+
+        response = self.client_api.get(
+            reverse('cliente-detail', args=[self.cliente.id]),
+            HTTP_X_EMPRESA_ID=str(self.otra_empresa.id),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

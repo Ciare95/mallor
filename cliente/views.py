@@ -18,7 +18,7 @@ from cliente.serializers import (
 )
 from cliente.services import ClienteService
 from core.exceptions import ClienteError, ClienteNoEncontradoError
-from usuario.services import UsuarioService
+from empresa.services import EmpresaService
 from usuario.utils import RolePermissionMixin
 from ventas.serializers import VentaListSerializer
 
@@ -53,7 +53,11 @@ class BaseClientePermission(permissions.BasePermission):
             view_action,
             fallback_action or view_action,
         )
-        return UsuarioService.validar_permisos(request.user, accion)
+        return EmpresaService.validar_permiso_operacion(
+            request.user,
+            getattr(request, 'empresa', None),
+            accion,
+        )
 
     def has_object_permission(self, request: Request, view, obj) -> bool:
         return self.has_permission(request, view)

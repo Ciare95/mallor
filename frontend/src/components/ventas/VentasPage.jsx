@@ -2,6 +2,14 @@ import { startTransition, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BarChart3, CreditCard, ListOrdered, Wallet } from 'lucide-react';
 import useToast from '../../hooks/useToast';
+import {
+  crearNotaCreditoVenta,
+  descargarFacturaVentaPdf,
+  descargarFacturaVentaXml,
+  emitirFacturaVenta,
+  enviarFacturaVentaEmail,
+  reintentarFacturaVenta,
+} from '../../services/facturacion.service';
 import { extractApiError } from '../../utils/ventas';
 import { ToastContainer } from '../ui/Toast';
 import {
@@ -16,6 +24,7 @@ import {
   VENTA_DETALLE_TABS,
   useVentasStore,
 } from '../../store/useVentasStore';
+import { useAppStore } from '../../store/useStore';
 import {
   buildVentaPayload,
   printVentaTicket,
@@ -49,11 +58,21 @@ export default function VentasPage() {
   } = useVentasStore();
   const [abonoError, setAbonoError] = useState(null);
   const [posFocusSignal, setPosFocusSignal] = useState(0);
+  const empresaActiva = useAppStore((state) => state.empresaActiva);
 
   const invalidateVentas = () => {
     queryClient.invalidateQueries({ queryKey: ['ventas'] });
     queryClient.invalidateQueries({ queryKey: ['abonos'] });
     queryClient.invalidateQueries({ queryKey: ['inventario'] });
+    queryClient.invalidateQueries({ queryKey: ['facturacion'] });
+  };
+
+  const refreshVentaDetail = async (ventaId, tab = detalleTab) => {
+    const refreshed = await obtenerVenta(ventaId);
+    startTransition(() => {
+      openVentaDetail(refreshed, tab);
+    });
+    return refreshed;
   };
 
   const crearVentaMutation = useMutation({
@@ -62,7 +81,7 @@ export default function VentasPage() {
       invalidateVentas();
       toast.success(`Venta ${venta.numero_venta} registrada`);
       if (draft.imprimirTicket) {
-        printVentaTicket(venta);
+        printVentaTicket(venta, empresaActiva);
       }
       resetDraft();
       setVentaSeleccionada(null);
@@ -129,6 +148,63 @@ export default function VentasPage() {
     },
   });
 
+  const emitirFacturaMutation = useMutation({
+    mutationFn: (venta) => emitirFacturaVenta(venta.id),
+    onSuccess: async (_, venta) => {
+      invalidateVentas();
+      const refreshed = await refreshVentaDetail(venta.id);
+      toast.success(
+        refreshed.factura_documento?.bill_number
+          ? `Factura ${refreshed.factura_documento.bill_number} emitida`
+          : 'Emision electronica procesada',
+      );
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error, 'No fue posible emitir la factura'));
+    },
+  });
+
+  const reintentarFacturaMutation = useMutation({
+    mutationFn: (venta) => reintentarFacturaVenta(venta.id),
+    onSuccess: async (_, venta) => {
+      invalidateVentas();
+      await refreshVentaDetail(venta.id);
+      toast.success('Se reintento la emision electronica');
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error, 'No fue posible reintentar la factura'));
+    },
+  });
+
+  const enviarFacturaEmailMutation = useMutation({
+    mutationFn: ({ venta, email }) => enviarFacturaVentaEmail(venta.id, email),
+    onSuccess: async (_, variables) => {
+      invalidateVentas();
+      await refreshVentaDetail(variables.venta.id);
+      toast.success('Factura enviada por correo');
+    },
+    onError: (error) => {
+      toast.error(
+        extractApiError(error, 'No fue posible enviar el correo de la factura'),
+      );
+    },
+  });
+
+  const notaCreditoMutation = useMutation({
+    mutationFn: ({ venta, reason }) =>
+      crearNotaCreditoVenta(venta.id, { reason }),
+    onSuccess: async (_, variables) => {
+      invalidateVentas();
+      await refreshVentaDetail(variables.venta.id);
+      toast.success('Nota credito registrada');
+    },
+    onError: (error) => {
+      toast.error(
+        extractApiError(error, 'No fue posible generar la nota credito'),
+      );
+    },
+  });
+
   const handleSubmitVenta = (payload) => {
     if (payload.ventaId) {
       const body = buildVentaPayload(payload);
@@ -189,11 +265,75 @@ export default function VentasPage() {
   };
 
   const handleFacturar = (venta) => {
-    toast.info(
-      venta.factura_electronica
-        ? 'La integracion de emision electronica queda lista para conectarse al endpoint final.'
-        : 'Activa factura electronica en la venta para continuar.',
+    if (!venta.factura_electronica) {
+      toast.info('Activa factura electronica en la venta para continuar.');
+      return;
+    }
+
+    const status = venta.factura_documento?.status;
+    if (status === 'EMITIDA') {
+      toast.info('La venta ya tiene factura electronica emitida.');
+      handleViewVenta(venta, VENTA_DETALLE_TABS.RESUMEN);
+      return;
+    }
+
+    if (status === 'ERROR') {
+      reintentarFacturaMutation.mutate(venta);
+      return;
+    }
+
+    emitirFacturaMutation.mutate(venta);
+  };
+
+  const handleDescargarFacturaPdf = async (venta) => {
+    try {
+      await descargarFacturaVentaPdf(venta.id);
+      toast.success('PDF de factura descargado');
+    } catch (error) {
+      toast.error(extractApiError(error, 'No fue posible descargar el PDF'));
+    }
+  };
+
+  const handleDescargarFacturaXml = async (venta) => {
+    try {
+      await descargarFacturaVentaXml(venta.id);
+      toast.success('XML de factura descargado');
+    } catch (error) {
+      toast.error(extractApiError(error, 'No fue posible descargar el XML'));
+    }
+  };
+
+  const handleEnviarFacturaEmail = (venta) => {
+    const emailSugerido = venta.cliente?.email || '';
+    const email = window.prompt(
+      `Correo destino para ${venta.numero_venta}`,
+      emailSugerido,
     );
+
+    if (!email?.trim()) {
+      return;
+    }
+
+    enviarFacturaEmailMutation.mutate({
+      venta,
+      email: email.trim(),
+    });
+  };
+
+  const handleCrearNotaCredito = (venta) => {
+    const reason = window.prompt(
+      `Motivo de nota credito para ${venta.numero_venta}`,
+      'Anulacion fiscal de factura electronica',
+    );
+
+    if (!reason?.trim()) {
+      return;
+    }
+
+    notaCreditoMutation.mutate({
+      venta,
+      reason: reason.trim(),
+    });
   };
 
   const handleSubmitAbono = async (datos) => {
@@ -323,6 +463,11 @@ export default function VentasPage() {
           onAbonar={handleSubmitAbono}
           onCancel={handleCancelVenta}
           onFacturar={handleFacturar}
+          onReintentarFactura={(venta) => reintentarFacturaMutation.mutate(venta)}
+          onDescargarFacturaPdf={handleDescargarFacturaPdf}
+          onDescargarFacturaXml={handleDescargarFacturaXml}
+          onEnviarFacturaEmail={handleEnviarFacturaEmail}
+          onCrearNotaCredito={handleCrearNotaCredito}
           abonoSubmitting={registrarAbonoMutation.isPending}
           abonoError={abonoError}
         />

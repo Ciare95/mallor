@@ -1,6 +1,8 @@
 import { formatCurrency, formatDateTime, formatNumber } from '../../utils/formatters';
+import { useAppStore } from '../../store/useStore';
 
 export default function ImprimirCierre({ cierre }) {
+  const empresaActiva = useAppStore((state) => state.empresaActiva);
   if (!cierre) {
     return null;
   }
@@ -11,7 +13,14 @@ export default function ImprimirCierre({ cierre }) {
   return (
     <div className="bg-white p-8 text-slate-900">
       <div className="border-b border-slate-300 pb-4">
-        <div className="text-3xl font-semibold">Mallor</div>
+        <div className="text-3xl font-semibold">
+          {empresaActiva?.nombre_comercial ||
+            empresaActiva?.razon_social ||
+            'Mallor'}
+        </div>
+        <div className="mt-2 text-sm text-slate-500">
+          {empresaActiva?.nit ? `NIT ${empresaActiva.nit}` : ''}
+        </div>
         <div className="mt-2 text-sm uppercase tracking-[0.18em] text-slate-500">
           Cierre de caja diario
         </div>

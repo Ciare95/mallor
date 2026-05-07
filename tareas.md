@@ -10,6 +10,7 @@
 - [ÉPICA 7: Módulo de Fabricante (Plan Premium)](#épica-7-módulo-de-fabricante-plan-premium)
 - [ÉPICA 8: Módulo de Informes y Estadísticas](#épica-8-módulo-de-informes-y-estadísticas)
 - [ÉPICA 9: Integración Facturación Electrónica (Factus)](#épica-9-integración-facturación-electrónica-factus)
+- [EPICA 9.5: Cierre Multitenant SaaS](#epica-95-cierre-multitenant-saas)
 - [ÉPICA 10: Módulo de IA](#épica-10-módulo-de-ia)
 - [ÉPICA 11: Testing y Calidad](#épica-11-testing-y-calidad)
 - [ÉPICA 12: Autenticación JWT](#épica-12-autenticación-jwt)
@@ -2808,6 +2809,237 @@ Integrar facturación electrónica en el flujo de ventas.
 
 ---
 
+## EPICA 9.5: Cierre Multitenant SaaS
+
+### Descripcion de la Epica
+Cerrar el modulo multitenant antes de iniciar la Epica 10 de IA. Mallor debe permitir operar como SaaS multiempresa en una sola base de datos, donde cada empresa tiene usuarios, datos fiscales, clientes, inventario, ventas, documentos electronicos, rangos Factus y permisos aislados.
+
+Esta epica intermedia deja claro como se da de alta una nueva empresa, como se administra su informacion y como se garantiza que la IA futura consulte solo el contexto de la empresa activa.
+
+### Objetivos
+- Definir y construir el flujo de alta de nuevas empresas SaaS.
+- Permitir que cada empresa administre su informacion fiscal y comercial.
+- Gestionar usuarios, membresias y roles por empresa.
+- Validar que el encabezado de documentos locales use los datos de la empresa activa.
+- Consolidar reglas de aislamiento antes de conectar IA a los datos del negocio.
+- Documentar el procedimiento operativo para onboarding de clientes.
+
+---
+
+#### Tarea 9.5.1: Definir Politica de Onboarding SaaS
+**Prioridad:** Alta | **Estimacion:** 2 Story Points | **Etiquetas:** Producto, Requisitos, SaaS
+
+**Decision recomendada:**
+Para esta fase se adopta onboarding administrado por Mallor. Un administrador interno crea la empresa y el primer usuario propietario. El autoregistro publico queda diferido hasta que existan verificacion de correo, recuperacion de cuenta, control de planes, pagos, auditoria y reglas de abuso.
+
+**Flujo operativo inicial:**
+1. Cliente solicita acceso a Mallor.
+2. Administrador interno crea la empresa.
+3. Administrador interno crea el primer usuario.
+4. El usuario queda asociado a la empresa como `PROPIETARIO`.
+5. El usuario inicia sesion y completa configuracion.
+6. La empresa configura Factus, rangos, clientes, productos y ventas.
+
+**Criterios de aceptacion:**
+- [x] Documento de decision creado o actualizado.
+- [x] Queda claro si el alta de empresa es manual o por autoregistro.
+- [x] Queda definido quien crea el primer usuario.
+- [x] Queda definido que rol inicial recibe el primer usuario.
+- [x] Queda documentado que el autoregistro queda fuera de alcance de esta fase.
+
+---
+
+#### Tarea 9.5.2: Administracion Interna de Empresas
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Backend, Frontend, SaaS
+
+**Descripcion:**
+Crear una vista administrativa para que un superadmin o administrador interno de Mallor pueda crear y gestionar empresas cliente.
+
+**Campos minimos de Empresa:**
+- NIT
+- Digito de verificacion
+- Razon social
+- Nombre comercial
+- Email
+- Telefono
+- Direccion
+- Codigo de municipio
+- Ambiente de facturacion
+- Estado activo/inactivo
+
+**Funcionalidades:**
+- Crear empresa.
+- Editar empresa.
+- Activar/inactivar empresa.
+- Ver usuarios asociados.
+- Ver estado de configuracion Factus.
+- Crear primer usuario propietario.
+
+**Criterios de aceptacion:**
+- [x] Existe pantalla o endpoint administrativo para crear empresas.
+- [x] Solo un usuario autorizado de Mallor puede crear empresas.
+- [x] No se permite duplicar NIT.
+- [x] Al crear empresa se puede crear o asociar un usuario propietario.
+- [x] Una empresa inactiva no puede operar ventas ni facturacion.
+
+---
+
+#### Tarea 9.5.3: Gestion de Usuarios por Empresa
+**Prioridad:** Alta | **Estimacion:** 5 Story Points | **Etiquetas:** Backend, Frontend, Seguridad
+
+**Descripcion:**
+Permitir que un propietario o administrador de empresa gestione usuarios dentro de su propia empresa sin poder afectar empresas ajenas.
+
+**Roles por empresa:**
+- `PROPIETARIO`: controla empresa, usuarios, Factus y datos fiscales.
+- `ADMIN`: gestiona operacion y configuracion, excepto transferencia de propiedad.
+- `EMPLEADO`: opera ventas, inventario y consultas segun permisos.
+
+**Funcionalidades:**
+- Listar usuarios de la empresa activa.
+- Crear usuario dentro de la empresa activa.
+- Editar rol dentro de la empresa.
+- Activar/inactivar membresia.
+- Evitar eliminar o degradar al ultimo propietario.
+- Permitir que un usuario pertenezca a varias empresas.
+
+**Criterios de aceptacion:**
+- [x] Un propietario puede crear empleados para su empresa.
+- [x] Un administrador no puede editar usuarios de otra empresa.
+- [x] Un empleado no puede gestionar usuarios ni Factus.
+- [x] No se puede dejar una empresa sin propietario activo.
+- [x] El selector de empresa sigue funcionando para usuarios multiempresa.
+
+---
+
+#### Tarea 9.5.4: Pantalla Mi Empresa
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Frontend, Backend, UX
+
+**Descripcion:**
+Crear una pantalla de configuracion para que cada empresa edite su informacion comercial y fiscal.
+
+**Ruta sugerida:**
+`Configuracion > Mi empresa`
+
+**Campos editables por propietario/admin:**
+- Razon social
+- Nombre comercial
+- Email
+- Telefono
+- Direccion
+- Codigo de municipio
+- Digito de verificacion
+- Ambiente de facturacion
+
+**Reglas:**
+- El NIT debe requerir cuidado especial: permitir edicion solo a `PROPIETARIO` o superadmin.
+- Los datos deben usarse en encabezados de documentos locales, reportes y vistas operativas.
+- La informacion debe coincidir con RUT/DIAN/Factus cuando se use facturacion electronica.
+
+**Criterios de aceptacion:**
+- [x] La empresa puede ver sus datos actuales.
+- [x] Propietario/admin puede editar informacion permitida.
+- [x] Empleado solo puede consultar o no acceder, segun permisos.
+- [x] Cambios quedan asociados solo a la empresa activa.
+- [x] Los formularios muestran validaciones claras.
+
+---
+
+#### Tarea 9.5.5: Encabezados y Datos de Empresa en Documentos
+**Prioridad:** Media | **Estimacion:** 3 Story Points | **Etiquetas:** Backend, Frontend, Reportes
+
+**Descripcion:**
+Asegurar que los documentos generados por Mallor usen los datos de la empresa activa como encabezado.
+
+**Documentos afectados:**
+- Recibos POS.
+- Reportes PDF/Excel.
+- Comprobantes internos.
+- Vistas imprimibles.
+- Documentos locales que no sean el PDF oficial generado por Factus.
+
+**Nota fiscal:**
+El PDF oficial de factura electronica viene de Factus y debe reflejar los datos registrados ante Factus/DIAN. Mallor debe usar los datos de `Empresa` para documentos propios y para validar consistencia operativa.
+
+**Criterios de aceptacion:**
+- [x] Recibos y reportes muestran razon social o nombre comercial de la empresa activa.
+- [x] Se muestra NIT y datos de contacto cuando aplique.
+- [x] Una empresa no puede generar documentos con datos de otra.
+- [x] Las descargas respetan `empresa_id`.
+
+---
+
+#### Tarea 9.5.6: Endurecimiento de Permisos Multitenant
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Backend, Seguridad, Testing
+
+**Descripcion:**
+Completar pruebas y reglas de seguridad para confirmar que ningun endpoint permita acceso cruzado entre empresas.
+
+**Escenarios minimos:**
+- Usuario de Empresa A no consulta cliente de Empresa B.
+- Usuario de Empresa A no consulta venta de Empresa B.
+- Usuario de Empresa A no descarga PDF/XML de Empresa B.
+- Usuario de Empresa A no modifica productos de Empresa B.
+- Usuario de Empresa A no ve configuracion Factus de Empresa B.
+- Usuario sin membresia no puede seleccionar Empresa B via `X-Empresa-Id`.
+
+**Criterios de aceptacion:**
+- [x] Pruebas de acceso cruzado agregadas para endpoints criticos.
+- [x] Todos los querysets operativos filtran por empresa activa.
+- [x] Los errores devuelven 403 o 404 segun corresponda.
+- [x] No se filtran datos sensibles en mensajes de error.
+
+---
+
+#### Tarea 9.5.7: Documentacion Operativa Multitenant
+**Prioridad:** Media | **Estimacion:** 2 Story Points | **Etiquetas:** Documentacion, Operaciones
+
+**Descripcion:**
+Actualizar la documentacion para que cualquier desarrollador o administrador entienda como dar de alta y operar una nueva empresa.
+
+**Documentos a actualizar o crear:**
+- `docs/MULTITENANT_FACTUS.md`
+- Guia de alta de cliente SaaS
+- Checklist de cierre de Epica 9
+
+**Contenido minimo:**
+- Modelo de datos: `Empresa` y `EmpresaUsuario`.
+- Roles por empresa.
+- Flujo de seleccion de empresa activa.
+- Alta manual de nueva empresa.
+- Configuracion Factus por empresa.
+- Pruebas obligatorias antes de pasar a Epica 10.
+
+**Criterios de aceptacion:**
+- [x] Documentacion actualizada con estado real del modulo.
+- [x] Ya no aparecen como pendientes tareas implementadas.
+- [x] Existe checklist claro para alta de nueva empresa.
+- [x] Existe checklist para validar aislamiento antes de IA.
+
+---
+
+#### Tarea 9.5.8: Criterio de Cierre Antes de Epica 10
+**Prioridad:** Alta | **Estimacion:** 1 Story Point | **Etiquetas:** QA, Producto
+
+**Criterio final de aceptacion:**
+Antes de iniciar la Epica 10, Mallor debe demostrar el siguiente flujo completo:
+
+1. Crear empresa nueva.
+2. Crear usuario propietario para esa empresa.
+3. Iniciar sesion con ese usuario.
+4. Ver solo los datos de esa empresa.
+5. Editar informacion fiscal/comercial de la empresa.
+6. Configurar credenciales Factus sandbox.
+7. Sincronizar rango.
+8. Crear cliente, producto y venta.
+9. Emitir factura electronica.
+10. Confirmar que otra empresa no puede ver venta, cliente, producto, PDF/XML ni configuracion Factus.
+
+**Motivo de bloqueo para Epica 10:**
+La IA consultara datos del negocio. Si el contexto de empresa y permisos no esta cerrado, la IA podria mezclar o exponer informacion entre empresas.
+
+---
+
 ## ÉPICA 10: Módulo de IA
 
 ### 📋 Descripción de la Épica
@@ -2818,8 +3050,44 @@ Implementar asistente de inteligencia artificial con DeepSeek API para consultas
 - CLI personalizado para comandos IA
 - Chat interactivo en frontend
 - Consultas en lenguaje natural
-- Acceso directo a base de datos (lectura)
+- Acceso a datos mediante herramientas seguras, siempre filtradas por empresa activa
 - Respuestas contextualizadas
+
+**Restricciones arquitectonicas heredadas de Epicas 9 y 9.5:**
+- La IA debe operar siempre dentro de la empresa activa resuelta por `EmpresaActivaMiddleware`.
+- Toda consulta de negocio debe respetar `empresa_id` y el rol efectivo en `EmpresaUsuario`.
+- La IA no puede acceder a credenciales Factus, secrets, passwords, tokens ni payloads sensibles.
+- No se permite ejecutar SQL libre generado por el modelo contra la base de datos.
+- El backend debe exponer herramientas/servicios de lectura acotados para inventario, ventas, clientes, informes y Factus.
+- El historial de IA debe quedar asociado a `empresa`, `usuario` y `sesion_id`.
+- El frontend debe seguir el patron React actual: services, Zustand y TanStack Query.
+- No iniciar autoregistro, JWT publico ni cambios de autenticacion en esta epica.
+
+---
+
+#### Tarea 10.0: Guardrails Multitenant para IA
+**Prioridad:** Alta | **Estimacion:** 3 Story Points | **Etiquetas:** Backend, Security, Multitenant
+
+**Descripcion:**
+Definir la capa de seguridad que impide que el modulo de IA mezcle informacion entre empresas o exponga datos sensibles.
+
+**Requisitos:**
+1. Crear un servicio de contexto `IA/context.py` que reciba `usuario` y `empresa`.
+2. Validar que `empresa` este activa y que el usuario tenga membresia activa.
+3. Resolver permisos por rol de `EmpresaUsuario`, no por rol global de `Usuario`.
+4. Limitar herramientas disponibles segun rol:
+   - `PROPIETARIO` y `ADMIN`: analitica completa de su empresa.
+   - `EMPLEADO`: solo consultas operativas permitidas, sin datos fiscales, usuarios ni Factus.
+5. Registrar cada consulta con `empresa_id`, `usuario_id`, herramienta usada y metadatos seguros.
+6. Bloquear cualquier intento de consultar credenciales Factus, secrets, passwords, tokens, XML/PDF de otra empresa o datos de usuarios no permitidos.
+
+**Criterios de aceptacion:**
+- [ ] Existe contexto IA con `empresa`, `usuario` y `rol_empresa`.
+- [ ] Usuario sin membresia no puede usar IA en esa empresa.
+- [ ] Empresa inactiva no puede usar IA.
+- [ ] EMPLEADO no puede consultar usuarios, datos fiscales ni Factus.
+- [ ] Tests prueban aislamiento entre Empresa A y Empresa B.
+- [ ] No se registran secretos en logs ni historial IA.
 
 ---
 
@@ -2878,7 +3146,7 @@ class DeepSeekClient:
 **Prioridad:** Alta | **Estimación:** 5 Story Points | **Etiquetas:** Backend, AI
 
 **Descripción:**
-Crear sistema que permite a la IA acceder a información de la base de datos de forma segura.
+Crear sistema que permite a la IA acceder a informacion del negocio de forma segura mediante herramientas de lectura acotadas. La IA no debe ejecutar SQL libre ni generar consultas directas contra la base de datos.
 
 **Archivo:** `IA/database_context.py`
 
@@ -2897,9 +3165,10 @@ Crear sistema que permite a la IA acceder a información de la base de datos de 
 }
 ```
 
-2. `ejecutar_consulta_segura(query)` - Ejecuta queries de lectura
-   - Solo permite SELECT
-   - Previene SQL injection
+2. `ejecutar_herramienta_segura(nombre, parametros, contexto)` - Ejecuta herramientas aprobadas
+   - No acepta SQL libre
+   - Valida `empresa_id` desde el contexto, no desde parametros del modelo
+   - Valida rol de `EmpresaUsuario`
    - Limita resultados
    - Timeout configurado
 
@@ -2919,7 +3188,7 @@ Crear sistema que permite a la IA acceder a información de la base de datos de 
 ```python
 SYSTEM_PROMPT = """
 Eres un asistente inteligente de Mallor, un sistema de gestión empresarial.
-Tienes acceso a la base de datos del negocio y puedes responder preguntas sobre:
+Tienes acceso a herramientas seguras de lectura del negocio y puedes responder preguntas sobre:
 - Inventario y productos
 - Ventas realizadas
 - Clientes y proveedores
@@ -2930,8 +3199,8 @@ Esquema de la base de datos:
 
 Instrucciones:
 - Responde en español de forma clara y concisa
-- Si necesitas consultar la base de datos, genera un query SQL válido
-- Solo usa SELECT queries
+- Si necesitas datos, solicita una herramienta aprobada por nombre y parametros
+- Nunca generes ni ejecutes SQL directo
 - Presenta datos en formato legible
 - Si no tienes información suficiente, pide aclaración
 """
@@ -2939,7 +3208,7 @@ Instrucciones:
 
 **Criterios de aceptación:**
 - [ ] Sistema de contexto creado
-- [ ] Queries seguras implementadas
+- [ ] Herramientas seguras implementadas sin SQL libre
 - [ ] Esquema generándose correctamente
 - [ ] Prompts definidos
 - [ ] Validaciones de seguridad
@@ -3011,15 +3280,15 @@ Implementar lógica de negocio del asistente IA.
 1. `procesar_consulta(texto, usuario, contexto_conversacion)` - Procesa consulta
    - Analizar intención
    - Determinar si necesita datos
-   - Ejecutar query si aplica
+   - Ejecutar herramienta segura si aplica
    - Generar respuesta con IA
    - Guardar en historial
 
-2. `generar_sql_desde_lenguaje_natural(texto)` - NL to SQL
-   - Usar IA para generar SQL
-   - Validar sintaxis
-   - Validar permisos
-   - Ejecutar y retornar resultados
+2. `seleccionar_herramienta_desde_lenguaje_natural(texto)` - NL to tool
+   - Usar IA para elegir una herramienta aprobada
+   - Validar parametros
+   - Validar permisos y empresa activa
+   - Ejecutar herramienta y retornar resultados
 
 3. `formatear_respuesta(datos)` - Formatea datos para presentación
 
@@ -3060,9 +3329,9 @@ Implementar lógica de negocio del asistente IA.
    - Historial de conversación
    - Consulta actual
 4. Llamar a DeepSeek API
-5. Si la IA sugiere un query SQL:
-   - Validar query
-   - Ejecutar
+5. Si la IA solicita una herramienta:
+   - Validar herramienta y parametros
+   - Ejecutar servicio/queryset seguro
    - Incluir resultados en contexto
    - Llamar IA nuevamente para formatear
 6. Retornar respuesta formateada
@@ -3070,7 +3339,7 @@ Implementar lógica de negocio del asistente IA.
 
 **Criterios de aceptación:**
 - [ ] Todos los métodos implementados
-- [ ] NL to SQL funcionando
+- [ ] NL to tool funcionando
 - [ ] Consultas comunes soportadas
 - [ ] Historial guardándose
 - [ ] Respuestas contextualizadas
@@ -3086,11 +3355,13 @@ Crear modelo para almacenar historial de conversaciones con la IA.
 
 **Modelo ConversacionIA:**
 - id (AutoField, PK)
+- empresa (ForeignKey a Empresa)
 - usuario (ForeignKey a Usuario)
 - sesion_id (UUIDField) - para agrupar conversaciones
 - consulta (TextField)
 - respuesta (TextField)
-- query_sql (TextField, blank=True) - si se ejecutó query
+- herramienta_usada (CharField, blank=True)
+- parametros_herramienta (JSONField, blank=True)
 - datos_retornados (JSONField, blank=True)
 - tiempo_respuesta (FloatField) - en segundos
 - fecha (DateTimeField, auto_now_add)
@@ -3101,7 +3372,7 @@ Crear modelo para almacenar historial de conversaciones con la IA.
 **Criterios de aceptación:**
 - [ ] Modelo creado
 - [ ] Migraciones aplicadas
-- [ ] Índices optimizados
+- [ ] Índices optimizados por `empresa`, `usuario`, `sesion_id` y `fecha`
 
 ---
 
@@ -3133,7 +3404,7 @@ Crear endpoints para el asistente IA.
     "respuesta": "Hoy has vendido un total de $1,250,000...",
     "sesion_id": "uuid",
     "tiempo_respuesta": 2.5,
-    "query_ejecutado": "SELECT SUM(total)...",
+    "herramienta_usada": "ventas_resumen_periodo",
     "datos": {...}
 }
 ```
@@ -3144,6 +3415,8 @@ Crear endpoints para el asistente IA.
 - [ ] Streaming implementado (opcional)
 - [ ] Historial accesible
 - [ ] Feedback registrándose
+- [ ] Todas las respuestas se filtran por empresa activa
+- [ ] No se exponen SQL, credenciales ni datos de otro tenant
 
 ---
 
@@ -3199,13 +3472,15 @@ Botones con consultas comunes:
 - Scroll automático al último mensaje
 - Copiar respuesta
 - Compartir conversación
+- Enviar siempre `X-Empresa-Id` desde la empresa activa
+- Ocultar sugerencias no permitidas para el rol activo
 
 **Formato de Respuestas:**
 - Texto plano
 - Listas numeradas/con viñetas
 - Tablas de datos
 - Links
-- Código SQL (con syntax highlight)
+- Bloques tecnicos solo cuando sean explicativos, nunca SQL ejecutable generado por IA
 
 **Historial:**
 - Lista de sesiones anteriores
@@ -3223,6 +3498,8 @@ Botones con consultas comunes:
 - [ ] Responsive design
 - [ ] Scroll automático
 - [ ] Performance optimizado
+- [ ] Cambio de empresa invalida historial, sugerencias y respuestas cacheadas
+- [ ] EMPLEADO no ve accesos de administracion, Factus ni usuarios desde IA
 
 ---
 
@@ -4857,7 +5134,7 @@ npm install --save-dev vite-plugin-compression
 
 ## Resumen de Épicas
 
-### Total de Story Points: ~210 SP
+### Total de Story Points: ~226 SP
 
 1. **ÉPICA 1: Configuración Inicial** - 16 SP
 2. **ÉPICA 2: Módulo de Usuarios** - 17 SP
@@ -4868,10 +5145,11 @@ npm install --save-dev vite-plugin-compression
 7. **ÉPICA 7: Módulo de Fabricante** - 27 SP
 8. **ÉPICA 8: Módulo de Informes** - 41 SP
 9. **ÉPICA 9: Integración Factus** - 29 SP
-10. **ÉPICA 10: Módulo de IA** - 34 SP
-11. **ÉPICA 11: Testing y Calidad** - 39 SP
-12. **ÉPICA 12: Autenticación JWT** - 23 SP
-13. **ÉPICA 13: Deployment** - 32 SP
+10. **EPICA 9.5: Cierre Multitenant SaaS** - 25 SP
+11. **ÉPICA 10: Módulo de IA** - 34 SP
+12. **ÉPICA 11: Testing y Calidad** - 39 SP
+13. **ÉPICA 12: Autenticación JWT** - 23 SP
+14. **ÉPICA 13: Deployment** - 32 SP
 
 ### Estimación de Tiempo
 - Con un equipo de 2-3 desarrolladores

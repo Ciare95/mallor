@@ -54,6 +54,7 @@ class ClienteSerializer(ClienteReadSerializer):
             'id',
             'tipo_documento',
             'numero_documento',
+            'digito_verificacion',
             'nombre',
             'razon_social',
             'nombre_comercial',
@@ -65,6 +66,7 @@ class ClienteSerializer(ClienteReadSerializer):
             'ciudad',
             'departamento',
             'codigo_postal',
+            'municipio_codigo',
             'tipo_cliente',
             'regimen_tributario',
             'responsable_iva',
@@ -94,9 +96,11 @@ class ClienteListSerializer(ClienteReadSerializer):
             'id',
             'tipo_documento',
             'numero_documento',
+            'digito_verificacion',
             'nombre_completo',
             'telefono',
             'ciudad',
+            'municipio_codigo',
             'tipo_cliente',
             'activo',
             'saldo_pendiente',
@@ -126,6 +130,7 @@ class ClienteWriteSerializer(serializers.ModelSerializer):
         fields = [
             'tipo_documento',
             'numero_documento',
+            'digito_verificacion',
             'nombre',
             'razon_social',
             'nombre_comercial',
@@ -136,6 +141,7 @@ class ClienteWriteSerializer(serializers.ModelSerializer):
             'ciudad',
             'departamento',
             'codigo_postal',
+            'municipio_codigo',
             'tipo_cliente',
             'regimen_tributario',
             'responsable_iva',
@@ -214,6 +220,28 @@ class ClienteWriteSerializer(serializers.ModelSerializer):
                 ),
             })
 
+        municipio_codigo = attrs.get(
+            'municipio_codigo',
+            getattr(self.instance, 'municipio_codigo', ''),
+        )
+        if municipio_codigo and not municipio_codigo.isdigit():
+            raise serializers.ValidationError({
+                'municipio_codigo': _(
+                    'El codigo de municipio debe ser numerico.'
+                ),
+            })
+
+        digito_verificacion = attrs.get(
+            'digito_verificacion',
+            getattr(self.instance, 'digito_verificacion', ''),
+        )
+        if digito_verificacion and not digito_verificacion.isdigit():
+            raise serializers.ValidationError({
+                'digito_verificacion': _(
+                    'El digito de verificacion debe ser numerico.'
+                ),
+            })
+
         return attrs
 
     def _normalizar_campos_texto(self, attrs):
@@ -228,6 +256,8 @@ class ClienteWriteSerializer(serializers.ModelSerializer):
             'ciudad',
             'departamento',
             'codigo_postal',
+            'municipio_codigo',
+            'digito_verificacion',
             'observaciones',
         ]
 

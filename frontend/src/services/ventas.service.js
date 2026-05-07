@@ -124,6 +124,10 @@ export const crearVentaCompleta = async (draft) => {
     return obtenerVenta(venta.id);
   }
 
+  if (draft.facturaElectronica && draft.estado === 'TERMINADA') {
+    return obtenerVenta(venta.id);
+  }
+
   return venta;
 };
 

@@ -93,7 +93,12 @@ class UsuarioService:
         
         # Validar permisos para crear administradores
         if role == Usuario.Rol.ADMIN:
-            if usuario_solicitante and not usuario_solicitante.is_admin:
+            if (
+                usuario_solicitante
+                and not usuario_solicitante.is_admin
+                and not usuario_solicitante.is_staff
+                and not usuario_solicitante.is_superuser
+            ):
                 raise PermisoDenegadoError(_("crear usuarios administradores"))
         
         # Validar seguridad de la contraseña
@@ -221,7 +226,12 @@ class UsuarioService:
         
         # Validar permisos para cambiar rol a ADMIN
         if role and role == Usuario.Rol.ADMIN and usuario.role != Usuario.Rol.ADMIN:
-            if usuario_solicitante and not usuario_solicitante.is_admin:
+            if (
+                usuario_solicitante
+                and not usuario_solicitante.is_admin
+                and not usuario_solicitante.is_staff
+                and not usuario_solicitante.is_superuser
+            ):
                 raise PermisoDenegadoError(_("asignar rol de administrador"))
         
         # Validar permisos para desactivar administradores
@@ -377,6 +387,9 @@ class UsuarioService:
                 'ver_abono',
                 'listar_abonos',
                 'ver_informe_ventas',
+                'crear_factura',
+                'ver_factura',
+                'listar_facturas',
             }
 
             if accion in acciones_operativas:

@@ -1,9 +1,21 @@
 import { create } from 'zustand';
 
+const storedUser = localStorage.getItem('user');
+const initialUser = (() => {
+  if (!storedUser) {
+    return null;
+  }
+  try {
+    return JSON.parse(storedUser);
+  } catch {
+    return null;
+  }
+})();
+
 export const useAppStore = create((set) => ({
   // ─── Autenticación ──────────────────────────────────────────────────────────
-  user: null,
-  token: null,
+  user: initialUser,
+  token: localStorage.getItem('token') || null,
 
   setUser: (user) => set({ user }),
   setToken: (token) => set({ token }),
@@ -11,9 +23,22 @@ export const useAppStore = create((set) => ({
   // ─── UI Global ──────────────────────────────────────────────────────────────
   sidebarOpen: true,
   loading: false,
+  empresaActivaId: localStorage.getItem('mallor_empresa_activa_id') || null,
+  empresaActiva: null,
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setLoading: (loading) => set({ loading }),
+  setEmpresaActiva: (empresa) => {
+    if (empresa?.id) {
+      localStorage.setItem('mallor_empresa_activa_id', String(empresa.id));
+    } else {
+      localStorage.removeItem('mallor_empresa_activa_id');
+    }
+    set({
+      empresaActiva: empresa || null,
+      empresaActivaId: empresa?.id ? String(empresa.id) : null,
+    });
+  },
 
   // ─── Usuarios (estado de selección para pasar entre vistas) ────────────────
   /**
@@ -32,5 +57,7 @@ export const useAppStore = create((set) => ({
       sidebarOpen: true,
       loading: false,
       usuarioActivo: null,
+      empresaActiva: null,
+      empresaActivaId: null,
     }),
 }));

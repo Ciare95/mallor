@@ -29,6 +29,7 @@ from core.exceptions import (
     RangoFechasInvalidoError,
 )
 from cliente.models import Cliente
+from empresa.context import get_empresa_actual_or_default
 from inventario.models import FacturaCompra
 from inventario.models import Producto
 from usuario.models import Usuario
@@ -85,7 +86,9 @@ class CierreCajaService:
 
     @staticmethod
     def _queryset_base():
-        return CierreCaja.objects.select_related('usuario_cierre')
+        return CierreCaja.objects.select_related('usuario_cierre').filter(
+            empresa=get_empresa_actual_or_default(),
+        )
 
     @staticmethod
     def _coerce_decimal(value: Any) -> Decimal:
@@ -256,6 +259,7 @@ class CierreCajaService:
             'proveedor',
             'usuario_registro',
         ).filter(
+            empresa=get_empresa_actual_or_default(),
             fecha_factura__gte=fecha_inicio,
             fecha_factura__lte=fecha_fin,
         )
@@ -505,6 +509,7 @@ class CierreCajaService:
         )
         usuario_obj = CierreCajaService._resolve_usuario(usuario_cierre)
         cierre = CierreCaja.objects.select_for_update().filter(
+            empresa=get_empresa_actual_or_default(),
             fecha_cierre=fecha_cierre,
         ).first()
 
@@ -656,6 +661,7 @@ class CierreCajaService:
         )
 
         if CierreCaja.objects.exclude(pk=cierre.pk).filter(
+            empresa=get_empresa_actual_or_default(),
             fecha_cierre=fecha_cierre,
         ).exists():
             raise CierreCajaDuplicadoError(fecha_cierre)
@@ -867,6 +873,7 @@ class ReporteEstadisticasService:
             fecha_fin,
         )
         return Venta.objects.filter(
+            empresa=get_empresa_actual_or_default(),
             estado=Venta.Estado.TERMINADA,
             fecha_venta__gte=_local_day_start_utc(fecha_inicio),
             fecha_venta__lt=_next_local_day_start_utc(fecha_fin),
@@ -1446,6 +1453,7 @@ class ReporteEstadisticasService:
             'limite',
         )
         resultados = DetalleVenta.objects.filter(
+            venta__empresa=get_empresa_actual_or_default(),
             venta__estado=Venta.Estado.TERMINADA,
         ).values(
             'producto_id',
@@ -1526,7 +1534,8 @@ class ReporteEstadisticasService:
                 ),
             ),
         ).filter(
-            Q(ultima_venta__lt=fecha_corte_dt) | Q(ultima_venta__isnull=True)
+            Q(ultima_venta__lt=fecha_corte_dt) | Q(ultima_venta__isnull=True),
+            empresa=get_empresa_actual_or_default(),
         ).order_by('ultima_venta', 'nombre')
 
         productos = []
@@ -1664,7 +1673,9 @@ class ReporteEstadisticasService:
         Analiza clientes nuevos vs recurrentes con base en ventas cerradas.
         """
         clientes_qs = Cliente.objects.filter(
+            empresa=get_empresa_actual_or_default(),
             ventas__estado=Venta.Estado.TERMINADA,
+            ventas__empresa=get_empresa_actual_or_default(),
         ).exclude(
             numero_documento=Cliente.CONSUMIDOR_FINAL_DOCUMENTO,
         ).annotate(
@@ -1789,7 +1800,9 @@ class ReporteEstadisticasService:
                 decimal_places=2,
             ),
         )
-        agregados = Producto.objects.aggregate(
+        agregados = Producto.objects.filter(
+            empresa=get_empresa_actual_or_default(),
+        ).aggregate(
             valor_compra=Coalesce(
                 Sum(valor_compra_expr),
                 ZERO,
@@ -1974,6 +1987,7 @@ class ReporteEstadisticasService:
         Retorna el total actual de cartera por cobrar.
         """
         ventas_qs = Venta.objects.filter(
+            empresa=get_empresa_actual_or_default(),
             estado=Venta.Estado.TERMINADA,
             saldo_pendiente__gt=ZERO,
         )
@@ -2021,6 +2035,7 @@ class ReporteEstadisticasService:
         hoy = timezone.localdate()
         ventas = list(
             Venta.objects.select_related('cliente').filter(
+                empresa=get_empresa_actual_or_default(),
                 estado=Venta.Estado.TERMINADA,
                 saldo_pendiente__gt=ZERO,
             ).order_by('fecha_venta')
@@ -2168,7 +2183,9 @@ class InformeService:
 
     @staticmethod
     def _queryset_base():
-        return Informe.objects.select_related('usuario_genero')
+        return Informe.objects.select_related('usuario_genero').filter(
+            empresa=get_empresa_actual_or_default(),
+        )
 
     @staticmethod
     def _parse_date(value: Any, field_name: str) -> date:
@@ -2238,6 +2255,7 @@ class InformeService:
 
         fecha_objetivo = fecha_fin or fecha_inicio
         cierre = CierreCaja.objects.filter(
+            empresa=get_empresa_actual_or_default(),
             fecha_cierre=fecha_objetivo,
         ).only('id').first()
         if cierre is None:

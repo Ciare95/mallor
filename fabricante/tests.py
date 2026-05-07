@@ -5,6 +5,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from core.exceptions import ProduccionNoPermitidaError
+from empresa.models import Empresa, EmpresaUsuario
 from inventario.models import Producto
 from proveedor.models import Proveedor
 from usuario.models import Usuario
@@ -694,6 +695,11 @@ class FabricanteApiTest(TestCase):
 
     def setUp(self):
         self.client = APIClient()
+        self.empresa = Empresa.get_default()
+        self.otra_empresa = Empresa.objects.create(
+            nit='901000202',
+            razon_social='Otra Empresa Fabricante SAS',
+        )
         self.admin_password = 'Password123'
         self.empleado_password = 'Password123'
         self.admin = Usuario.objects.create_user(
@@ -707,6 +713,22 @@ class FabricanteApiTest(TestCase):
             email='empleado.fabricante@mallor.test',
             password=self.empleado_password,
             role=Usuario.Rol.EMPLEADO,
+        )
+        EmpresaUsuario.objects.get_or_create(
+            empresa=self.empresa,
+            usuario=self.admin,
+            defaults={'rol': EmpresaUsuario.Rol.ADMIN, 'activo': True},
+        )
+        EmpresaUsuario.objects.get_or_create(
+            empresa=self.empresa,
+            usuario=self.empleado,
+            defaults={'rol': EmpresaUsuario.Rol.EMPLEADO, 'activo': True},
+        )
+        EmpresaUsuario.objects.create(
+            empresa=self.otra_empresa,
+            usuario=self.admin,
+            rol=EmpresaUsuario.Rol.ADMIN,
+            activo=True,
         )
         self.proveedor = Proveedor.objects.create(
             numero_documento='900300400',
@@ -746,6 +768,19 @@ class FabricanteApiTest(TestCase):
         response = self.client.get('/api/fabricante/ingredientes/')
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_no_expone_ingredientes_de_otra_empresa(self):
+        self.client.login(
+            username=self.admin.username,
+            password=self.admin_password,
+        )
+
+        response = self.client.get(
+            f'/api/fabricante/ingredientes/{self.ingrediente.id}/',
+            HTTP_X_EMPRESA_ID=str(self.otra_empresa.id),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_admin_puede_hacer_crud_de_ingredientes(self):
         self.client.login(

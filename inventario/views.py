@@ -40,8 +40,8 @@ from core.exceptions import (
     CategoriaNoEncontradaError,
     CategoriaConProductosError,
 )
+from empresa.services import EmpresaService
 from usuario.utils import RolePermissionMixin
-from usuario.services import UsuarioService
 from .utils import generar_excel_inventario, generar_respuesta_excel
 
 
@@ -69,7 +69,11 @@ class BaseInventarioPermission(permissions.BasePermission):
         if not request.user or not request.user.is_authenticated:
             return False
         accion = self.action_mapping.get(view.action, view.action)
-        return UsuarioService.validar_permisos(request.user, accion)
+        return EmpresaService.validar_permiso_operacion(
+            request.user,
+            getattr(request, 'empresa', None),
+            accion,
+        )
 
     def has_object_permission(self, request: Request, view, obj) -> bool:
         return self.has_permission(request, view)

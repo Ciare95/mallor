@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone as dt_timezone
 from decimal import Decimal
@@ -27,11 +28,14 @@ from core.exceptions import (
 )
 from inventario.models import HistorialInventario, Producto
 from usuario.models import Usuario
+from empresa.context import get_empresa_actual_or_default
+from empresa.services import EmpresaService
 from ventas.models import Abono, DetalleVenta, Venta
 
 
 QUANTIZER = Decimal('0.01')
 BUSINESS_TIMEZONE = ZoneInfo('America/Bogota')
+logger = logging.getLogger('mallor.factus')
 
 
 def _local_day_start_utc(target_date: date) -> datetime:
@@ -45,6 +49,29 @@ def _local_day_start_utc(target_date: date) -> datetime:
 
 def _next_local_day_start_utc(target_date: date) -> datetime:
     return _local_day_start_utc(target_date + timedelta(days=1))
+
+
+def _schedule_facturacion_electronica(venta: Venta) -> None:
+    if venta.estado != Venta.Estado.TERMINADA or not venta.factura_electronica:
+        return
+
+    def _emitir() -> None:
+        from ventas.facturacion_services import FacturacionElectronicaService
+
+        try:
+            config = FacturacionElectronicaService.get_config()
+            if not config.is_enabled or not config.auto_emitir_al_terminar:
+                return
+
+            FacturacionElectronicaService().emitir_factura(venta.id)
+        except Exception:
+            # La venta debe persistirse incluso si la emision falla.
+            logger.exception(
+                'No fue posible emitir automaticamente la factura de la venta %s',
+                venta.id,
+            )
+
+    transaction.on_commit(_emitir)
 
 
 class _VentaInventarioService:
@@ -113,7 +140,10 @@ class _VentaInventarioService:
                 producto_id = producto
 
             try:
-                producto_obj = Producto.objects.get(pk=producto_id)
+                producto_obj = Producto.objects.get(
+                    pk=producto_id,
+                    empresa=get_empresa_actual_or_default(),
+                )
             except Producto.DoesNotExist as exc:
                 raise ProductoNoEncontradoError(producto_id) from exc
 
@@ -193,6 +223,7 @@ class _VentaInventarioService:
             stock_requerido[detalle['producto'].id] += detalle['cantidad']
 
         productos = Producto.objects.select_for_update().filter(
+            empresa=get_empresa_actual_or_default(),
             id__in=stock_requerido.keys(),
         ).in_bulk()
 
@@ -279,23 +310,31 @@ class VentaService:
 
     @staticmethod
     def _queryset_base():
-        return Venta.objects.select_related(
+        empresa = get_empresa_actual_or_default()
+        return Venta.objects.filter(empresa=empresa).select_related(
             'cliente',
             'usuario_registro',
+            'factura_documento',
+            'factura_documento__numbering_range',
         ).prefetch_related(
+            'factura_documento__intentos',
             'abonos__usuario_registro',
             'detalles__producto__categoria',
         )
 
     @staticmethod
     def _obtener_venta_para_actualizar(venta_id: int) -> Venta:
+        empresa = get_empresa_actual_or_default()
         try:
-            return Venta.objects.select_for_update().select_related(
+            return Venta.objects.select_for_update(of=('self',)).select_related(
                 'usuario_registro',
+                'cliente',
             ).prefetch_related(
+                'factura_documento__numbering_range',
+                'factura_documento__intentos',
                 'abonos',
                 'detalles__producto',
-            ).get(pk=venta_id)
+            ).get(pk=venta_id, empresa=empresa)
         except Venta.DoesNotExist as exc:
             raise VentaNoEncontradaError(venta_id) from exc
 
@@ -363,9 +402,17 @@ class VentaService:
             datos_venta,
             usuario,
         )
+        empresa = get_empresa_actual_or_default()
+        EmpresaService.validar_empresa_activa(empresa)
         cliente = _VentaInventarioService.obtener_cliente(
             datos_venta.pop('cliente', None),
         )
+        if cliente and cliente.empresa_id and cliente.empresa_id != empresa.id:
+            raise VentaError(
+                _('El cliente no pertenece a la empresa activa.'),
+                code='venta_cliente_empresa_invalida',
+            )
+        datos_venta['empresa'] = empresa
         datos_venta['usuario_registro'] = usuario_registro
         datos_venta['cliente'] = cliente
         datos_venta.pop('detalles', None)
@@ -378,6 +425,7 @@ class VentaService:
             detalle_creacion = detalle_data.copy()
             detalle_creacion['producto'] = Producto.objects.get(
                 pk=detalle_data['producto'].pk,
+                empresa=empresa,
             )
             detalle = DetalleVenta.objects.create(
                 venta=venta,
@@ -394,6 +442,7 @@ class VentaService:
                 ),
             )
 
+        _schedule_facturacion_electronica(venta)
         return VentaService.obtener_venta(venta.id)
 
     @staticmethod
@@ -559,6 +608,7 @@ class VentaService:
                 detalle_creacion = detalle_data.copy()
                 detalle_creacion['producto'] = Producto.objects.get(
                     pk=detalle_data['producto'].pk,
+                    empresa=venta.empresa,
                 )
                 detalle = DetalleVenta.objects.create(
                     venta=venta,
@@ -578,6 +628,7 @@ class VentaService:
                 )
 
         venta.save()
+        _schedule_facturacion_electronica(venta)
         return VentaService.obtener_venta(venta.id)
 
     @staticmethod
@@ -596,6 +647,7 @@ class VentaService:
         for detalle in detalles:
             producto = Producto.objects.select_for_update().get(
                 pk=detalle.producto_id,
+                empresa=venta.empresa,
             )
             producto.actualizar_stock(detalle.cantidad)
             _VentaInventarioService.registrar_historial_entrada(
@@ -640,6 +692,7 @@ class VentaService:
 
         venta.estado = nuevo_estado
         venta.save()
+        _schedule_facturacion_electronica(venta)
         return VentaService.obtener_venta(venta.id)
 
     @staticmethod
@@ -806,6 +859,7 @@ class AbonoService:
     @staticmethod
     def calcular_total_por_cobrar() -> Decimal:
         total = Venta.objects.filter(
+            empresa=get_empresa_actual_or_default(),
             estado=Venta.Estado.TERMINADA,
             saldo_pendiente__gt=Decimal('0.00'),
         ).aggregate(
@@ -890,8 +944,9 @@ class VentaReporteService:
         fecha_inicio: Optional[date] = None,
         fecha_fin: Optional[date] = None,
     ) -> List[DetalleVenta]:
+        empresa = get_empresa_actual_or_default()
         try:
-            Producto.objects.get(pk=producto_id)
+            Producto.objects.get(pk=producto_id, empresa=empresa)
         except Producto.DoesNotExist as exc:
             raise ProductoNoEncontradoError(producto_id) from exc
 
@@ -904,6 +959,7 @@ class VentaReporteService:
             venta__estado=Venta.Estado.CANCELADA,
         ).filter(
             producto_id=producto_id,
+            venta__empresa=empresa,
         )
 
         if fecha_inicio:
@@ -915,7 +971,8 @@ class VentaReporteService:
 
     @staticmethod
     def ventas_por_cliente(cliente_id: int) -> List[Venta]:
-        if not Cliente.objects.filter(pk=cliente_id).exists():
+        empresa = get_empresa_actual_or_default()
+        if not Cliente.objects.filter(pk=cliente_id, empresa=empresa).exists():
             raise VentaError(
                 _('El cliente solicitado no existe.'),
                 code='cliente_no_encontrado',

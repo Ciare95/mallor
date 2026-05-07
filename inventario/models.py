@@ -11,11 +11,19 @@ class Categoria(models.Model):
     Las categorías permiten clasificar y organizar los productos
     para facilitar su búsqueda y gestión.
     """
-    
+
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='categorias',
+        verbose_name=_('empresa'),
+    )
+
     nombre = models.CharField(
         _('nombre'),
         max_length=100,
-        unique=True,
         help_text=_('Nombre único de la categoría (ej: Medicamentos, Insumos, Equipos)')
     )
     
@@ -43,8 +51,15 @@ class Categoria(models.Model):
         verbose_name = _('categoría')
         verbose_name_plural = _('categorías')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['nombre']),
             models.Index(fields=['created_at']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'nombre'],
+                name='categoria_empresa_nombre_unique',
+            ),
         ]
     
     def __str__(self):
@@ -56,6 +71,14 @@ class Categoria(models.Model):
         """
         return self.nombre
 
+    def save(self, *args, **kwargs):
+        if self.empresa_id is None:
+            from empresa.context import get_empresa_actual_or_default
+
+            self.empresa = get_empresa_actual_or_default()
+        self.full_clean()
+        super().save(*args, **kwargs)
+
 
 class Producto(models.Model):
     """
@@ -66,9 +89,17 @@ class Producto(models.Model):
     desde el sistema antiguo.
     """
     
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='productos',
+        verbose_name=_('empresa'),
+    )
+
     codigo_interno = models.IntegerField(
         _('código interno'),
-        unique=True,
         blank=True,
         null=True,
         help_text=_('Código único numérico autoincremental para identificación interna')
@@ -145,6 +176,18 @@ class Producto(models.Model):
         default=0,
         help_text=_('Porcentaje de IVA aplicable (0-100)')
     )
+    unidad_medida_codigo = models.CharField(
+        _('codigo de unidad de medida'),
+        max_length=10,
+        default='94',
+        help_text=_('Codigo Factus/DIAN de la unidad de medida del producto')
+    )
+    estandar_codigo = models.CharField(
+        _('codigo estandar'),
+        max_length=10,
+        default='999',
+        help_text=_('Codigo estandar del producto para facturación electrónica')
+    )
     
     imagen = models.ImageField(
         _('imagen'),
@@ -185,6 +228,7 @@ class Producto(models.Model):
         verbose_name = _('producto')
         verbose_name_plural = _('productos')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['codigo_interno']),
             models.Index(fields=['codigo_barras']),
             models.Index(fields=['nombre']),
@@ -192,6 +236,12 @@ class Producto(models.Model):
             models.Index(fields=['existencias']),
             models.Index(fields=['fecha_caducidad']),
             models.Index(fields=['created_at']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'codigo_interno'],
+                name='producto_empresa_codigo_unique',
+            ),
         ]
     
     def __str__(self):
@@ -316,6 +366,20 @@ class Producto(models.Model):
             raise ValidationError({
                 'iva': _('El IVA debe estar entre 0 y 100')
             })
+
+        if not (self.unidad_medida_codigo or '').strip():
+            raise ValidationError({
+                'unidad_medida_codigo': _(
+                    'El codigo de unidad de medida es obligatorio.'
+                )
+            })
+
+        if not (self.estandar_codigo or '').strip():
+            raise ValidationError({
+                'estandar_codigo': _(
+                    'El codigo estandar es obligatorio.'
+                )
+            })
         
         # Validar que fecha_caducidad no sea en el pasado (solo si está presente)
         if self.fecha_caducidad and self.fecha_caducidad < timezone.now().date():
@@ -324,16 +388,17 @@ class Producto(models.Model):
             })
     
     @classmethod
-    def get_next_codigo_interno(cls):
+    def get_next_codigo_interno(cls, empresa=None):
         """
         Obtiene el siguiente código interno disponible.
         
         Returns:
             int: Siguiente código interno numérico
         """
-        ultimo_producto = cls.objects.filter(
-            codigo_interno__isnull=False
-        ).order_by('-codigo_interno').first()
+        queryset = cls.objects.filter(codigo_interno__isnull=False)
+        if empresa is not None:
+            queryset = queryset.filter(empresa=empresa)
+        ultimo_producto = queryset.order_by('-codigo_interno').first()
         
         if ultimo_producto and ultimo_producto.codigo_interno is not None:
             return ultimo_producto.codigo_interno + 1
@@ -344,8 +409,12 @@ class Producto(models.Model):
         Sobrescribe el método save para generar código interno y ejecutar validaciones.
         """
         # Generar código interno automáticamente si no se proporciona
+        if self.empresa_id is None:
+            from empresa.context import get_empresa_actual_or_default
+
+            self.empresa = get_empresa_actual_or_default()
         if self.codigo_interno is None:
-            self.codigo_interno = self.get_next_codigo_interno()
+            self.codigo_interno = self.get_next_codigo_interno(self.empresa)
         
         self.full_clean()
         super().save(*args, **kwargs)
@@ -368,10 +437,18 @@ class FacturaCompra(models.Model):
         (ESTADO_PROCESADA, _('Procesada')),
     ]
     
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='facturas_compra',
+        verbose_name=_('empresa'),
+    )
+
     numero_factura = models.CharField(
         _('número de factura'),
         max_length=50,
-        unique=True,
         help_text=_('Número único de la factura del proveedor')
     )
     
@@ -466,12 +543,19 @@ class FacturaCompra(models.Model):
         verbose_name = _('factura de compra')
         verbose_name_plural = _('facturas de compra')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['numero_factura']),
             models.Index(fields=['proveedor']),
             models.Index(fields=['fecha_factura']),
             models.Index(fields=['estado']),
             models.Index(fields=['usuario_registro']),
             models.Index(fields=['created_at']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'numero_factura'],
+                name='factura_compra_empresa_numero_unique',
+            ),
         ]
     
     def __str__(self):
@@ -573,6 +657,10 @@ class FacturaCompra(models.Model):
         """
         Sobrescribe el método save para ejecutar validaciones.
         """
+        if self.empresa_id is None:
+            from empresa.context import get_empresa_actual_or_default
+
+            self.empresa = get_empresa_actual_or_default()
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -593,6 +681,15 @@ class DetalleFacturaCompra(models.Model):
         help_text=_('Factura de compra a la que pertenece este detalle')
     )
     
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='detalles_factura_compra',
+        verbose_name=_('empresa'),
+    )
+
     producto = models.ForeignKey(
         Producto,
         on_delete=models.PROTECT,
@@ -774,7 +871,16 @@ class HistorialInventario(models.Model):
         (TIPO_SALIDA, _('Salida')),
         (TIPO_AJUSTE, _('Ajuste')),
     ]
-    
+
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='historial_inventario',
+        verbose_name=_('empresa'),
+    )
+
     producto = models.ForeignKey(
         Producto,
         on_delete=models.PROTECT,
@@ -867,6 +973,7 @@ class HistorialInventario(models.Model):
         verbose_name = _('registro de historial de inventario')
         verbose_name_plural = _('registros de historial de inventario')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['producto']),
             models.Index(fields=['tipo_movimiento']),
             models.Index(fields=['fecha']),

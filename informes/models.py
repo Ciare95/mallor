@@ -41,9 +41,16 @@ class CierreCaja(models.Model):
     """
 
     id = models.AutoField(primary_key=True)
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='cierres_caja',
+        verbose_name=_('empresa'),
+    )
     fecha_cierre = models.DateField(
         _('fecha de cierre'),
-        unique=True,
         help_text=_('Fecha correspondiente al cierre diario de caja.'),
     )
     fecha_registro = models.DateTimeField(
@@ -160,9 +167,16 @@ class CierreCaja(models.Model):
         verbose_name = _('cierre de caja')
         verbose_name_plural = _('cierres de caja')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['fecha_cierre']),
             models.Index(fields=['fecha_registro']),
             models.Index(fields=['usuario_cierre']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['empresa', 'fecha_cierre'],
+                name='cierre_caja_empresa_fecha_unique',
+            ),
         ]
 
     def __str__(self):
@@ -170,6 +184,7 @@ class CierreCaja(models.Model):
 
     def _ventas_queryset(self):
         return Venta.objects.filter(
+            empresa=self.empresa,
             estado=Venta.Estado.TERMINADA,
             fecha_venta__gte=_local_day_start_utc(self.fecha_cierre),
             fecha_venta__lt=_next_local_day_start_utc(self.fecha_cierre),
@@ -177,6 +192,7 @@ class CierreCaja(models.Model):
 
     def _abonos_queryset(self):
         return Abono.objects.filter(
+            venta__empresa=self.empresa,
             venta__estado=Venta.Estado.TERMINADA,
             fecha_abono__gte=_local_day_start_utc(self.fecha_cierre),
             fecha_abono__lt=_next_local_day_start_utc(self.fecha_cierre),
@@ -228,6 +244,7 @@ class CierreCaja(models.Model):
     def _calcular_ventas_por_categoria(self) -> dict[str, float]:
         ventas_por_categoria = {}
         categorias = DetalleVenta.objects.filter(
+            venta__empresa=self.empresa,
             venta__estado=Venta.Estado.TERMINADA,
             venta__fecha_venta__gte=_local_day_start_utc(self.fecha_cierre),
             venta__fecha_venta__lt=_next_local_day_start_utc(
@@ -447,6 +464,10 @@ class CierreCaja(models.Model):
                 })
 
     def save(self, *args, **kwargs):
+        if self.empresa_id is None:
+            from empresa.context import get_empresa_actual_or_default
+
+            self.empresa = get_empresa_actual_or_default()
         self.calcular_totales()
         self.full_clean()
         super().save(*args, **kwargs)
@@ -478,6 +499,14 @@ class Informe(models.Model):
         CIERRE_CAJA = 'CIERRE_CAJA', _('Cierre de caja')
 
     id = models.AutoField(primary_key=True)
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='informes',
+        verbose_name=_('empresa'),
+    )
     tipo_informe = models.CharField(
         _('tipo de informe'),
         max_length=40,
@@ -529,6 +558,7 @@ class Informe(models.Model):
         verbose_name = _('informe')
         verbose_name_plural = _('informes')
         indexes = [
+            models.Index(fields=['empresa']),
             models.Index(fields=['tipo_informe']),
             models.Index(fields=['fecha_generacion']),
             models.Index(fields=['fecha_inicio']),
@@ -568,5 +598,9 @@ class Informe(models.Model):
             })
 
     def save(self, *args, **kwargs):
+        if self.empresa_id is None:
+            from empresa.context import get_empresa_actual_or_default
+
+            self.empresa = get_empresa_actual_or_default()
         self.full_clean()
         super().save(*args, **kwargs)

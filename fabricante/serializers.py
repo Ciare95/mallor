@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from empresa.context import get_empresa_actual_or_default
 from inventario.models import Producto
 from inventario.serializers import ProductoListSerializer
 from proveedor.models import Proveedor
@@ -49,9 +50,20 @@ class IngredienteSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'proveedor', 'created_at', 'updated_at']
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        empresa = get_empresa_actual_or_default()
+        self.fields['proveedor_id'].queryset = Proveedor.objects.filter(
+            empresa=empresa,
+            activo=True,
+        )
+
     def validate_nombre(self, value):
         value = value.strip()
-        queryset = Ingrediente.objects.filter(nombre__iexact=value)
+        queryset = Ingrediente.objects.filter(
+            empresa=get_empresa_actual_or_default(),
+            nombre__iexact=value,
+        )
         instance = getattr(self, 'instance', None)
 
         if instance is not None:
@@ -125,6 +137,13 @@ class InventarioIngredientesSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'ingrediente', 'usuario', 'factura_numero']
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        empresa = get_empresa_actual_or_default()
+        self.fields['ingrediente_id'].queryset = Ingrediente.objects.filter(
+            empresa=empresa,
+        )
+
     def validate_cantidad(self, value):
         if value <= 0:
             raise serializers.ValidationError(
@@ -174,6 +193,16 @@ class IngredientesProductoSerializer(serializers.ModelSerializer):
             'ingrediente',
             'costo_ingrediente',
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        empresa = get_empresa_actual_or_default()
+        self.fields['ingrediente_id'].queryset = Ingrediente.objects.filter(
+            empresa=empresa,
+        )
+        self.fields['producto_fabricado_id'].queryset = (
+            ProductoFabricado.objects.filter(empresa=empresa)
+        )
 
     def validate_cantidad_necesaria(self, value):
         if value <= 0:
@@ -236,6 +265,16 @@ class PresentacionProductoFabricadoSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        empresa = get_empresa_actual_or_default()
+        self.fields['producto_inventario_id'].queryset = Producto.objects.filter(
+            empresa=empresa,
+        )
+        self.fields['producto_fabricado_id'].queryset = (
+            ProductoFabricado.objects.filter(empresa=empresa)
+        )
+
     def validate_nombre(self, value):
         value = value.strip()
         if not value:
@@ -297,6 +336,14 @@ class MovimientoEmpaquePresentacionSerializer(serializers.ModelSerializer):
             'usuario',
             'usuario_nombre',
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['presentacion_id'].queryset = (
+            PresentacionProductoFabricado.objects.filter(
+                empresa=get_empresa_actual_or_default(),
+            )
+        )
 
 
 class ProductoFabricadoSerializer(serializers.ModelSerializer):
@@ -369,6 +416,13 @@ class ProductoFabricadoSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        empresa = get_empresa_actual_or_default()
+        self.fields['producto_final_id'].queryset = Producto.objects.filter(
+            empresa=empresa,
+        )
 
     def get_disponibilidad_ingredientes(self, obj):
         return obj.validar_disponibilidad_ingredientes()
