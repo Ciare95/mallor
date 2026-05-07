@@ -14,6 +14,7 @@ import {
   PackageSearch,
   PieChart,
   ReceiptText,
+  Sparkles,
   Settings,
   Users,
 } from 'lucide-react';
@@ -134,6 +135,7 @@ export default function Layout() {
     { path: '/fabricante', label: 'Fabricante', icon: FlaskConical, end: false },
     { path: '/inventario', label: 'Inventario', icon: PackageSearch, end: false },
     { path: '/informes', label: 'Informes', icon: PieChart, end: false },
+    { path: '/ia', label: 'IA', icon: Sparkles, end: false },
     {
       path: '/usuarios',
       label: 'Usuarios',

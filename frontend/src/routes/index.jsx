@@ -16,6 +16,7 @@ const FabricantePage = lazy(() => import('../pages/fabricante/FabricantePage'));
 const DashboardInformesPage = lazy(() => import('../pages/informes/DashboardPage'));
 const CierresCajaPage = lazy(() => import('../pages/informes/CierresCajaPage'));
 const ReportesPage = lazy(() => import('../pages/informes/ReportesPage'));
+const IAPage = lazy(() => import('../pages/ia/IAPage'));
 
 function withSuspense(Component) {
   return (
@@ -93,6 +94,10 @@ export const router = createBrowserRouter([
       {
         path: 'informes/reportes',
         element: withSuspense(ReportesPage),
+      },
+      {
+        path: 'ia',
+        element: withSuspense(IAPage),
       },
     ],
   },
