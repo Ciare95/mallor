@@ -3050,8 +3050,44 @@ Implementar asistente de inteligencia artificial con DeepSeek API para consultas
 - CLI personalizado para comandos IA
 - Chat interactivo en frontend
 - Consultas en lenguaje natural
-- Acceso directo a base de datos (lectura)
+- Acceso a datos mediante herramientas seguras, siempre filtradas por empresa activa
 - Respuestas contextualizadas
+
+**Restricciones arquitectonicas heredadas de Epicas 9 y 9.5:**
+- La IA debe operar siempre dentro de la empresa activa resuelta por `EmpresaActivaMiddleware`.
+- Toda consulta de negocio debe respetar `empresa_id` y el rol efectivo en `EmpresaUsuario`.
+- La IA no puede acceder a credenciales Factus, secrets, passwords, tokens ni payloads sensibles.
+- No se permite ejecutar SQL libre generado por el modelo contra la base de datos.
+- El backend debe exponer herramientas/servicios de lectura acotados para inventario, ventas, clientes, informes y Factus.
+- El historial de IA debe quedar asociado a `empresa`, `usuario` y `sesion_id`.
+- El frontend debe seguir el patron React actual: services, Zustand y TanStack Query.
+- No iniciar autoregistro, JWT publico ni cambios de autenticacion en esta epica.
+
+---
+
+#### Tarea 10.0: Guardrails Multitenant para IA
+**Prioridad:** Alta | **Estimacion:** 3 Story Points | **Etiquetas:** Backend, Security, Multitenant
+
+**Descripcion:**
+Definir la capa de seguridad que impide que el modulo de IA mezcle informacion entre empresas o exponga datos sensibles.
+
+**Requisitos:**
+1. Crear un servicio de contexto `IA/context.py` que reciba `usuario` y `empresa`.
+2. Validar que `empresa` este activa y que el usuario tenga membresia activa.
+3. Resolver permisos por rol de `EmpresaUsuario`, no por rol global de `Usuario`.
+4. Limitar herramientas disponibles segun rol:
+   - `PROPIETARIO` y `ADMIN`: analitica completa de su empresa.
+   - `EMPLEADO`: solo consultas operativas permitidas, sin datos fiscales, usuarios ni Factus.
+5. Registrar cada consulta con `empresa_id`, `usuario_id`, herramienta usada y metadatos seguros.
+6. Bloquear cualquier intento de consultar credenciales Factus, secrets, passwords, tokens, XML/PDF de otra empresa o datos de usuarios no permitidos.
+
+**Criterios de aceptacion:**
+- [ ] Existe contexto IA con `empresa`, `usuario` y `rol_empresa`.
+- [ ] Usuario sin membresia no puede usar IA en esa empresa.
+- [ ] Empresa inactiva no puede usar IA.
+- [ ] EMPLEADO no puede consultar usuarios, datos fiscales ni Factus.
+- [ ] Tests prueban aislamiento entre Empresa A y Empresa B.
+- [ ] No se registran secretos en logs ni historial IA.
 
 ---
 
@@ -3110,7 +3146,7 @@ class DeepSeekClient:
 **Prioridad:** Alta | **Estimación:** 5 Story Points | **Etiquetas:** Backend, AI
 
 **Descripción:**
-Crear sistema que permite a la IA acceder a información de la base de datos de forma segura.
+Crear sistema que permite a la IA acceder a informacion del negocio de forma segura mediante herramientas de lectura acotadas. La IA no debe ejecutar SQL libre ni generar consultas directas contra la base de datos.
 
 **Archivo:** `IA/database_context.py`
 
@@ -3129,9 +3165,10 @@ Crear sistema que permite a la IA acceder a información de la base de datos de 
 }
 ```
 
-2. `ejecutar_consulta_segura(query)` - Ejecuta queries de lectura
-   - Solo permite SELECT
-   - Previene SQL injection
+2. `ejecutar_herramienta_segura(nombre, parametros, contexto)` - Ejecuta herramientas aprobadas
+   - No acepta SQL libre
+   - Valida `empresa_id` desde el contexto, no desde parametros del modelo
+   - Valida rol de `EmpresaUsuario`
    - Limita resultados
    - Timeout configurado
 
@@ -3151,7 +3188,7 @@ Crear sistema que permite a la IA acceder a información de la base de datos de 
 ```python
 SYSTEM_PROMPT = """
 Eres un asistente inteligente de Mallor, un sistema de gestión empresarial.
-Tienes acceso a la base de datos del negocio y puedes responder preguntas sobre:
+Tienes acceso a herramientas seguras de lectura del negocio y puedes responder preguntas sobre:
 - Inventario y productos
 - Ventas realizadas
 - Clientes y proveedores
@@ -3162,8 +3199,8 @@ Esquema de la base de datos:
 
 Instrucciones:
 - Responde en español de forma clara y concisa
-- Si necesitas consultar la base de datos, genera un query SQL válido
-- Solo usa SELECT queries
+- Si necesitas datos, solicita una herramienta aprobada por nombre y parametros
+- Nunca generes ni ejecutes SQL directo
 - Presenta datos en formato legible
 - Si no tienes información suficiente, pide aclaración
 """
@@ -3171,7 +3208,7 @@ Instrucciones:
 
 **Criterios de aceptación:**
 - [ ] Sistema de contexto creado
-- [ ] Queries seguras implementadas
+- [ ] Herramientas seguras implementadas sin SQL libre
 - [ ] Esquema generándose correctamente
 - [ ] Prompts definidos
 - [ ] Validaciones de seguridad
@@ -3243,15 +3280,15 @@ Implementar lógica de negocio del asistente IA.
 1. `procesar_consulta(texto, usuario, contexto_conversacion)` - Procesa consulta
    - Analizar intención
    - Determinar si necesita datos
-   - Ejecutar query si aplica
+   - Ejecutar herramienta segura si aplica
    - Generar respuesta con IA
    - Guardar en historial
 
-2. `generar_sql_desde_lenguaje_natural(texto)` - NL to SQL
-   - Usar IA para generar SQL
-   - Validar sintaxis
-   - Validar permisos
-   - Ejecutar y retornar resultados
+2. `seleccionar_herramienta_desde_lenguaje_natural(texto)` - NL to tool
+   - Usar IA para elegir una herramienta aprobada
+   - Validar parametros
+   - Validar permisos y empresa activa
+   - Ejecutar herramienta y retornar resultados
 
 3. `formatear_respuesta(datos)` - Formatea datos para presentación
 
@@ -3292,9 +3329,9 @@ Implementar lógica de negocio del asistente IA.
    - Historial de conversación
    - Consulta actual
 4. Llamar a DeepSeek API
-5. Si la IA sugiere un query SQL:
-   - Validar query
-   - Ejecutar
+5. Si la IA solicita una herramienta:
+   - Validar herramienta y parametros
+   - Ejecutar servicio/queryset seguro
    - Incluir resultados en contexto
    - Llamar IA nuevamente para formatear
 6. Retornar respuesta formateada
@@ -3302,7 +3339,7 @@ Implementar lógica de negocio del asistente IA.
 
 **Criterios de aceptación:**
 - [ ] Todos los métodos implementados
-- [ ] NL to SQL funcionando
+- [ ] NL to tool funcionando
 - [ ] Consultas comunes soportadas
 - [ ] Historial guardándose
 - [ ] Respuestas contextualizadas
@@ -3318,11 +3355,13 @@ Crear modelo para almacenar historial de conversaciones con la IA.
 
 **Modelo ConversacionIA:**
 - id (AutoField, PK)
+- empresa (ForeignKey a Empresa)
 - usuario (ForeignKey a Usuario)
 - sesion_id (UUIDField) - para agrupar conversaciones
 - consulta (TextField)
 - respuesta (TextField)
-- query_sql (TextField, blank=True) - si se ejecutó query
+- herramienta_usada (CharField, blank=True)
+- parametros_herramienta (JSONField, blank=True)
 - datos_retornados (JSONField, blank=True)
 - tiempo_respuesta (FloatField) - en segundos
 - fecha (DateTimeField, auto_now_add)
@@ -3333,7 +3372,7 @@ Crear modelo para almacenar historial de conversaciones con la IA.
 **Criterios de aceptación:**
 - [ ] Modelo creado
 - [ ] Migraciones aplicadas
-- [ ] Índices optimizados
+- [ ] Índices optimizados por `empresa`, `usuario`, `sesion_id` y `fecha`
 
 ---
 
@@ -3365,7 +3404,7 @@ Crear endpoints para el asistente IA.
     "respuesta": "Hoy has vendido un total de $1,250,000...",
     "sesion_id": "uuid",
     "tiempo_respuesta": 2.5,
-    "query_ejecutado": "SELECT SUM(total)...",
+    "herramienta_usada": "ventas_resumen_periodo",
     "datos": {...}
 }
 ```
@@ -3376,6 +3415,8 @@ Crear endpoints para el asistente IA.
 - [ ] Streaming implementado (opcional)
 - [ ] Historial accesible
 - [ ] Feedback registrándose
+- [ ] Todas las respuestas se filtran por empresa activa
+- [ ] No se exponen SQL, credenciales ni datos de otro tenant
 
 ---
 
@@ -3431,13 +3472,15 @@ Botones con consultas comunes:
 - Scroll automático al último mensaje
 - Copiar respuesta
 - Compartir conversación
+- Enviar siempre `X-Empresa-Id` desde la empresa activa
+- Ocultar sugerencias no permitidas para el rol activo
 
 **Formato de Respuestas:**
 - Texto plano
 - Listas numeradas/con viñetas
 - Tablas de datos
 - Links
-- Código SQL (con syntax highlight)
+- Bloques tecnicos solo cuando sean explicativos, nunca SQL ejecutable generado por IA
 
 **Historial:**
 - Lista de sesiones anteriores
@@ -3455,6 +3498,8 @@ Botones con consultas comunes:
 - [ ] Responsive design
 - [ ] Scroll automático
 - [ ] Performance optimizado
+- [ ] Cambio de empresa invalida historial, sugerencias y respuestas cacheadas
+- [ ] EMPLEADO no ve accesos de administracion, Factus ni usuarios desde IA
 
 ---
 
