@@ -46,10 +46,9 @@ import {
   getManufacturingStats,
   getProductStatusTone,
   getResults,
-  safeNumber,
   unitLabel,
 } from '../../utils/fabricante';
-import { formatCurrency, formatNumber } from '../../utils/formatters';
+import { formatNumber } from '../../utils/formatters';
 
 const FABRICANTE_VIEW_META = {
   [FABRICANTE_VISTAS.INGREDIENTES]: {

@@ -1,4 +1,4 @@
-# Mallor - Plan de Tareas Kanban
+﻿# Mallor - Plan de Tareas Kanban
 
 ## Tabla de Contenidos
 - [ÉPICA 1: Configuración Inicial y Setup del Proyecto](#épica-1-configuración-inicial-y-setup-del-proyecto)
@@ -3505,483 +3505,181 @@ Botones con consultas comunes:
 
 ## ÉPICA 11: Testing y Calidad
 
-### 📋 Descripción de la Épica
-Implementar suite completa de pruebas para garantizar calidad del código y funcionamiento correcto de todas las funcionalidades.
+### Diagnóstico actualizado
+La épica anterior cubría la intención general de pruebas backend, frontend, cobertura y CI, pero quedó incompleta después de Factus, cierre multitenant SaaS e IA segura. Desde esta versión, Testing y Calidad se centra en aislamiento por `empresa_id`, empresa activa por `EmpresaActivaMiddleware`, permisos efectivos por `EmpresaUsuario` y seguridad IA `NL to tool`.
 
-### 🎯 Objetivos
-- Tests unitarios del backend (Django)
-- Tests de integración de API
-- Tests de servicios y lógica de negocio
-- Tests frontend (React)
-- Cobertura mínima del 80%
-- CI/CD con tests automatizados
+Ajustes obligatorios:
+- Validar Empresa A vs Empresa B en endpoints y services sensibles.
+- Probar roles `PROPIETARIO`, `ADMIN`, `EMPLEADO`, usuario sin membresía y empresa inactiva.
+- Mockear Factus y DeepSeek; CI no hace llamadas externas reales.
+- Validar que IA no use SQL generado, no exponga secretos, credenciales, payloads, PDF/XML ni datos cross-tenant.
+- Usar cobertura progresiva por capa, no 80% global como gate inicial.
+- Reemplazar smoke Playwright demo externo por pruebas reales de Mallor o dejarlo opcional.
 
 ---
 
-#### Tarea 11.1: Configuración de Testing Backend
-**Prioridad:** Alta | **Estimación:** 2 Story Points | **Etiquetas:** Backend, Testing
+#### Tarea 11.0: Baseline reproducible y limpieza de artefactos
+**Prioridad:** Alta | **Estimación:** 3 Story Points | **Etiquetas:** Testing, Calidad, Docs
 
-**Descripción:**
-Configurar entorno de testing para Django.
-
-**Dependencias técnicas:**
-```bash
-pip install pytest==7.4.3
-pip install pytest-django==4.7.0
-pip install pytest-cov==4.1.0
-pip install factory-boy==3.3.0
-pip install faker==20.1.0
-```
-
-**Configuración:**
-
-**Archivo:** `pytest.ini`
-```ini
-[pytest]
-DJANGO_SETTINGS_MODULE = config.settings
-python_files = tests.py test_*.py *_tests.py
-addopts = --cov=. --cov-report=html --cov-report=term
-```
-
-**Archivo:** `conftest.py` (root del proyecto)
-- Configurar fixtures globales
-- Base de datos de test
-- Usuarios de test
-- Factories
+**Alcance:**
+- Definir comandos oficiales backend/frontend en `docs/TESTING.md`.
+- Confirmar `manage.py check`, migraciones dry-run y suite actual con `config.settings_test`.
+- Limpiar outputs generados versionados (`informes/pdfs`, `informes/excel`, `productos`) o documentar justificación si alguno debe permanecer.
+- Eliminar pruebas demo externas de Playwright.
+- `example_code/` ya fue eliminado del repositorio por no aportar valor operativo.
 
 **Criterios de aceptación:**
-- [ ] Pytest configurado
-- [ ] Base de datos de test funcionando
-- [ ] Fixtures básicas creadas
-- [ ] Cobertura configurada
+- [ ] Baseline documentado.
+- [ ] Artefactos generados eliminados o justificados.
+- [ ] Playwright no apunta a `playwright.dev`.
+- [ ] Entorno de test reproducible descrito.
 
 ---
 
-#### Tarea 11.2: Factories y Fixtures
-**Prioridad:** Alta | **Estimación:** 3 Story Points | **Etiquetas:** Backend, Testing
-
-**Descripción:**
-Crear factories para generación de datos de prueba.
-
-**Archivo:** `tests/factories.py`
-
-**Factories a crear:**
-1. **UserFactory** - Usuarios
-2. **CategoriaFactory** - Categorías
-3. **ProductoFactory** - Productos
-4. **ClienteFactory** - Clientes
-5. **ProveedorFactory** - Proveedores
-6. **VentaFactory** - Ventas
-7. **DetalleVentaFactory** - Detalles de venta
-8. **AbonoFactory** - Abonos
-9. **FacturaCompraFactory** - Facturas
-
-**Ejemplo:**
-```python
-class ProductoFactory(factory.django.DjangoModelFactory):
-    class Meta:
-        model = Producto
-
-    nombre = factory.Faker('word')
-    codigo_interno = factory.Sequence(lambda n: f'PROD{n:05d}')
-    precio_compra = factory.Faker('pydecimal', left_digits=5, right_digits=2, positive=True)
-    precio_venta = factory.Faker('pydecimal', left_digits=5, right_digits=2, positive=True)
-    existencias = factory.Faker('pyint', min_value=0, max_value=1000)
-```
-
-**Criterios de aceptación:**
-- [ ] Todas las factories creadas
-- [ ] Datos realistas generándose
-- [ ] Relaciones funcionando
-
----
-
-#### Tarea 11.3: Tests de Modelos
-**Prioridad:** Alta | **Estimación:** 5 Story Points | **Etiquetas:** Backend, Testing
-
-**Descripción:**
-Crear tests unitarios para todos los modelos.
-
-**Tests a implementar por modelo:**
-- Creación básica
-- Validaciones de campos
-- Métodos del modelo
-- Relaciones
-- Signals (si aplican)
-
-**Ejemplo - test_producto.py:**
-```python
-def test_crear_producto():
-    """Test crear producto básico"""
-    producto = ProductoFactory()
-    assert producto.id is not None
-    assert producto.nombre
-
-def test_calcular_valor_inventario():
-    """Test método calcular_valor_inventario"""
-    producto = ProductoFactory(precio_compra=100, existencias=10)
-    assert producto.calcular_valor_inventario() == 1000
-
-def test_actualizar_stock():
-    """Test actualizar stock correctamente"""
-    producto = ProductoFactory(existencias=10)
-    producto.actualizar_stock(5)
-    assert producto.existencias == 15
-```
-
-**Archivos de test:**
-- `tests/inventario/test_models.py`
-- `tests/ventas/test_models.py`
-- `tests/cliente/test_models.py`
-- etc.
-
-**Criterios de aceptación:**
-- [ ] Tests para todos los modelos
-- [ ] Validaciones probadas
-- [ ] Métodos probados
-- [ ] Relaciones probadas
-- [ ] Todos los tests pasando
-
----
-
-#### Tarea 11.4: Tests de Serializers
+#### Tarea 11.1: Infraestructura backend
 **Prioridad:** Alta | **Estimación:** 4 Story Points | **Etiquetas:** Backend, Testing
 
-**Descripción:**
-Crear tests para todos los serializers.
-
-**Tests por serializer:**
-- Serialización (model → JSON)
-- Deserialización (JSON → model)
-- Validaciones custom
-- Campos calculados
-
-**Ejemplo:**
-```python
-def test_producto_serializer():
-    """Test serialización de producto"""
-    producto = ProductoFactory()
-    serializer = ProductoSerializer(producto)
-    data = serializer.data
-
-    assert data['nombre'] == producto.nombre
-    assert data['precio_venta'] == str(producto.precio_venta)
-
-def test_producto_create_serializer_validacion():
-    """Test validación de datos al crear"""
-    data = {
-        'nombre': 'Producto Test',
-        'precio_compra': -100,  # Precio negativo (inválido)
-    }
-    serializer = ProductoCreateSerializer(data=data)
-    assert not serializer.is_valid()
-    assert 'precio_compra' in serializer.errors
-```
+**Alcance:**
+- Configurar `pytest`, `pytest-django`, `pytest-cov`, `factory-boy`, `faker`.
+- Mantener compatibilidad con tests Django `TestCase`; no reescritura masiva inicial.
+- Crear `pytest.ini`, `.coveragerc`, `pyproject.toml`, `config/settings_test.py`.
+- Definir markers: `unit`, `integration`, `multitenant`, `ia`, `factus`, `smoke`.
 
 **Criterios de aceptación:**
-- [ ] Tests para todos los serializers
-- [ ] Validaciones probadas
-- [ ] Campos calculados verificados
-- [ ] Todos los tests pasando
+- [ ] Pytest ejecuta tests existentes y nuevos.
+- [ ] Coverage configurado por capas.
+- [ ] Settings de test usa PostgreSQL y valores determinísticos.
 
 ---
 
-#### Tarea 11.5: Tests de Services (Lógica de Negocio)
-**Prioridad:** Alta | **Estimación:** 8 Story Points | **Etiquetas:** Backend, Testing
+#### Tarea 11.2: Factories y fixtures multitenant
+**Prioridad:** Alta | **Estimación:** 5 Story Points | **Etiquetas:** Backend, Testing, Multitenant
 
-**Descripción:**
-Crear tests exhaustivos para toda la lógica de negocio.
+**Factories mínimas:**
+- `Empresa`, `EmpresaUsuario`, `Usuario`.
+- Cliente, producto/categoría, venta, abono.
+- Factus config, credencial, rango, documento e intento.
+- Mensaje IA.
 
-**Tests críticos por módulo:**
-
-**Inventario:**
-- Crear producto
-- Actualizar stock
-- Procesar factura de compra
-- Validar disponibilidad
-- Calcular valor de inventario
-
-**Ventas:**
-- Crear venta con detalles
-- Actualizar inventario al vender
-- Calcular totales correctamente
-- Cancelar venta
-- Registrar abono
-- Actualizar estado de pago
-
-**Clientes:**
-- Crear cliente
-- Validar crédito disponible
-- Calcular saldo pendiente
-
-**Ejemplo - test_ventas_service.py:**
-```python
-@pytest.mark.django_db
-def test_crear_venta_actualiza_inventario():
-    """Test que crear venta reduce el stock"""
-    producto = ProductoFactory(existencias=100)
-    cliente = ClienteFactory()
-
-    venta_data = {
-        'cliente': cliente.id,
-        'detalles': [
-            {'producto': producto.id, 'cantidad': 10}
-        ]
-    }
-
-    venta = crear_venta(venta_data)
-
-    producto.refresh_from_db()
-    assert producto.existencias == 90
-    assert venta.estado == 'TERMINADA'
-
-@pytest.mark.django_db
-def test_registrar_abono_actualiza_estado():
-    """Test que registrar abono actualiza estado de pago"""
-    venta = VentaFactory(total=100000, total_abonado=0, estado_pago='PENDIENTE')
-
-    registrar_abono(venta.id, {'monto_abonado': 50000})
-
-    venta.refresh_from_db()
-    assert venta.total_abonado == 50000
-    assert venta.estado_pago == 'PARCIAL'
-    assert venta.saldo_pendiente == 50000
-```
+**Fixtures mínimas:**
+- `empresa_a`, `empresa_b`, `admin_a`, `empleado_a`, `usuario_sin_membresia`, `api_client_empresa`.
 
 **Criterios de aceptación:**
-- [ ] Tests para todos los services críticos
-- [ ] Casos positivos y negativos
-- [ ] Validaciones probadas
-- [ ] Transacciones probadas
-- [ ] Todos los tests pasando
-- [ ] Cobertura > 80%
+- [ ] Factories crean datos válidos por empresa.
+- [ ] Fixtures permiten probar Empresa A/B sin duplicación.
+- [ ] Helpers fijan `X-Empresa-Id` y Basic auth de desarrollo.
 
 ---
 
-#### Tarea 11.6: Tests de API Endpoints
-**Prioridad:** Alta | **Estimación:** 6 Story Points | **Etiquetas:** Backend, Testing
+#### Tarea 11.3: Backend multitenant y permisos
+**Prioridad:** Alta | **Estimación:** 8 Story Points | **Etiquetas:** Backend, Seguridad, Multitenant
 
-**Descripción:**
-Crear tests de integración para todos los endpoints.
-
-**Tests por endpoint:**
-- GET (list y detail)
-- POST (create)
-- PUT/PATCH (update)
-- DELETE
-- Permisos
-- Filtros
-- Paginación
-- Códigos HTTP
-
-**Ejemplo:**
-```python
-@pytest.mark.django_db
-def test_listar_productos(api_client, user):
-    """Test listar productos"""
-    ProductoFactory.create_batch(5)
-    api_client.force_authenticate(user=user)
-
-    response = api_client.get('/api/inventario/productos/')
-
-    assert response.status_code == 200
-    assert len(response.data['results']) == 5
-
-@pytest.mark.django_db
-def test_crear_producto_sin_permiso(api_client, user_empleado):
-    """Test que empleado no puede crear productos"""
-    api_client.force_authenticate(user=user_empleado)
-
-    data = {'nombre': 'Test', 'precio_venta': 1000}
-    response = api_client.post('/api/inventario/productos/', data)
-
-    assert response.status_code == 403
-```
+**Alcance:**
+- Tests para `EmpresaService`, `EmpresaActivaMiddleware` y `empresa.context`.
+- Matriz `PROPIETARIO`, `ADMIN`, `EMPLEADO`, usuario sin membresía y empresa inactiva.
+- Cada endpoint sensible debe tener caso Empresa A no ve datos de Empresa B.
+- Services sin request deben usar `get_empresa_actual_or_default()` sin fugar datos.
 
 **Criterios de aceptación:**
-- [ ] Tests para todos los endpoints
-- [ ] CRUD completo probado
-- [ ] Permisos validados
-- [ ] Filtros probados
-- [ ] Todos los tests pasando
+- [ ] Usuario sin membresía recibe 403 ante empresa ajena.
+- [ ] `EMPLEADO` respeta restricciones.
+- [ ] Empresa inactiva no opera módulos restringidos.
+- [ ] Tests fallan ante regresión de aislamiento por `empresa_id`.
 
 ---
 
-#### Tarea 11.7: Configuración de Testing Frontend
-**Prioridad:** Media | **Estimación:** 2 Story Points | **Etiquetas:** Frontend, Testing
+#### Tarea 11.4: Services críticos
+**Prioridad:** Alta | **Estimación:** 8 Story Points | **Etiquetas:** Backend, Services
 
-**Descripción:**
-Configurar entorno de testing para React.
-
-**Dependencias:**
-```bash
-npm install --save-dev @testing-library/react
-npm install --save-dev @testing-library/jest-dom
-npm install --save-dev @testing-library/user-event
-npm install --save-dev vitest
-npm install --save-dev jsdom
-```
-
-**Configuración:**
-
-**Archivo:** `vite.config.js`
-```javascript
-export default {
-  test: {
-    globals: true,
-    environment: 'jsdom',
-    setupFiles: './src/tests/setup.js',
-  },
-}
-```
+**Alcance:**
+- Ventas, abonos, inventario, clientes, proveedores, informes y cierre de caja.
+- Probar cálculos, transacciones y estados negativos.
+- Probar que listados/reportes respetan empresa activa.
 
 **Criterios de aceptación:**
-- [ ] Vitest configurado
-- [ ] Testing Library instalado
-- [ ] Setup completado
-- [ ] Tests de ejemplo pasando
+- [ ] Services críticos tienen casos positivos y negativos.
+- [ ] Reportes no mezclan empresas.
+- [ ] Inventario/ventas preservan consistencia de stock y cartera.
 
 ---
 
-#### Tarea 11.8: Tests de Componentes React
-**Prioridad:** Media | **Estimación:** 6 Story Points | **Etiquetas:** Frontend, Testing
+#### Tarea 11.5: Factus multitenant
+**Prioridad:** Alta | **Estimación:** 6 Story Points | **Etiquetas:** Factus, Seguridad, Multitenant
 
-**Descripción:**
-Crear tests para componentes críticos de React.
-
-**Componentes a testear:**
-- Formularios (ProductoForm, VentaForm, etc.)
-- Listas (ProductosList, VentasList, etc.)
-- Componentes de negocio (PuntoVenta, GestionAbonos, etc.)
-
-**Tests por componente:**
-- Renderizado correcto
-- Interacciones del usuario
-- Validaciones de formularios
-- Llamadas a API
-- Estados y props
-
-**Ejemplo:**
-```javascript
-import { render, screen, fireEvent } from '@testing-library/react';
-import { ProductoForm } from './ProductoForm';
-
-test('renderiza formulario de producto', () => {
-  render(<ProductoForm />);
-  expect(screen.getByLabelText(/nombre/i)).toBeInTheDocument();
-  expect(screen.getByLabelText(/precio/i)).toBeInTheDocument();
-});
-
-test('valida campos requeridos', async () => {
-  render(<ProductoForm />);
-  const submitButton = screen.getByText(/guardar/i);
-
-  fireEvent.click(submitButton);
-
-  expect(await screen.findByText(/nombre es requerido/i)).toBeInTheDocument();
-});
-```
+**Alcance:**
+- Mockear `FactusAdapter`.
+- Emitir, reintentar, sincronizar rangos, consultar estado, email, PDF/XML y nota crédito.
+- Validar credenciales cifradas, respuestas masked y ausencia de secretos en intentos/logs/respuestas.
 
 **Criterios de aceptación:**
-- [ ] Tests para componentes críticos
-- [ ] Renderizado probado
-- [ ] Interacciones probadas
-- [ ] Todos los tests pasando
+- [ ] Factus usa solo configuración de la empresa activa.
+- [ ] PDF/XML no se exponen entre tenants.
+- [ ] Secrets no aparecen en payloads auditados ni respuestas API.
 
 ---
 
-#### Tarea 11.9: Tests E2E (Opcional)
-**Prioridad:** Baja | **Estimación:** 4 Story Points | **Etiquetas:** Testing, E2E
+#### Tarea 11.6: IA segura
+**Prioridad:** Alta | **Estimación:** 7 Story Points | **Etiquetas:** IA, Seguridad, Multitenant
 
-**Descripción:**
-Crear tests end-to-end para flujos críticos.
-
-**Dependencias:**
-```bash
-npm install --save-dev @playwright/test
-```
-
-**Flujos a testear:**
-1. Login y navegación
-2. Crear una venta completa
-3. Agregar producto al inventario
-4. Registrar abono
-5. Emitir factura electrónica
+**Alcance:**
+- Tests unitarios de `IA.context`, `IA.tools`, `IA.services`.
+- Tests API de chat, historial, sugerencias y feedback.
+- Validar `NL to tool`, denegación de SQL/secrets/PDF/XML/payloads, rol efectivo, historial por empresa/usuario/sesión y fallback local.
 
 **Criterios de aceptación:**
-- [ ] Playwright configurado
-- [ ] Flujos críticos probados
-- [ ] Tests pasando en CI
+- [ ] IA no ejecuta ni propone SQL libre.
+- [ ] IA no guarda ni responde secretos.
+- [ ] Historial IA no mezcla empresas, usuarios ni `sesion_id`.
+- [ ] Tools admin no están disponibles para `EMPLEADO`.
 
 ---
 
-#### Tarea 11.10: Configuración de CI/CD con GitHub Actions
-**Prioridad:** Media | **Estimación:** 3 Story Points | **Etiquetas:** DevOps, CI/CD
+#### Tarea 11.7: Frontend testing
+**Prioridad:** Media | **Estimación:** 5 Story Points | **Etiquetas:** Frontend, Testing
 
-**Descripción:**
-Configurar pipeline de CI/CD con tests automatizados.
-
-**Archivo:** `.github/workflows/tests.yml`
-
-```yaml
-name: Tests
-
-on: [push, pull_request]
-
-jobs:
-  backend-tests:
-    runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:14
-        env:
-          POSTGRES_PASSWORD: postgres
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-      - name: Run tests
-        run: |
-          pytest --cov
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-
-  frontend-tests:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Node
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-      - name: Install dependencies
-        run: |
-          cd frontend
-          npm ci
-      - name: Run tests
-        run: |
-          cd frontend
-          npm test
-```
+**Alcance:**
+- Configurar Vitest + Testing Library + jsdom + MSW.
+- Tests para `api.js`, `useStore`, `Layout`, `ia.service.js`, `IAPage`.
+- Probar `Authorization`, `X-Empresa-Id`, limpieza de sesión IA al cambiar empresa, navegación por rol y errores seguros de IA.
+- No usar snapshots grandes ni probar estilos Tailwind.
 
 **Criterios de aceptación:**
-- [ ] GitHub Actions configurado
-- [ ] Tests corriendo automáticamente
-- [ ] Cobertura reportándose
-- [ ] Badges en README
+- [ ] Frontend envía empresa activa.
+- [ ] Cambio de empresa limpia estado IA sensible.
+- [ ] `EMPLEADO` no ve navegación administrativa.
+- [ ] IA SPA maneja sugerencias, sesión, feedback y error seguro.
+
+---
+
+#### Tarea 11.8: Calidad y CI
+**Prioridad:** Alta | **Estimación:** 5 Story Points | **Etiquetas:** CI, Calidad
+
+**Alcance:**
+- Backend: `ruff` + coverage progresivo.
+- Frontend: ESLint ignora `.vite`, `dist`, `coverage`, dependencias y luego se corrige deuda real.
+- GitHub Actions con PostgreSQL, backend checks/tests, frontend lint/test/build.
+- Playwright queda como smoke real opcional, no demo externa.
+
+**Criterios de aceptación:**
+- [ ] CI falla ante regresión backend/frontend crítica.
+- [ ] Lint deja de inspeccionar outputs generados.
+- [ ] Coverage se reporta sin bloquear por umbral global inicial.
+
+---
+
+#### Tarea 11.9: Refactor guiado por tests
+**Prioridad:** Media | **Estimación:** 4 Story Points | **Etiquetas:** Refactor, Deuda Técnica
+
+**Alcance:**
+- Eliminar o refactorizar solo deuda descubierta por tests.
+- No tocar JWT ni autenticación pública.
+- No cambiar diseño SPA salvo ajustes mínimos de testabilidad.
+- Revisar duplicaciones o código sin efecto remanente en apps activas.
+
+**Criterios de aceptación:**
+- [ ] Código muerto eliminado o planificado con justificación.
+- [ ] Refactors quedan cubiertos por tests antes/después.
+- [ ] No se rompe arquitectura single database con `empresa_id`.
 
 ---
 
@@ -5176,3 +4874,4 @@ Importar estas tareas a Jira y comenzar con la **ÉPICA 1: Configuración Inicia
 
 *Documento generado para Mallor - Sistema de Gestión Empresarial con IA*
 *Fecha: 2026-04-20*
+

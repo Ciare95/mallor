@@ -178,7 +178,6 @@ mallor/
 │   └── package.json
 ├── docs/                      # Documentación extendida
 │   └── ARCHITECTURE.md
-├── example_code/              # Código de referencia
 ├── venv/                      # Entorno virtual Python (no versionado)
 ├── manage.py
 ├── requirements.txt

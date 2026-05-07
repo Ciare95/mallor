@@ -1,0 +1,32 @@
+[run]
+source =
+    IA
+    cliente
+    config
+    core
+    empresa
+    fabricante
+    informes
+    inventario
+    proveedor
+    usuario
+    ventas
+omit =
+    .codex-pydeps/*
+    .codex-venv/*
+    */migrations/*
+    */tests.py
+    */tests/*
+    manage.py
+    config/asgi.py
+    config/wsgi.py
+    config/settings*.py
+    frontend/*
+
+[report]
+skip_empty = True
+show_missing = True
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError

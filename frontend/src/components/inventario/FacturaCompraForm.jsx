@@ -469,7 +469,7 @@ const ProductLookupField = ({
     if (selectedName && selectedName !== query) {
       setQuery(selectedName);
     }
-  }, [selectedName]);
+  }, [selectedName, query]);
 
   const productosQuery = useQuery({
     queryKey: ['inventario', 'productos', 'factura-busqueda', deferredQuery],

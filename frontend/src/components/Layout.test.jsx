@@ -1,0 +1,155 @@
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import Layout from './Layout';
+import { listarEmpresas, seleccionarEmpresa } from '../services/empresas.service';
+import { obtenerUsuarioActual } from '../services/usuarios.service';
+import { useAppStore } from '../store/useStore';
+import { renderWithProviders } from '../tests/test-utils';
+
+vi.mock('../services/empresas.service', () => ({
+  listarEmpresas: vi.fn(),
+  seleccionarEmpresa: vi.fn(),
+}));
+
+vi.mock('../services/usuarios.service', () => ({
+  obtenerUsuarioActual: vi.fn(),
+}));
+
+const resetStore = () => {
+  useAppStore.setState({
+    user: null,
+    token: null,
+    sidebarOpen: true,
+    loading: false,
+    empresaActiva: null,
+    empresaActivaId: null,
+    iaSesionActivaId: null,
+    usuarioActivo: null,
+  });
+};
+
+describe('Layout', () => {
+  beforeEach(() => {
+    resetStore();
+    obtenerUsuarioActual.mockResolvedValue({
+      username: 'empleado',
+      is_staff: false,
+      is_superuser: false,
+    });
+    listarEmpresas.mockResolvedValue({
+      empresa_activa: 1,
+      results: [
+        {
+          id: 1,
+          razon_social: 'Empresa A',
+          nombre_comercial: 'Empresa A',
+          rol_usuario: 'EMPLEADO',
+        },
+      ],
+    });
+    seleccionarEmpresa.mockResolvedValue({
+      id: 1,
+      razon_social: 'Empresa A',
+      rol_usuario: 'EMPLEADO',
+    });
+  });
+
+  it('oculta Facturacion y Usuarios para EMPLEADO', async () => {
+    renderWithProviders(<Layout />);
+
+    expect(await screen.findAllByRole('link', { name: /ventas/i }))
+      .not.toHaveLength(0);
+    expect(screen.getAllByRole('link', { name: /^ia$/i })).not.toHaveLength(0);
+
+    await waitFor(() => {
+      expect(screen.queryAllByRole('link', { name: /facturacion/i }))
+        .toHaveLength(0);
+      expect(screen.queryAllByRole('link', { name: /usuarios/i }))
+        .toHaveLength(0);
+    });
+  });
+
+  it('muestra administracion de empresa para rol ADMIN', async () => {
+    listarEmpresas.mockResolvedValueOnce({
+      empresa_activa: 1,
+      results: [
+        {
+          id: 1,
+          razon_social: 'Empresa A',
+          nombre_comercial: 'Empresa A',
+          rol_usuario: 'ADMIN',
+        },
+      ],
+    });
+
+    renderWithProviders(<Layout />);
+
+    expect(await screen.findAllByRole('link', { name: /facturacion/i }))
+      .not.toHaveLength(0);
+    expect(screen.getAllByRole('link', { name: /usuarios/i }))
+      .not.toHaveLength(0);
+  });
+
+  it('permite cambiar la empresa activa desde el selector', async () => {
+    const user = userEvent.setup();
+
+    listarEmpresas.mockResolvedValueOnce({
+      empresa_activa: 1,
+      results: [
+        {
+          id: 1,
+          razon_social: 'Empresa A',
+          nombre_comercial: 'Empresa A',
+          rol_usuario: 'ADMIN',
+        },
+        {
+          id: 2,
+          razon_social: 'Empresa B',
+          nombre_comercial: 'Empresa B',
+          rol_usuario: 'ADMIN',
+        },
+      ],
+    });
+    seleccionarEmpresa.mockResolvedValueOnce({
+      id: 2,
+      razon_social: 'Empresa B',
+      rol_usuario: 'ADMIN',
+    });
+
+    renderWithProviders(<Layout />);
+
+    await screen.findByRole('option', { name: /empresa b/i });
+    const selector = await screen.findByRole('combobox');
+    await user.selectOptions(selector, '2');
+
+    await waitFor(() => {
+      expect(seleccionarEmpresa).toHaveBeenCalledWith(
+        '2',
+        expect.any(Object),
+      );
+    });
+  });
+
+  it('guarda y limpia credenciales de acceso dev', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<Layout />);
+
+    await user.type(screen.getByPlaceholderText(/usuario/i), 'admin-demo');
+    await user.type(screen.getByPlaceholderText(/password/i), 'Secret123');
+    await user.click(screen.getByRole('button', { name: /^entrar$/i }));
+
+    await waitFor(() => {
+      expect(localStorage.getItem('token')).toBe('Basic YWRtaW4tZGVtbzpTZWNyZXQxMjM=');
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: /limpiar acceso de desarrollo/i }),
+    );
+
+    expect(localStorage.getItem('token')).toBeNull();
+    expect(localStorage.getItem('dev_auth_username')).toBeNull();
+    expect(useAppStore.getState().token).toBeNull();
+  });
+});

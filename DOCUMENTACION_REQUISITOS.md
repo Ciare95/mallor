@@ -438,7 +438,7 @@ npx skills add https://github.com/nextlevelbuilder/ui-ux-pro-max-skill --skill u
 
 #### Código de Referencia
 
-**Carpeta**: `example_code/`
+**Carpeta**: eliminada del repositorio por no aportar valor operativo ni de testing
 - Contiene código de ejemplo para referencia del agente
 - **Nota**: Solo para guía, no código de producción
 

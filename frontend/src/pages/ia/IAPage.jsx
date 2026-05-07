@@ -138,14 +138,13 @@ export default function IAPage() {
     },
   });
 
-  const historyItems = activeHistoryQuery.data?.results || [];
   const messages = useMemo(
-    () => toMessages(historyItems, pendingMessages),
-    [historyItems, pendingMessages],
+    () => toMessages(activeHistoryQuery.data?.results ?? [], pendingMessages),
+    [activeHistoryQuery.data, pendingMessages],
   );
   const sessions = useMemo(
-    () => buildSessions(allHistoryQuery.data?.results || []),
-    [allHistoryQuery.data?.results],
+    () => buildSessions(allHistoryQuery.data?.results ?? []),
+    [allHistoryQuery.data],
   );
 
   useEffect(() => {
@@ -190,7 +189,7 @@ export default function IAPage() {
     setIaSesionActivaId(newSessionId());
   };
 
-  const suggestions = suggestionsQuery.data?.results || [];
+  const suggestions = suggestionsQuery.data?.results ?? [];
   const role = empresaActiva?.rol_usuario || 'Sin rol';
 
   return (
