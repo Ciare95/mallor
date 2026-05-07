@@ -25,6 +25,7 @@ export const useAppStore = create((set) => ({
   loading: false,
   empresaActivaId: localStorage.getItem('mallor_empresa_activa_id') || null,
   empresaActiva: null,
+  iaSesionActivaId: null,
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setLoading: (loading) => set({ loading }),
@@ -37,8 +38,11 @@ export const useAppStore = create((set) => ({
     set({
       empresaActiva: empresa || null,
       empresaActivaId: empresa?.id ? String(empresa.id) : null,
+      iaSesionActivaId: null,
     });
   },
+  setIaSesionActivaId: (sesionId) => set({ iaSesionActivaId: sesionId || null }),
+  resetIaSession: () => set({ iaSesionActivaId: null }),
 
   // ─── Usuarios (estado de selección para pasar entre vistas) ────────────────
   /**
@@ -59,5 +63,6 @@ export const useAppStore = create((set) => ({
       usuarioActivo: null,
       empresaActiva: null,
       empresaActivaId: null,
+      iaSesionActivaId: null,
     }),
 }));

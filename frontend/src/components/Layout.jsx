@@ -14,6 +14,7 @@ import {
   PackageSearch,
   PieChart,
   ReceiptText,
+  Sparkles,
   Settings,
   Users,
 } from 'lucide-react';
@@ -54,7 +55,7 @@ export default function Layout() {
     queryFn: listarEmpresas,
   });
 
-  const empresas = empresasQuery.data?.results || [];
+  const empresas = empresasQuery.data?.results ?? [];
 
   useEffect(() => {
     if (usuarioQuery.data) {
@@ -64,17 +65,20 @@ export default function Layout() {
   }, [usuarioQuery.data, setUser]);
 
   useEffect(() => {
-    if (!empresas.length) {
+    const empresasDisponibles = empresasQuery.data?.results ?? [];
+
+    if (!empresasDisponibles.length) {
       return;
     }
-    const seleccionada = empresas.find(
+
+    const seleccionada = empresasDisponibles.find(
       (empresa) => String(empresa.id) === String(empresaActivaId),
     );
-    const activaBackend = empresas.find(
+    const activaBackend = empresasDisponibles.find(
       (empresa) => empresa.id === empresasQuery.data?.empresa_activa,
     );
-    setEmpresaActiva(seleccionada || activaBackend || empresas[0]);
-  }, [empresas, empresaActivaId, empresasQuery.data?.empresa_activa, setEmpresaActiva]);
+    setEmpresaActiva(seleccionada || activaBackend || empresasDisponibles[0]);
+  }, [empresasQuery.data, empresaActivaId, setEmpresaActiva]);
 
   const seleccionarEmpresaMutation = useMutation({
     mutationFn: seleccionarEmpresa,
@@ -134,6 +138,7 @@ export default function Layout() {
     { path: '/fabricante', label: 'Fabricante', icon: FlaskConical, end: false },
     { path: '/inventario', label: 'Inventario', icon: PackageSearch, end: false },
     { path: '/informes', label: 'Informes', icon: PieChart, end: false },
+    { path: '/ia', label: 'IA', icon: Sparkles, end: false },
     {
       path: '/usuarios',
       label: 'Usuarios',

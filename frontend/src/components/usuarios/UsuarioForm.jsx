@@ -40,7 +40,6 @@ const UsuarioForm = ({ usuario, onSubmit, onCancel, isLoading, error }) => {
   // Inicializar con datos de usuario si está en modo edición
   useEffect(() => {
     if (usuario) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setFormData({
         username: usuario.username || '',
         email: usuario.email || '',

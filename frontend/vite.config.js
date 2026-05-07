@@ -4,6 +4,36 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: './src/tests/setup.js',
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html'],
+      include: [
+        'src/components/Layout.jsx',
+        'src/components/ia/*.jsx',
+        'src/pages/ia/IAPage.jsx',
+        'src/services/api.js',
+        'src/services/empresas.service.js',
+        'src/services/ia.service.js',
+        'src/services/usuarios.service.js',
+        'src/store/useStore.js',
+      ],
+      exclude: [
+        'src/main.jsx',
+        'src/tests/**',
+        '**/*.test.{js,jsx}',
+      ],
+      thresholds: {
+        lines: 75,
+        functions: 75,
+        branches: 65,
+        statements: 75,
+      },
+    },
+  },
   build: {
     rollupOptions: {
       output: {

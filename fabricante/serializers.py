@@ -16,6 +16,12 @@ from fabricante.models import (
 )
 
 
+def _should_scope_write_fields(serializer):
+    request = serializer.context.get('request')
+    method = getattr(request, 'method', '').upper()
+    return hasattr(serializer, 'initial_data') or method in {'POST', 'PUT', 'PATCH'}
+
+
 class IngredienteSerializer(serializers.ModelSerializer):
     proveedor_nombre = serializers.CharField(
         source='proveedor.nombre_completo',
@@ -52,6 +58,8 @@ class IngredienteSerializer(serializers.ModelSerializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not _should_scope_write_fields(self):
+            return
         empresa = get_empresa_actual_or_default()
         self.fields['proveedor_id'].queryset = Proveedor.objects.filter(
             empresa=empresa,
@@ -139,6 +147,8 @@ class InventarioIngredientesSerializer(serializers.ModelSerializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not _should_scope_write_fields(self):
+            return
         empresa = get_empresa_actual_or_default()
         self.fields['ingrediente_id'].queryset = Ingrediente.objects.filter(
             empresa=empresa,
@@ -196,6 +206,8 @@ class IngredientesProductoSerializer(serializers.ModelSerializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not _should_scope_write_fields(self):
+            return
         empresa = get_empresa_actual_or_default()
         self.fields['ingrediente_id'].queryset = Ingrediente.objects.filter(
             empresa=empresa,
@@ -267,6 +279,8 @@ class PresentacionProductoFabricadoSerializer(serializers.ModelSerializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not _should_scope_write_fields(self):
+            return
         empresa = get_empresa_actual_or_default()
         self.fields['producto_inventario_id'].queryset = Producto.objects.filter(
             empresa=empresa,
@@ -339,6 +353,8 @@ class MovimientoEmpaquePresentacionSerializer(serializers.ModelSerializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not _should_scope_write_fields(self):
+            return
         self.fields['presentacion_id'].queryset = (
             PresentacionProductoFabricado.objects.filter(
                 empresa=get_empresa_actual_or_default(),
@@ -419,6 +435,8 @@ class ProductoFabricadoSerializer(serializers.ModelSerializer):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if not _should_scope_write_fields(self):
+            return
         empresa = get_empresa_actual_or_default()
         self.fields['producto_final_id'].queryset = Producto.objects.filter(
             empresa=empresa,

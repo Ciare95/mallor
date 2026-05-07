@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -38,6 +39,7 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-txm643xxb+-75c0_vvpb4e87t8
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _get_bool_env('DEBUG', True)
+TESTING = 'test' in sys.argv
 
 ALLOWED_HOSTS = []
 
@@ -178,6 +180,15 @@ FACTUS_CONFIG = {
 }
 MALLOR_DATA_ENCRYPTION_KEY = os.getenv('MALLOR_DATA_ENCRYPTION_KEY', '')
 
+DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
+DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1')
+DEEPSEEK_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')
+DEEPSEEK_TIMEOUT = int(os.getenv('DEEPSEEK_TIMEOUT', '30'))
+DEEPSEEK_TEMPERATURE = float(os.getenv('DEEPSEEK_TEMPERATURE', '0.1'))
+IA_MAX_HISTORY_MESSAGES = int(os.getenv('IA_MAX_HISTORY_MESSAGES', '12'))
+IA_MAX_TOOL_RESULTS = int(os.getenv('IA_MAX_TOOL_RESULTS', '20'))
+IA_HISTORY_RESULT_MAX_CHARS = int(os.getenv('IA_HISTORY_RESULT_MAX_CHARS', '4000'))
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -197,6 +208,11 @@ LOGGING = {
         'mallor.factus': {
             'handlers': ['console'],
             'level': os.getenv('FACTUS_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'mallor.ia': {
+            'handlers': ['console'],
+            'level': os.getenv('IA_LOG_LEVEL', 'INFO'),
             'propagate': False,
         },
     },
