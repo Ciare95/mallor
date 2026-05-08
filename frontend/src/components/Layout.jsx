@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Activity,
@@ -9,7 +9,6 @@ import {
   FileText,
   FlaskConical,
   Home,
-  LockKeyhole,
   LogOut,
   PackageSearch,
   PieChart,
@@ -19,11 +18,11 @@ import {
   Users,
 } from 'lucide-react';
 import { useAppStore } from '../store/useStore';
+import { useAuth } from '../hooks/useAuth';
 import {
   listarEmpresas,
   seleccionarEmpresa,
 } from '../services/empresas.service';
-import { obtenerUsuarioActual } from '../services/usuarios.service';
 
 export default function Layout() {
   const location = useLocation();
@@ -33,22 +32,11 @@ export default function Layout() {
   const empresaActiva = useAppStore((state) => state.empresaActiva);
   const setEmpresaActiva = useAppStore((state) => state.setEmpresaActiva);
   const user = useAppStore((state) => state.user);
-  const setUser = useAppStore((state) => state.setUser);
-  const setToken = useAppStore((state) => state.setToken);
+  const { logout } = useAuth();
   const queryClient = useQueryClient();
-  const [devAuth, setDevAuth] = useState({
-    username: localStorage.getItem('dev_auth_username') || '',
-    password: '',
-  });
   const rolEmpresa = empresaActiva?.rol_usuario;
   const puedeAdministrarEmpresa = ['PROPIETARIO', 'ADMIN'].includes(rolEmpresa);
   const esAdminInterno = Boolean(user?.is_superuser || user?.is_staff);
-
-  const usuarioQuery = useQuery({
-    queryKey: ['usuario', 'me'],
-    queryFn: obtenerUsuarioActual,
-    retry: false,
-  });
 
   const empresasQuery = useQuery({
     queryKey: ['empresas'],
@@ -56,13 +44,6 @@ export default function Layout() {
   });
 
   const empresas = empresasQuery.data?.results ?? [];
-
-  useEffect(() => {
-    if (usuarioQuery.data) {
-      setUser(usuarioQuery.data);
-      localStorage.setItem('user', JSON.stringify(usuarioQuery.data));
-    }
-  }, [usuarioQuery.data, setUser]);
 
   useEffect(() => {
     const empresasDisponibles = empresasQuery.data?.results ?? [];
@@ -87,35 +68,6 @@ export default function Layout() {
       queryClient.invalidateQueries();
     },
   });
-
-  const applyDevCredentials = (event) => {
-    event.preventDefault();
-    const username = devAuth.username.trim();
-    const password = devAuth.password;
-    if (!username || !password) {
-      return;
-    }
-
-    const basicToken = `Basic ${btoa(`${username}:${password}`)}`;
-    localStorage.setItem('token', basicToken);
-    localStorage.setItem('dev_auth_username', username);
-    setToken(basicToken);
-    setUser(null);
-    queryClient.clear();
-    usuarioQuery.refetch();
-    empresasQuery.refetch();
-    setDevAuth((current) => ({ ...current, password: '' }));
-  };
-
-  const clearDevCredentials = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('dev_auth_username');
-    setToken(null);
-    setUser(null);
-    queryClient.clear();
-    setDevAuth({ username: '', password: '' });
-  };
 
   const navItems = [
     { path: '/', label: 'Inicio', icon: Home, end: true },
@@ -253,57 +205,6 @@ export default function Layout() {
               </div>
 
               <div className="hidden items-center gap-3 md:flex">
-                <form
-                  onSubmit={applyDevCredentials}
-                  className="flex items-center gap-2 rounded-full border border-app bg-white/70 px-2 py-1.5"
-                >
-                  <div className="flex items-center gap-2 pl-1">
-                    <LockKeyhole className="h-3.5 w-3.5 text-soft" />
-                    <span className="text-[10px] uppercase tracking-[0.22em] text-muted">
-                      Acceso dev
-                    </span>
-                  </div>
-                  <input
-                    value={devAuth.username}
-                    onChange={(event) =>
-                      setDevAuth((current) => ({
-                        ...current,
-                        username: event.target.value,
-                      }))
-                    }
-                    className="w-28 bg-transparent px-2 text-[12px] font-medium text-main outline-none"
-                    placeholder="usuario"
-                    autoComplete="username"
-                  />
-                  <input
-                    type="password"
-                    value={devAuth.password}
-                    onChange={(event) =>
-                      setDevAuth((current) => ({
-                        ...current,
-                        password: event.target.value,
-                      }))
-                    }
-                    className="w-28 bg-transparent px-2 text-[12px] font-medium text-main outline-none"
-                    placeholder="password"
-                    autoComplete="current-password"
-                  />
-                  <button
-                    type="submit"
-                    className="app-button-secondary min-h-9 px-3 text-[12px]"
-                  >
-                    Entrar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={clearDevCredentials}
-                    className="flex h-9 w-9 items-center justify-center rounded-full border border-app bg-white/70 text-soft transition hover:bg-white"
-                    title="Salir"
-                    aria-label="Limpiar acceso de desarrollo"
-                  >
-                    <LogOut className="h-4 w-4" />
-                  </button>
-                </form>
                 <label className="flex items-center gap-2 rounded-full border border-app bg-white/70 px-3 py-1.5">
                   <span className="text-[10px] uppercase tracking-[0.22em] text-muted">
                     Empresa
@@ -327,8 +228,17 @@ export default function Layout() {
                   {rolEmpresa || 'Sin rol'}
                 </div>
                 <div className="app-pill">
-                  {user?.username || localStorage.getItem('dev_auth_username') || 'Sin acceso'}
+                  {user?.username || 'Sin acceso'}
                 </div>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-app bg-white/70 text-soft transition hover:bg-white"
+                  title="Salir"
+                  aria-label="Cerrar sesion"
+                >
+                  <LogOut className="h-4 w-4" />
+                </button>
                 <div className="app-pill">React + DRF</div>
               </div>
             </div>

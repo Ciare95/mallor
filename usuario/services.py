@@ -142,7 +142,12 @@ class UsuarioService:
             raise UsuarioNoEncontradoError(user_id)
     
     @staticmethod
-    def listar_usuarios(filtros: Optional[Dict[str, Any]] = None) -> List[Usuario]:
+    def listar_usuarios(
+        filtros: Optional[Dict[str, Any]] = None,
+        *,
+        empresa=None,
+        usuario_solicitante: Optional[Usuario] = None,
+    ) -> List[Usuario]:
         """
         Lista usuarios aplicando filtros opcionales.
         
@@ -153,6 +158,17 @@ class UsuarioService:
             List[Usuario]: Lista de usuarios que cumplen los filtros
         """
         queryset = Usuario.objects.filter(is_active=True)
+        if (
+            empresa is not None
+            and usuario_solicitante is not None
+        ):
+            from empresa.services import EmpresaService
+
+            if not EmpresaService.es_admin_interno(usuario_solicitante):
+                queryset = queryset.filter(
+                    empresas_usuario__empresa=empresa,
+                    empresas_usuario__activo=True,
+                ).distinct()
         
         if not filtros:
             return list(queryset.order_by('-date_joined'))

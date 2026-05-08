@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Layout from './Layout';
 import { listarEmpresas, seleccionarEmpresa } from '../services/empresas.service';
-import { obtenerUsuarioActual } from '../services/usuarios.service';
+import { logout } from '../services/auth.service';
 import { useAppStore } from '../store/useStore';
 import { renderWithProviders } from '../tests/test-utils';
 
@@ -12,14 +12,15 @@ vi.mock('../services/empresas.service', () => ({
   seleccionarEmpresa: vi.fn(),
 }));
 
-vi.mock('../services/usuarios.service', () => ({
-  obtenerUsuarioActual: vi.fn(),
+vi.mock('../services/auth.service', () => ({
+  logout: vi.fn(),
 }));
 
 const resetStore = () => {
   useAppStore.setState({
     user: null,
-    token: null,
+    token: 'access-token',
+    authReady: true,
     sidebarOpen: true,
     loading: false,
     empresaActiva: null,
@@ -32,7 +33,7 @@ const resetStore = () => {
 describe('Layout', () => {
   beforeEach(() => {
     resetStore();
-    obtenerUsuarioActual.mockResolvedValue({
+    useAppStore.getState().setUser({
       username: 'empleado',
       is_staff: false,
       is_superuser: false,
@@ -131,25 +132,17 @@ describe('Layout', () => {
     });
   });
 
-  it('guarda y limpia credenciales de acceso dev', async () => {
+  it('cierra sesion limpiando estado local sensible', async () => {
     const user = userEvent.setup();
+    logout.mockResolvedValueOnce();
 
     renderWithProviders(<Layout />);
 
-    await user.type(screen.getByPlaceholderText(/usuario/i), 'admin-demo');
-    await user.type(screen.getByPlaceholderText(/password/i), 'Secret123');
-    await user.click(screen.getByRole('button', { name: /^entrar$/i }));
+    await user.click(screen.getByRole('button', { name: /cerrar sesion/i }));
 
     await waitFor(() => {
-      expect(localStorage.getItem('token')).toBe('Basic YWRtaW4tZGVtbzpTZWNyZXQxMjM=');
+      expect(logout).toHaveBeenCalled();
+      expect(useAppStore.getState().token).toBeNull();
     });
-
-    await user.click(
-      screen.getByRole('button', { name: /limpiar acceso de desarrollo/i }),
-    );
-
-    expect(localStorage.getItem('token')).toBeNull();
-    expect(localStorage.getItem('dev_auth_username')).toBeNull();
-    expect(useAppStore.getState().token).toBeNull();
   });
 });

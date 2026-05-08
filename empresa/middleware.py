@@ -1,11 +1,13 @@
 import base64
 
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
 
 from empresa.context import reset_empresa_actual, set_empresa_actual
 from empresa.services import EmpresaService
+from usuario.authentication import authenticate_bearer_request
 
 
 class EmpresaActivaMiddleware:
@@ -19,6 +21,9 @@ class EmpresaActivaMiddleware:
 
     @staticmethod
     def _autenticar_basic_si_aplica(request) -> None:
+        if not settings.ENABLE_BASIC_AUTH:
+            return
+
         if getattr(request.user, 'is_authenticated', False):
             return
 
@@ -43,9 +48,23 @@ class EmpresaActivaMiddleware:
         if usuario is not None:
             request.user = usuario
 
+    @staticmethod
+    def _autenticar_bearer_si_aplica(request) -> None:
+        if getattr(request.user, 'is_authenticated', False):
+            return
+
+        auth_result = authenticate_bearer_request(request)
+        if auth_result is None:
+            return
+
+        usuario, token = auth_result
+        request.user = usuario
+        request.auth = token
+
     def __call__(self, request):
         token = None
         try:
+            self._autenticar_bearer_si_aplica(request)
             self._autenticar_basic_si_aplica(request)
             empresa = EmpresaService.resolver_empresa_request(request)
             request.empresa = empresa

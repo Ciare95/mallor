@@ -164,6 +164,13 @@ class EmpresaService:
         if rol == EmpresaUsuario.Rol.EMPLEADO:
             return accion in EmpresaService.EMPLEADO_ALLOWED_ACTIONS
 
+        if accion in (
+            'ver_usuario',
+            'actualizar_usuario',
+            'cambiar_password',
+        ):
+            return True
+
         return False
 
     @staticmethod

@@ -10,9 +10,10 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
-from pathlib import Path
 import os
 import sys
+from datetime import timedelta
+from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -56,6 +57,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'cliente',
     'fabricante',
@@ -157,16 +159,52 @@ STATIC_URL = 'static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR
 
+ENABLE_BASIC_AUTH = _get_bool_env(
+    'MALLOR_ENABLE_BASIC_AUTH',
+    DEBUG or TESTING,
+)
+
+_authentication_classes = [
+    'usuario.authentication.MallorJWTAuthentication',
+    'rest_framework.authentication.SessionAuthentication',
+]
+if ENABLE_BASIC_AUTH:
+    _authentication_classes.append(
+        'rest_framework.authentication.BasicAuthentication',
+    )
+
 # Django REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
     ],
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.BasicAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
-    ],
+    'DEFAULT_AUTHENTICATION_CLASSES': _authentication_classes,
 }
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
+    'REFRESH_TOKEN_LIFETIME': timedelta(hours=12),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': True,
+    'ALGORITHM': 'HS256',
+    'SIGNING_KEY': SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+JWT_REMEMBER_REFRESH_LIFETIME = timedelta(days=14)
+JWT_REFRESH_COOKIE_NAME = os.getenv(
+    'JWT_REFRESH_COOKIE_NAME',
+    'mallor_refresh',
+)
+JWT_REFRESH_COOKIE_SECURE = _get_bool_env(
+    'JWT_REFRESH_COOKIE_SECURE',
+    not DEBUG,
+)
+JWT_REFRESH_COOKIE_SAMESITE = os.getenv(
+    'JWT_REFRESH_COOKIE_SAMESITE',
+    'Lax',
+)
 
 FACTUS_CONFIG = {
     'BASE_URL': os.getenv('FACTUS_BASE_URL', 'https://api-sandbox.factus.com.co'),

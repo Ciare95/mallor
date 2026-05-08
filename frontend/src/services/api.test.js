@@ -1,13 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 let requestInterceptor;
-const axiosInstance = {
-  interceptors: {
-    request: {
-      use: vi.fn((interceptor) => {
-        requestInterceptor = interceptor;
-      }),
-    },
+let responseErrorInterceptor;
+let useAppStore;
+const post = vi.fn();
+const axiosInstance = vi.fn();
+axiosInstance.post = post;
+axiosInstance.interceptors = {
+  request: {
+    use: vi.fn((interceptor) => {
+      requestInterceptor = interceptor;
+    }),
+  },
+  response: {
+    use: vi.fn((success, error) => {
+      responseErrorInterceptor = error;
+    }),
   },
 };
 
@@ -20,9 +28,20 @@ vi.mock('axios', () => ({
 describe('api service', () => {
   beforeEach(async () => {
     requestInterceptor = undefined;
+    responseErrorInterceptor = undefined;
     vi.resetModules();
     localStorage.clear();
+    sessionStorage.clear();
+    post.mockReset();
+    axiosInstance.mockResolvedValue({ data: { ok: true } });
     await import('./api');
+    useAppStore = (await import('../store/useStore')).useAppStore;
+    useAppStore.setState({
+      token: null,
+      user: null,
+      empresaActivaId: null,
+      empresaActiva: null,
+    });
   });
 
   it('configura axios para DRF con cookies CSRF', async () => {
@@ -38,21 +57,34 @@ describe('api service', () => {
     );
   });
 
-  it('inyecta Authorization Basic y X-Empresa-Id desde localStorage', () => {
-    localStorage.setItem('token', 'Basic admin:secret');
+  it('inyecta Authorization Bearer y X-Empresa-Id', () => {
+    useAppStore.getState().setToken('access-token');
     localStorage.setItem('mallor_empresa_activa_id', '7');
 
     const config = requestInterceptor({ headers: {} });
 
-    expect(config.headers.Authorization).toBe('Basic admin:secret');
+    expect(config.headers.Authorization).toBe('Bearer access-token');
     expect(config.headers['X-Empresa-Id']).toBe('7');
   });
 
-  it('normaliza tokens dev sin prefijo a Basic', () => {
-    localStorage.setItem('token', 'admin:secret');
+  it('refresca access token y reintenta una vez ante 401', async () => {
+    post.mockResolvedValueOnce({
+      data: {
+        access: 'new-token',
+        user: { username: 'admin' },
+        empresa_activa: 1,
+        empresas: [{ id: 1, razon_social: 'Empresa A' }],
+      },
+    });
 
-    const config = requestInterceptor({ headers: {} });
+    await expect(
+      responseErrorInterceptor({
+        response: { status: 401 },
+        config: { url: '/ventas/', headers: {} },
+      }),
+    ).resolves.toEqual(expect.anything());
 
-    expect(config.headers.Authorization).toBe('Basic admin:secret');
+    expect(post).toHaveBeenCalledWith('/auth/refresh/');
+    expect(useAppStore.getState().token).toBe('new-token');
   });
 });
