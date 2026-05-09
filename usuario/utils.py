@@ -8,7 +8,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import Usuario
+from empresa.models import EmpresaUsuario
+from empresa.services import EmpresaService
 from .services import UsuarioService
 from core.exceptions import PermisoDenegadoError
 
@@ -61,6 +62,10 @@ def role_required(roles: Union[str, List[str]]):
     """
     if isinstance(roles, str):
         roles = [roles]
+    effective_roles = [
+        EmpresaUsuario.Rol.PROPIETARIO if role == 'ADMIN' else role
+        for role in roles
+    ]
     
     def decorator(view_func: Callable):
         @wraps(view_func)
@@ -72,18 +77,16 @@ def role_required(roles: Union[str, List[str]]):
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             
-            # Verificar que el usuario tenga al menos uno de los roles requeridos
-            usuario = request.user
-            if not hasattr(usuario, 'role'):
-                return JsonResponse(
-                    {'error': _('Usuario no tiene rol definido')},
-                    status=status.HTTP_403_FORBIDDEN
-                )
-            
-            if usuario.role not in roles:
+            empresa = getattr(request, 'empresa', None)
+            rol = EmpresaService.rol_usuario(request.user, empresa)
+            if (
+                not EmpresaService.es_admin_interno(request.user)
+                and rol not in effective_roles
+                and rol not in roles
+            ):
                 error_msg = _(
-                    'Se requiere rol %(roles)s. Tu rol es %(user_role)s.'
-                ) % {'roles': ', '.join(roles), 'user_role': usuario.role}
+                    'Se requiere rol efectivo %(roles)s en la empresa activa.'
+                ) % {'roles': ', '.join(roles)}
                 return JsonResponse(
                     {'error': error_msg},
                     status=status.HTTP_403_FORBIDDEN
@@ -173,14 +176,20 @@ class RolePermissionMixin:
         if not request.user or not request.user.is_authenticated:
             raise PermisoDenegadoError(_("acceder a esta vista"))
         
-        usuario = request.user
-        if not hasattr(usuario, 'role'):
-            raise PermisoDenegadoError(_("acceder a esta vista"))
-        
-        if usuario.role not in self.required_roles:
+        empresa = getattr(request, 'empresa', None)
+        rol = EmpresaService.rol_usuario(request.user, empresa)
+        effective_roles = [
+            EmpresaUsuario.Rol.PROPIETARIO if role == 'ADMIN' else role
+            for role in self.required_roles
+        ]
+        if (
+            not EmpresaService.es_admin_interno(request.user)
+            and rol not in self.required_roles
+            and rol not in effective_roles
+        ):
             error_msg = _(
-                'Se requiere rol %(roles)s. Tu rol es %(user_role)s.'
-            ) % {'roles': ', '.join(self.required_roles), 'user_role': usuario.role}
+                'Se requiere rol efectivo %(roles)s en la empresa activa.'
+            ) % {'roles': ', '.join(self.required_roles)}
             raise PermisoDenegadoError(error_msg)
     
     def _validate_business_permission(self, request: HttpRequest) -> None:
@@ -193,8 +202,12 @@ class RolePermissionMixin:
         Raises:
             PermisoDenegadoError: Si el usuario no tiene permisos para la acción
         """
-        usuario = request.user
-        if not UsuarioService.validar_permisos(usuario, self.permission_action):
+        empresa = getattr(request, 'empresa', None)
+        if not EmpresaService.validar_permiso_operacion(
+            request.user,
+            empresa,
+            self.permission_action,
+        ):
             raise PermisoDenegadoError(self.permission_action)
     
     def handle_permission_denied(self, request: HttpRequest, exception: Exception) -> HttpResponse:
@@ -255,8 +268,12 @@ def permission_required(action: str):
                     status=status.HTTP_401_UNAUTHORIZED
                 )
             
-            # Validar permisos usando UsuarioService
-            if not UsuarioService.validar_permisos(request.user, action):
+            empresa = getattr(request, 'empresa', None)
+            if not EmpresaService.validar_permiso_operacion(
+                request.user,
+                empresa,
+                action,
+            ):
                 raise PermisoDenegadoError(action)
             
             # Ejecutar vista si pasa validación

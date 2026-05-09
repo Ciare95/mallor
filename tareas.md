@@ -3683,419 +3683,207 @@ Ajustes obligatorios:
 
 ---
 
-## ÉPICA 12: Autenticación JWT
+## ÉPICA 12: Autenticación JWT SaaS Multitenant
 
 ### 📋 Descripción de la Épica
-Implementar sistema de autenticación seguro con JWT, incluyendo login, logout, refresh tokens y protección de endpoints. Se implementa después de testing para facilitar desarrollo inicial.
+Implementar autenticación JWT para la SPA de Mallor sin romper la arquitectura
+SaaS multitenant ya cerrada en las Épicas 9, 9.5, 10 y 11. JWT autentica al
+usuario; la empresa activa y la autorización operativa se resuelven siempre por
+`EmpresaActivaMiddleware`, `empresa_id` y la membresía activa en
+`EmpresaUsuario`.
+
+### Diagnóstico de la versión anterior
+- Ya no aplica autorizar módulos por `Usuario.role` global. Ese campo queda como
+  compatibilidad histórica; el rol efectivo operativo es `EmpresaUsuario.rol`.
+- Ya no aplica un JWT que incluya o confíe en un `empresa_id` permanente. El
+  token identifica al usuario y cada request valida la empresa activa por
+  `X-Empresa-Id` o sesión.
+- La versión anterior omitía compatibilidad con `EmpresaActivaMiddleware`: DRF
+  autentica después del middleware, por lo que Bearer debe resolverse antes de
+  calcular `request.empresa`.
+- Estaba incompleto el logout real, la rotación/revocación de refresh tokens,
+  la defensa básica ante fuerza bruta, el cambio de empresa sin mezclar cache y
+  los tests multitenant de acceso cruzado.
+- Estaba incompleto el impacto sobre IA y Factus: ambos deben seguir recibiendo
+  empresa activa y rol efectivo, nunca datos ni secretos de otro tenant.
 
 ### 🎯 Objetivos
-- Sistema de autenticación con JWT
-- Login y logout
-- Refresh tokens
-- Middleware de autenticación
-- Protección de endpoints
-- Manejo de expiración de tokens
+- Login por usuario con JWT Bearer.
+- Access token corto y refresh token rotado/revocable.
+- Opción "recordarme" para ampliar la vida del refresh token sin ampliar el
+  access token.
+- Empresa activa resuelta por header/sesión y validada contra membresía activa.
+- Autorización por `EmpresaUsuario` y rol efectivo por empresa.
+- Logout que revoca refresh token y limpia estado sensible local.
+- SPA con rutas protegidas, refresh automático y manejo de expiración.
+- Tests backend/frontend para auth, multitenant y permisos.
 
 ---
 
-#### Tarea 12.1: Instalación y Configuración de JWT
-**Prioridad:** Alta | **Estimación:** 2 Story Points | **Etiquetas:** Backend, Security
+#### Tarea 12.1: Diseño y configuración JWT multitenant
+**Prioridad:** Alta | **Estimación:** 3 Story Points | **Etiquetas:** Backend, Security, Multitenant
 
-**Descripción:**
-Instalar y configurar djangorestframework-simplejwt.
-
-**Dependencias técnicas:**
-```bash
-pip install djangorestframework-simplejwt==5.3.1
-```
-
-**Configuración en settings.py:**
-```python
-INSTALLED_APPS = [
-    ...
-    'rest_framework_simplejwt',
-]
-
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
-    ),
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
-    ],
-}
-
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'ROTATE_REFRESH_TOKENS': True,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': SECRET_KEY,
-    'AUTH_HEADER_TYPES': ('Bearer',),
-}
-```
+**Decisiones técnicas:**
+- Access token: 15 minutos.
+- Refresh token en cookie `HttpOnly`; vida estandar: 12 horas.
+- Refresh token con `recordarme`: cookie persistente de 14 dias.
+- Refresh token se rota en cada `/api/auth/refresh/` y el anterior queda
+  revocado mediante blacklist oficial de SimpleJWT.
+- El payload contiene `sub`, `type`, `jti`, `iat`, `exp`; no contiene permisos
+  ni secretos y no confía en `empresa_id` para autorizar.
+- La empresa activa se elige por `X-Empresa-Id`, sesión o primera empresa
+  disponible; cada request revalida membresía activa.
+- Storage SPA: access token solo en memoria/Zustand; refresh token solo en
+  cookie `HttpOnly`. `recordarme` cambia la persistencia de la cookie, no
+  expone el refresh token al JavaScript de la SPA.
 
 **Criterios de aceptación:**
-- [ ] SimpleJWT instalado
-- [ ] Configuración en settings
-- [ ] Variables configuradas
-- [ ] Migraciones aplicadas
+- [x] Estrategia de access/refresh definida.
+- [x] JWT no contiene datos sensibles ni autoriza empresas por sí mismo.
+- [x] Configuración de expiraciones y rate limit básico documentada.
 
 ---
 
-#### Tarea 12.2: Endpoints de Autenticación
-**Prioridad:** Alta | **Estimación:** 3 Story Points | **Etiquetas:** Backend, API
+#### Tarea 12.2: Backend - SimpleJWT, servicios y autenticación DRF
+**Prioridad:** Alta | **Estimación:** 5 Story Points | **Etiquetas:** Backend, Security
 
-**Descripción:**
-Crear endpoints para login, refresh y logout.
+**Alcance:**
+- `djangorestframework-simplejwt` con `token_blacklist`; no se crea un modelo
+  JWT propio.
+- Servicio de autenticación para emitir, validar, refrescar y revocar tokens.
+- Authentication class DRF para `Authorization: Bearer <access>`.
+- Reutilización del mismo validador Bearer en `EmpresaActivaMiddleware` para
+  que `request.user` exista antes de resolver empresa activa.
+- Compatibilidad temporal con BasicAuth en desarrollo/tests existentes.
+- Rate limit básico para login fallido por usuario/IP usando cache.
+
+**Criterios de aceptación:**
+- [ ] Login rechaza credenciales inválidas o usuario inactivo.
+- [ ] Access expirado no autentica.
+- [ ] Refresh revocado/rotado no permite nuevo access.
+- [ ] `EmpresaActivaMiddleware` resuelve empresa activa con JWT Bearer.
+
+---
+
+#### Tarea 12.3: Backend - endpoints y serializers
+**Prioridad:** Alta | **Estimación:** 4 Story Points | **Etiquetas:** Backend, API
 
 **Endpoints:**
-- `POST /api/auth/login/` - Login con credenciales
-- `POST /api/auth/refresh/` - Refrescar access token
-- `POST /api/auth/logout/` - Logout (blacklist token)
-- `GET /api/auth/me/` - Obtener usuario actual
+- `POST /api/auth/login/`: recibe `username`, `password`, `remember_me` y
+  opcional `empresa_id`.
+- `POST /api/auth/refresh/`: lee refresh desde cookie `HttpOnly`, rota refresh
+  y devuelve nuevo access.
+- `POST /api/auth/logout/`: revoca refresh token y limpia cookie.
+- `GET /api/auth/me/`: devuelve usuario autenticado, empresa activa y empresas
+  disponibles con `rol_usuario`.
 
-**Request - Login:**
+**Respuesta de login:**
 ```json
 {
+  "access": "...",
+  "expires_in": 900,
+  "refresh_expires_in": 1209600,
+  "remember_me": true,
+  "user": {
+    "id": 1,
     "username": "usuario",
-    "password": "contraseña"
+    "email": "usuario@email.com"
+  },
+  "empresa_activa": 1,
+  "empresas": [
+    {
+      "id": 1,
+      "razon_social": "Empresa A",
+      "rol_usuario": "ADMIN"
+    }
+  ]
 }
 ```
 
-**Response - Login:**
-```json
-{
-    "access": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-    "refresh": "eyJ0eXAiOiJKV1QiLCJhbGc...",
-    "user": {
-        "id": 1,
-        "username": "usuario",
-        "email": "usuario@email.com",
-        "role": "ADMIN"
-    }
-}
-```
-
-**Implementación:**
-
-**Archivo:** `usuario/views.py`
-
-```python
-from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework_simplejwt.tokens import RefreshToken
-
-class LoginView(TokenObtainPairView):
-    """Vista personalizada de login"""
-    serializer_class = CustomTokenObtainPairSerializer
-
-class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        try:
-            refresh_token = request.data["refresh"]
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-            return Response(status=status.HTTP_205_RESET_CONTENT)
-        except Exception:
-            return Response(status=status.HTTP_400_BAD_REQUEST)
-```
-
 **Criterios de aceptación:**
-- [ ] Endpoints de auth creados
-- [ ] Login funcionando
-- [ ] Refresh funcionando
-- [ ] Logout funcionando
-- [ ] Tokens generándose correctamente
+- [ ] Serializers no exponen password, refresh hashes ni secretos.
+- [ ] Login con `empresa_id` ajena responde 403.
+- [ ] `me` refleja rol efectivo de la empresa activa.
 
 ---
 
-#### Tarea 12.3: Serializers de Autenticación
-**Prioridad:** Alta | **Estimación:** 2 Story Points | **Etiquetas:** Backend
+#### Tarea 12.4: Backend - permisos efectivos y endpoints sensibles
+**Prioridad:** Alta | **Estimación:** 4 Story Points | **Etiquetas:** Backend, Multitenant, Factus, IA
 
-**Descripción:**
-Crear serializers personalizados para autenticación.
-
-**Serializers:**
-
-1. **CustomTokenObtainPairSerializer** - Login con info adicional
-```python
-class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
-    def validate(self, attrs):
-        data = super().validate(attrs)
-
-        # Agregar info del usuario
-        data['user'] = {
-            'id': self.user.id,
-            'username': self.user.username,
-            'email': self.user.email,
-            'role': self.user.role,
-            'first_name': self.user.first_name,
-            'last_name': self.user.last_name,
-        }
-
-        return data
-```
-
-2. **ChangePasswordSerializer** - Cambiar contraseña
-3. **ResetPasswordSerializer** - Resetear contraseña
+**Alcance:**
+- Mantener `EmpresaService.validar_permiso_operacion()` como fuente de verdad
+  para permisos por empresa.
+- Ajustar utilidades legacy que dependan de `Usuario.role` para consultar rol
+  efectivo cuando exista `request.empresa`.
+- No permitir acceso operativo si no hay empresa activa válida.
+- Factus, IA, ventas, informes e inventario deben seguir filtrando por
+  `empresa_id`.
 
 **Criterios de aceptación:**
-- [ ] Serializers creados
-- [ ] Validaciones implementadas
-- [ ] Info adicional incluida
+- [ ] Usuario autenticado no accede a empresa ajena.
+- [ ] Token válido no habilita acceso si la membresía está inactiva.
+- [ ] `EMPLEADO` sigue restringido por rol efectivo.
+- [ ] Credenciales Factus y datos IA no se exponen entre tenants.
 
 ---
 
-#### Tarea 12.4: Middleware y Permisos
-**Prioridad:** Alta | **Estimación:** 3 Story Points | **Etiquetas:** Backend, Security
+#### Tarea 12.5: Frontend SPA - login, persistencia y expiración
+**Prioridad:** Alta | **Estimación:** 6 Story Points | **Etiquetas:** Frontend, UX, Security
 
-**Descripción:**
-Implementar middleware de autenticación y sistema de permisos.
-
-**Permisos personalizados:**
-
-**Archivo:** `usuario/permissions.py`
-
-```python
-class IsAdmin(BasePermission):
-    """Solo administradores"""
-    def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == 'ADMIN'
-
-class IsAdminOrReadOnly(BasePermission):
-    """Admin puede todo, otros solo lectura"""
-    def has_permission(self, request, view):
-        if request.method in SAFE_METHODS:
-            return request.user.is_authenticated
-        return request.user.is_authenticated and request.user.role == 'ADMIN'
-
-class IsOwnerOrAdmin(BasePermission):
-    """Dueño del recurso o admin"""
-    def has_object_permission(self, request, view, obj):
-        if request.user.role == 'ADMIN':
-            return True
-        return obj.usuario == request.user
-```
-
-**Aplicar permisos en views:**
-```python
-class ProductoViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated, IsAdminOrReadOnly]
-```
+**Alcance:**
+- Página `/login` integrada al diseño actual de consola operativa.
+- Campo usuario, contraseña, validación UX, errores de autenticación y
+  `recordarme`.
+- Guard de rutas protegidas.
+- Interceptor Axios con Bearer access token.
+- Refresh automático ante 401 una sola vez por request.
+- Logout que llama backend, limpia tokens, usuario, empresa activa, cache de
+  TanStack Query, sesión IA y stores sensibles.
+- Cambio de empresa invalida queries para evitar mezclar datos o permisos.
 
 **Criterios de aceptación:**
-- [ ] Permisos personalizados creados
-- [ ] Permisos aplicados en endpoints
-- [ ] Validaciones funcionando
-- [ ] Solo usuarios autenticados acceden
+- [ ] Login funciona y redirige a la ruta solicitada.
+- [ ] `recordarme=false` usa `sessionStorage`.
+- [ ] `recordarme=true` usa `localStorage`.
+- [ ] 401 intenta refresh; si falla, vuelve a `/login`.
+- [ ] Logout borra estado sensible local.
 
 ---
 
-#### Tarea 12.5: Actualizar Endpoints con Autenticación
-**Prioridad:** Alta | **Estimación:** 4 Story Points | **Etiquetas:** Backend
+#### Tarea 12.6: Tests backend multitenant y seguridad
+**Prioridad:** Alta | **Estimación:** 4 Story Points | **Etiquetas:** Testing, Backend
 
-**Descripción:**
-Actualizar todos los endpoints para requerir autenticación.
-
-**Tareas:**
-1. Agregar `permission_classes` a todas las vistas
-2. Aplicar permisos según rol
-3. Validar usuario en servicios
-4. Registrar usuario en operaciones
-
-**Permisos por módulo:**
-
-**Inventario:**
-- Listar/Ver: Autenticado
-- Crear/Editar: Admin
-- Eliminar: Admin
-
-**Ventas:**
-- Listar/Ver: Autenticado
-- Crear: Autenticado
-- Editar: Admin
-- Eliminar: Admin
-- Facturar: Admin
-
-**Clientes/Proveedores:**
-- Todo: Autenticado
-- Eliminar: Admin
-
-**Informes:**
-- Todo: Admin
-
-**Configuración:**
-- Todo: Admin
+**Casos mínimos:**
+- Login exitoso devuelve tokens y empresas del usuario.
+- Login con empresa ajena responde 403.
+- Request Bearer con `X-Empresa-Id` válido resuelve empresa activa.
+- Request Bearer con `X-Empresa-Id` ajeno responde 403.
+- Refresh rota token y revoca el anterior.
+- Logout revoca refresh.
+- Membresía inactiva impide operar aunque el access token sea válido.
+- Rol `EMPLEADO` no ve endpoints reservados a `ADMIN`/`PROPIETARIO`.
 
 **Criterios de aceptación:**
-- [ ] Todos los endpoints protegidos
-- [ ] Permisos aplicados correctamente
-- [ ] Tests actualizados
-- [ ] Usuario registrado en operaciones
+- [ ] Tests backend agregados o ajustados.
+- [ ] Tests detectan regresiones de aislamiento y permisos.
 
 ---
 
-#### Tarea 12.6: Frontend - Sistema de Autenticación
-**Prioridad:** Alta | **Estimación:** 6 Story Points | **Etiquetas:** Frontend
+#### Tarea 12.7: Tests frontend de autenticación
+**Prioridad:** Alta | **Estimación:** 3 Story Points | **Etiquetas:** Testing, Frontend
 
-**Descripción:**
-Implementar sistema completo de autenticación en frontend.
-
-**Componentes:**
-1. **LoginPage** - Página de login
-2. **ProtectedRoute** - Componente para rutas protegidas
-3. **AuthProvider** - Context de autenticación
-4. **useAuth** - Hook personalizado
-
-**Funcionalidades:**
-
-**AuthProvider (Context):**
-```javascript
-const AuthContext = createContext();
-
-export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  const login = async (username, password) => {
-    const response = await api.post('/auth/login/', { username, password });
-    const { access, refresh, user } = response.data;
-
-    localStorage.setItem('accessToken', access);
-    localStorage.setItem('refreshToken', refresh);
-    setUser(user);
-  };
-
-  const logout = async () => {
-    const refresh = localStorage.getItem('refreshToken');
-    await api.post('/auth/logout/', { refresh });
-    localStorage.clear();
-    setUser(null);
-  };
-
-  const refreshToken = async () => {
-    // Lógica de refresh
-  };
-
-  return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
-      {children}
-    </AuthContext.Provider>
-  );
-};
-```
-
-**Interceptor de Axios:**
-```javascript
-// Agregar token a requests
-axios.interceptors.request.use((config) => {
-  const token = localStorage.getItem('accessToken');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
-// Manejar 401 y refrescar token
-axios.interceptors.response.use(
-  (response) => response,
-  async (error) => {
-    if (error.response?.status === 401) {
-      // Intentar refrescar token
-      const refreshToken = localStorage.getItem('refreshToken');
-      if (refreshToken) {
-        // Llamar endpoint refresh
-        // Reintentar request original
-      } else {
-        // Redirect a login
-      }
-    }
-    return Promise.reject(error);
-  }
-);
-```
-
-**LoginPage:**
-- Formulario de login
-- Validaciones
-- Manejo de errores
-- Redirect después de login
-- Opción "Recordarme"
-
-**ProtectedRoute:**
-```javascript
-const ProtectedRoute = ({ children, requiredRole }) => {
-  const { user, loading } = useAuth();
-
-  if (loading) return <Loader />;
-
-  if (!user) return <Navigate to="/login" />;
-
-  if (requiredRole && user.role !== requiredRole) {
-    return <Navigate to="/unauthorized" />;
-  }
-
-  return children;
-};
-```
+**Casos mínimos:**
+- `api.js` inyecta Bearer y `X-Empresa-Id`.
+- 401 refresca token y reintenta la request.
+- Login guarda tokens en `sessionStorage` o `localStorage` según
+  `recordarme`.
+- Logout limpia usuario, tokens, empresa activa y cache sensible.
+- Cambio de empresa invalida queries y actualiza header.
+- Layout oculta/enseña navegación según `rol_usuario`.
 
 **Criterios de aceptación:**
-- [ ] Sistema de auth implementado
-- [ ] Login funcionando
-- [ ] Logout funcionando
-- [ ] Tokens guardándose
-- [ ] Refresh automático funcionando
-- [ ] Rutas protegidas
-- [ ] Manejo de roles
-- [ ] Redirect apropiados
-
----
-
-#### Tarea 12.7: Actualizar Tests con Autenticación
-**Prioridad:** Alta | **Estimación:** 3 Story Points | **Etiquetas:** Testing
-
-**Descripción:**
-Actualizar todos los tests para incluir autenticación.
-
-**Cambios necesarios:**
-
-**Backend:**
-```python
-@pytest.fixture
-def authenticated_client(api_client, user):
-    """Cliente autenticado con JWT"""
-    refresh = RefreshToken.for_user(user)
-    api_client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
-    return api_client
-
-@pytest.mark.django_db
-def test_listar_productos_autenticado(authenticated_client):
-    response = authenticated_client.get('/api/inventario/productos/')
-    assert response.status_code == 200
-```
-
-**Frontend:**
-```javascript
-test('login exitoso', async () => {
-  const { result } = renderHook(() => useAuth());
-
-  await act(async () => {
-    await result.current.login('usuario', 'password');
-  });
-
-  expect(result.current.user).toBeDefined();
-  expect(localStorage.getItem('accessToken')).toBeTruthy();
-});
-```
-
-**Criterios de aceptación:**
-- [ ] Fixtures de auth creadas
-- [ ] Tests backend actualizados
-- [ ] Tests frontend actualizados
-- [ ] Todos los tests pasando
+- [ ] Tests frontend actualizados.
+- [ ] Build/lint/test relevantes ejecutados.
 
 ---
 

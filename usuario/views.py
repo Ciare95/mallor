@@ -6,6 +6,8 @@ from rest_framework.request import Request
 from django.core.exceptions import ValidationError, PermissionDenied
 from django.utils.translation import gettext_lazy as _
 
+from empresa.models import EmpresaUsuario
+from empresa.services import EmpresaService
 from .models import Usuario
 from .serializers import (
     UsuarioSerializer,
@@ -54,6 +56,17 @@ class UsuarioPermission(permissions.BasePermission):
         # Obtener acción de la vista
         accion = self._map_view_action_to_business_action(view.action)
         
+        if view.action in ('list', 'create'):
+            empresa = getattr(request, 'empresa', None)
+            rol = EmpresaService.rol_usuario(request.user, empresa)
+            return (
+                EmpresaService.es_admin_interno(request.user)
+                or rol in (
+                    EmpresaUsuario.Rol.PROPIETARIO,
+                    EmpresaUsuario.Rol.ADMIN,
+                )
+            )
+
         # Validar permisos usando el servicio
         return UsuarioService.validar_permisos(request.user, accion)
 
@@ -67,6 +80,17 @@ class UsuarioPermission(permissions.BasePermission):
         # Obtener acción de la vista
         accion = self._map_view_action_to_business_action(view.action)
         
+        empresa = getattr(request, 'empresa', None)
+        if not EmpresaService.es_admin_interno(request.user):
+            mismo_usuario = obj.id == request.user.id
+            pertenece_empresa = EmpresaUsuario.objects.filter(
+                empresa=empresa,
+                usuario=obj,
+                activo=True,
+            ).exists()
+            if not mismo_usuario and not pertenece_empresa:
+                return False
+
         # Validar permisos usando el servicio
         return UsuarioService.validar_permisos(request.user, accion, obj)
 
@@ -156,8 +180,11 @@ class UsuarioViewSet(RolePermissionMixin, viewsets.ViewSet):
             # Eliminar filtros None
             filtros = {k: v for k, v in filtros.items() if v is not None}
             
-            # Obtener usuarios usando el servicio
-            usuarios = UsuarioService.listar_usuarios(filtros)
+            usuarios = UsuarioService.listar_usuarios(
+                filtros,
+                empresa=getattr(request, 'empresa', None),
+                usuario_solicitante=request.user,
+            )
             
             # Paginación manual (DRF no la hace automática en ViewSet)
             page = self.paginate_queryset(usuarios)

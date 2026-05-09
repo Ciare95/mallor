@@ -1,7 +1,9 @@
 import { Suspense, lazy } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
 import Layout from '../components/Layout';
+import ProtectedRoute from '../components/ProtectedRoute';
 
+const LoginPage = lazy(() => import('../pages/LoginPage'));
 const HomePage = lazy(() => import('../pages/HomePage'));
 const AboutPage = lazy(() => import('../pages/AboutPage'));
 const UsuariosPage = lazy(() => import('../pages/usuarios/UsuariosPage'));
@@ -36,68 +38,32 @@ function withSuspense(Component) {
 
 export const router = createBrowserRouter([
   {
+    path: '/login',
+    element: withSuspense(LoginPage),
+  },
+  {
     path: '/',
-    element: <Layout />,
+    element: <ProtectedRoute />,
     children: [
       {
-        index: true,
-        element: withSuspense(HomePage),
-      },
-      {
-        path: 'about',
-        element: withSuspense(AboutPage),
-      },
-      {
-        path: 'usuarios',
-        element: withSuspense(UsuariosPage),
-      },
-      {
-        path: 'mi-empresa',
-        element: withSuspense(MiEmpresaPage),
-      },
-      {
-        path: 'empresas-admin',
-        element: withSuspense(EmpresasAdminPage),
-      },
-      {
-        path: 'inventario',
-        element: withSuspense(ProductosPage),
-      },
-      {
-        path: 'ventas',
-        element: withSuspense(VentasPage),
-      },
-      {
-        path: 'clientes',
-        element: withSuspense(ClientesPage),
-      },
-      {
-        path: 'facturacion',
-        element: withSuspense(FacturacionPage),
-      },
-      {
-        path: 'proveedores',
-        element: withSuspense(ProveedoresPage),
-      },
-      {
-        path: 'fabricante',
-        element: withSuspense(FabricantePage),
-      },
-      {
-        path: 'informes',
-        element: withSuspense(DashboardInformesPage),
-      },
-      {
-        path: 'informes/cierres',
-        element: withSuspense(CierresCajaPage),
-      },
-      {
-        path: 'informes/reportes',
-        element: withSuspense(ReportesPage),
-      },
-      {
-        path: 'ia',
-        element: withSuspense(IAPage),
+        element: <Layout />,
+        children: [
+          { index: true, element: withSuspense(HomePage) },
+          { path: 'about', element: withSuspense(AboutPage) },
+          { path: 'usuarios', element: withSuspense(UsuariosPage) },
+          { path: 'mi-empresa', element: withSuspense(MiEmpresaPage) },
+          { path: 'empresas-admin', element: withSuspense(EmpresasAdminPage) },
+          { path: 'inventario', element: withSuspense(ProductosPage) },
+          { path: 'ventas', element: withSuspense(VentasPage) },
+          { path: 'clientes', element: withSuspense(ClientesPage) },
+          { path: 'facturacion', element: withSuspense(FacturacionPage) },
+          { path: 'proveedores', element: withSuspense(ProveedoresPage) },
+          { path: 'fabricante', element: withSuspense(FabricantePage) },
+          { path: 'informes', element: withSuspense(DashboardInformesPage) },
+          { path: 'informes/cierres', element: withSuspense(CierresCajaPage) },
+          { path: 'informes/reportes', element: withSuspense(ReportesPage) },
+          { path: 'ia', element: withSuspense(IAPage) },
+        ],
       },
     ],
   },

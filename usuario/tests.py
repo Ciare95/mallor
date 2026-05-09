@@ -5,7 +5,8 @@ from rest_framework.test import APIClient
 
 from usuario.models import Usuario
 from usuario.services import UsuarioService
-from tests.factories import UsuarioFactory
+from empresa.models import EmpresaUsuario
+from tests.factories import EmpresaFactory, EmpresaUsuarioFactory, UsuarioFactory
 
 
 class UsuarioMeApiTest(TestCase):
@@ -31,14 +32,27 @@ class UsuarioMeApiTest(TestCase):
 @pytest.mark.django_db
 def test_admin_puede_listar_usuarios_con_filtros():
     client = APIClient()
+    empresa = EmpresaFactory(razon_social='Empresa Usuarios')
     admin = UsuarioFactory(username='admin_usuarios', role=Usuario.Rol.ADMIN)
     objetivo = UsuarioFactory(
         username='empleado_filtrado',
         role=Usuario.Rol.EMPLEADO,
         first_name='Ana',
     )
+    EmpresaUsuarioFactory(
+        empresa=empresa,
+        usuario=admin,
+        rol=EmpresaUsuario.Rol.ADMIN,
+        activo=True,
+    )
+    EmpresaUsuarioFactory(
+        empresa=empresa,
+        usuario=objetivo,
+        rol=EmpresaUsuario.Rol.EMPLEADO,
+        activo=True,
+    )
     UsuarioFactory(username='otro_admin', role=Usuario.Rol.ADMIN)
-    client.force_authenticate(user=admin)
+    client.login(username=admin.username, password='Secret123')
 
     response = client.get(
         '/api/usuarios/',
@@ -46,6 +60,7 @@ def test_admin_puede_listar_usuarios_con_filtros():
           'role': Usuario.Rol.EMPLEADO,
           'first_name__icontains': 'An',
         },
+        HTTP_X_EMPRESA_ID=str(empresa.id),
     )
 
     assert response.status_code == status.HTTP_200_OK

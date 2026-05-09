@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-const storedUser = localStorage.getItem('user');
+const storedUser = sessionStorage.getItem('mallor_user');
 const initialUser = (() => {
   if (!storedUser) {
     return null;
@@ -15,10 +15,12 @@ const initialUser = (() => {
 export const useAppStore = create((set) => ({
   // ─── Autenticación ──────────────────────────────────────────────────────────
   user: initialUser,
-  token: localStorage.getItem('token') || null,
+  token: null,
+  authReady: false,
 
   setUser: (user) => set({ user }),
   setToken: (token) => set({ token }),
+  setAuthReady: (authReady) => set({ authReady }),
 
   // ─── UI Global ──────────────────────────────────────────────────────────────
   sidebarOpen: true,
@@ -58,6 +60,7 @@ export const useAppStore = create((set) => ({
     set({
       user: null,
       token: null,
+      authReady: false,
       sidebarOpen: true,
       loading: false,
       usuarioActivo: null,
