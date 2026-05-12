@@ -509,70 +509,55 @@ function DashboardView({
 }) {
   return (
     <div className="space-y-6">
-      <section className="surface p-3">
-        <div className="grid gap-3 xl:grid-cols-[1.02fr_0.98fr]">
-          <div>
-            <div className="eyebrow">Modulo de fabricante</div>
-            <h2 className="section-title mt-1 text-[1.8rem] leading-[0.98] sm:text-[2rem]">
-              Control de recetas, costos y lotes.
-            </h2>
-            <p className="body-copy mt-2 max-w-xl text-[13px]">
-              Revisa insumos, cobertura y fabricacion sin salir del tablero.
-            </p>
-
-            <div className="mt-4 grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
-              <HeroAction
-                title="Ingredientes"
-                subtitle="Stock y costos"
-                icon={FlaskConical}
-                onClick={onGoIngredients}
-              />
-              <HeroAction
-                title="Nuevo producto"
-                subtitle="Crear receta"
-                icon={PackagePlus}
-                onClick={onCreateProduct}
-                active
-              />
-              <HeroAction
-                title="Produccion"
-                subtitle="Validar lotes"
-                icon={Factory}
-                onClick={onGoProduction}
-              />
-              <HeroAction
-                title="Catalogo"
-                subtitle="Ver fabricados"
-                icon={Boxes}
-                onClick={onGoProducts}
-              />
-            </div>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <DashboardMetric
-              label="Ingredientes activos"
-              value={stats.totalIngredients}
-              helper="Materias primas listas."
-            />
-            <DashboardMetric
-              label="Productos fabricados"
-              value={stats.totalProducts}
-              helper="Lotes configurados."
-            />
-            <DashboardMetric
-              label="Bajo stock"
-              value={stats.lowStockCount}
-              helper="Reposicion sugerida."
-              tone="warning"
-            />
-            <DashboardMetric
-              label="Listos para producir"
-              value={stats.readyProductsCount}
-              helper="Cobertura disponible."
-              tone="safe"
-            />
-          </div>
+      <section className="surface p-3 sm:p-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8">
+          <HeroAction
+            title="Ingredientes"
+            subtitle="Stock y costos"
+            icon={FlaskConical}
+            onClick={onGoIngredients}
+          />
+          <HeroAction
+            title="Nuevo producto"
+            subtitle="Crear receta"
+            icon={PackagePlus}
+            onClick={onCreateProduct}
+            active
+          />
+          <HeroAction
+            title="Produccion"
+            subtitle="Validar lotes"
+            icon={Factory}
+            onClick={onGoProduction}
+          />
+          <HeroAction
+            title="Catalogo"
+            subtitle="Ver fabricados"
+            icon={Boxes}
+            onClick={onGoProducts}
+          />
+          <DashboardMetric
+            label="Ingredientes activos"
+            value={stats.totalIngredients}
+            helper="Materias primas listas."
+          />
+          <DashboardMetric
+            label="Productos fabricados"
+            value={stats.totalProducts}
+            helper="Lotes configurados."
+          />
+          <DashboardMetric
+            label="Bajo stock"
+            value={stats.lowStockCount}
+            helper="Reposicion sugerida."
+            tone="warning"
+          />
+          <DashboardMetric
+            label="Listos para producir"
+            value={stats.readyProductsCount}
+            helper="Cobertura disponible."
+            tone="safe"
+          />
         </div>
       </section>
 
@@ -972,29 +957,32 @@ function ProductosView({
   );
 }
 
-function HeroAction({ title, subtitle, icon: Icon, onClick, active = false }) {
+function HeroAction({
+  title,
+  subtitle,
+  icon: Icon,
+  onClick,
+  active = false,
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`tab-card min-h-[68px] px-3 py-2.5 text-left ${
-        active ? 'tab-card-active' : ''
+      className={`module-nav-card min-h-[78px] h-full ${
+        active ? 'module-nav-card-active' : ''
       }`}
     >
-      <div className="flex items-center justify-between gap-3">
-        <Icon
-          className={`h-3.5 w-3.5 ${
-            active ? 'text-[var(--accent)]' : 'text-soft'
-          }`}
-        />
-        <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-          Flujo
+      <div className="flex h-full items-start gap-3">
+        <span className="module-nav-icon mt-0.5 shrink-0">
+          <Icon className="h-3.5 w-3.5" />
+        </span>
+        <span className="min-w-0">
+          <span className="module-nav-label block leading-tight">{title}</span>
+          <span className="mt-0.5 block text-[11px] leading-4 text-soft">
+            {subtitle}
+          </span>
         </span>
       </div>
-      <div className="mt-2.5 font-display text-[1.15rem] leading-none text-main">
-        {title}
-      </div>
-      <div className="mt-1.5 text-[11px] text-soft">{subtitle}</div>
     </button>
   );
 }
@@ -1008,7 +996,7 @@ function DashboardMetric({ label, value, helper, tone = 'neutral' }) {
         : 'border-app bg-white/74';
 
   return (
-    <article className={`rounded-xl border px-4 py-4 ${toneClass}`}>
+    <article className={`rounded-xl border px-4 py-4 min-h-[108px] ${toneClass}`}>
       <div className="eyebrow">{label}</div>
       <div className="mt-3 font-display text-[2rem] leading-none text-main">
         {value}
@@ -1055,25 +1043,18 @@ function ProductAction({ label, icon: Icon, onClick, danger = false }) {
   );
 }
 
-function ModuleBackCard({ eyebrow, title, description, onBack }) {
+function ModuleBackCard({ onBack }) {
   return (
-    <section className="surface p-3">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="eyebrow">{eyebrow}</div>
-          <div className="mt-1 text-sm font-semibold text-main">{title}</div>
-          <div className="mt-1 text-[12px] text-soft">{description}</div>
-        </div>
-
-        <button
-          type="button"
-          onClick={onBack}
-          className="app-button-secondary min-h-10"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Volver a fabricante
-        </button>
-      </div>
-    </section>
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="section-chip">Navegacion de modulo</div>
+      <button
+        type="button"
+        onClick={onBack}
+        className="app-button-secondary min-h-10 self-end sm:self-auto"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Volver a fabricante
+      </button>
+    </div>
   );
 }

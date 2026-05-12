@@ -7,6 +7,10 @@ import useToast from '../hooks/useToast';
 import { ToastContainer } from '../components/ui/Toast';
 import { SectionShell } from '../components/ventas/shared';
 import { extractApiError } from '../utils/ventas';
+import {
+  calculateNitVerificationDigit,
+  sanitizeNumeric,
+} from '../utils/nit';
 
 const EMPTY_FORM = {
   nit: '',
@@ -37,6 +41,7 @@ export default function MiEmpresaPage() {
       setForm({
         ...EMPTY_FORM,
         ...empresaActiva,
+        digito_verificacion: calculateNitVerificationDigit(empresaActiva.nit),
       });
     }
   }, [empresaActiva]);
@@ -54,7 +59,14 @@ export default function MiEmpresaPage() {
   });
 
   const setField = (field, value) => {
-    setForm((current) => ({ ...current, [field]: value }));
+    setForm((current) => {
+      const normalizedValue = field === 'nit' ? sanitizeNumeric(value) : value;
+      const next = { ...current, [field]: normalizedValue };
+      if (field === 'nit') {
+        next.digito_verificacion = calculateNitVerificationDigit(normalizedValue);
+      }
+      return next;
+    });
   };
 
   const handleSubmit = (event) => {
@@ -107,8 +119,9 @@ export default function MiEmpresaPage() {
             <Field
               label="Digito verificacion"
               value={form.digito_verificacion}
-              disabled={!puedeEditar}
-              onChange={(value) => setField('digito_verificacion', value)}
+              disabled
+              readOnly
+              helper="Se calcula automaticamente desde el NIT."
             />
             <SelectField
               label="Ambiente facturacion"
@@ -194,10 +207,12 @@ export default function MiEmpresaPage() {
 function Field({
   label,
   value,
-  onChange,
+  onChange = () => {},
   disabled,
   type = 'text',
   required = false,
+  readOnly = false,
+  helper,
 }) {
   return (
     <label className="app-field">
@@ -207,9 +222,11 @@ function Field({
         value={value || ''}
         required={required}
         disabled={disabled}
+        readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
-        className="app-input min-h-11"
+        className={`app-input min-h-11 ${readOnly ? 'bg-[var(--panel-soft)] text-soft' : ''}`}
       />
+      {helper && <span className="text-[12px] text-soft">{helper}</span>}
     </label>
   );
 }

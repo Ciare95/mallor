@@ -36,6 +36,28 @@ const getDraftInicial = () => ({
   observaciones: '',
 });
 
+const createPrecuenta = (number = 1, draft = getDraftInicial()) => ({
+  id: `precuenta-${Date.now()}-${number}`,
+  label: `Precuenta ${number}`,
+  draft,
+});
+
+const primeraPrecuenta = createPrecuenta(1);
+
+const updateActivePrecuentaDraft = (state, updater) => {
+  const nextDraft =
+    typeof updater === 'function' ? updater(state.draft) : updater;
+
+  return {
+    draft: nextDraft,
+    precuentas: state.precuentas.map((precuenta) =>
+      precuenta.id === state.precuentaActivaId
+        ? { ...precuenta, draft: nextDraft }
+        : precuenta,
+    ),
+  };
+};
+
 const filtrosVentasIniciales = {
   q: '',
   cliente_id: '',
@@ -63,7 +85,10 @@ export const useVentasStore = create((set) => ({
   vistaActual: VENTAS_VISTAS.POS,
   detalleTab: VENTA_DETALLE_TABS.RESUMEN,
   ventaSeleccionada: null,
-  draft: getDraftInicial(),
+  draft: primeraPrecuenta.draft,
+  precuentas: [primeraPrecuenta],
+  precuentaActivaId: primeraPrecuenta.id,
+  nextPrecuentaNumber: 2,
   filtrosVentas: filtrosVentasIniciales,
   filtrosCartera: filtrosCarteraIniciales,
   clientesTemporales: [],
@@ -80,10 +105,88 @@ export const useVentasStore = create((set) => ({
       detalleTab,
       vistaActual: VENTAS_VISTAS.DETALLE,
     }),
-  resetDraft: () => set({ draft: getDraftInicial() }),
+  agregarPrecuenta: () =>
+    set((state) => {
+      const precuenta = createPrecuenta(state.nextPrecuentaNumber);
+
+      return {
+        precuentas: [...state.precuentas, precuenta],
+        precuentaActivaId: precuenta.id,
+        draft: precuenta.draft,
+        nextPrecuentaNumber: state.nextPrecuentaNumber + 1,
+      };
+    }),
+  setPrecuentaActiva: (precuentaId) =>
+    set((state) => {
+      const precuenta = state.precuentas.find(
+        (item) => item.id === precuentaId,
+      );
+
+      if (!precuenta) {
+        return {};
+      }
+
+      return {
+        precuentaActivaId: precuenta.id,
+        draft: precuenta.draft,
+      };
+    }),
+  cerrarPrecuenta: (precuentaId) =>
+    set((state) => {
+      const targetId = precuentaId || state.precuentaActivaId;
+      const remaining = state.precuentas.filter(
+        (precuenta) => precuenta.id !== targetId,
+      );
+
+      if (!remaining.length) {
+        const precuenta = createPrecuenta(1);
+        return {
+          precuentas: [precuenta],
+          precuentaActivaId: precuenta.id,
+          draft: precuenta.draft,
+          nextPrecuentaNumber: 2,
+        };
+      }
+
+      const currentStillOpen = remaining.find(
+        (precuenta) => precuenta.id === state.precuentaActivaId,
+      );
+      const nextActive = currentStillOpen || remaining[remaining.length - 1];
+      return {
+        precuentas: remaining,
+        precuentaActivaId: nextActive.id,
+        draft: nextActive.draft,
+      };
+    }),
+  cerrarPrecuentaActiva: () =>
+    set((state) => {
+      const targetId = state.precuentaActivaId;
+      const remaining = state.precuentas.filter(
+        (precuenta) => precuenta.id !== targetId,
+      );
+
+      if (!remaining.length) {
+        const precuenta = createPrecuenta(1);
+        return {
+          precuentas: [precuenta],
+          precuentaActivaId: precuenta.id,
+          draft: precuenta.draft,
+          nextPrecuentaNumber: 2,
+        };
+      }
+
+      const nextActive = remaining[remaining.length - 1];
+      return {
+        precuentas: remaining,
+        precuentaActivaId: nextActive.id,
+        draft: nextActive.draft,
+      };
+    }),
+  resetDraft: () =>
+    set((state) => updateActivePrecuentaDraft(state, getDraftInicial())),
   cargarVentaEnDraft: (venta) =>
-    set({
-      draft: {
+    set((state) => {
+      const nextDraft = {
         ventaId: venta.id,
         clienteSeleccionado: venta.cliente || CONSUMIDOR_FINAL,
         items: (venta.detalles || []).map((detalle) => ({
@@ -103,23 +206,27 @@ export const useVentasStore = create((set) => ({
         metodoAbonoInicial: 'EFECTIVO',
         referenciaAbonoInicial: '',
         observaciones: venta.observaciones || '',
-      },
-      vistaActual: VENTAS_VISTAS.POS,
+      };
+
+      return {
+        ...updateActivePrecuentaDraft(state, nextDraft),
+        vistaActual: VENTAS_VISTAS.POS,
+      };
     }),
   setDraftField: (field, value) =>
-    set((state) => ({
-      draft: {
+    set((state) =>
+      updateActivePrecuentaDraft(state, {
         ...state.draft,
         [field]: value,
-      },
-    })),
+      }),
+    ),
   setClienteSeleccionado: (clienteSeleccionado) =>
-    set((state) => ({
-      draft: {
+    set((state) =>
+      updateActivePrecuentaDraft(state, {
         ...state.draft,
         clienteSeleccionado,
-      },
-    })),
+      }),
+    ),
   addProductoAlDraft: (producto) =>
     set((state) => {
       const existing = state.draft.items.find(
@@ -127,58 +234,56 @@ export const useVentasStore = create((set) => ({
       );
 
       if (existing) {
-        return {
-          draft: {
-            ...state.draft,
-            items: state.draft.items.map((item) =>
-              item.producto.id === producto.id
-                ? {
-                    ...item,
-                    cantidad: Number(item.cantidad || 0) + 1,
-                  }
-                : item,
-            ),
-          },
-        };
+        return updateActivePrecuentaDraft(state, {
+          ...state.draft,
+          items: state.draft.items.map((item) =>
+            item.producto.id === producto.id
+              ? {
+                  ...item,
+                  cantidad: Number(item.cantidad || 0) + 1,
+                }
+              : item,
+          ),
+        });
       }
 
-      return {
-        draft: {
-          ...state.draft,
-          items: [...state.draft.items, createLineItem(producto)],
-        },
-      };
+      return updateActivePrecuentaDraft(state, {
+        ...state.draft,
+        items: [...state.draft.items, createLineItem(producto)],
+      });
     }),
   actualizarItemDraft: (lineId, changes) =>
-    set((state) => ({
-      draft: {
+    set((state) =>
+      updateActivePrecuentaDraft(state, {
         ...state.draft,
         items: state.draft.items.map((item) =>
           item.id === lineId ? { ...item, ...changes } : item,
         ),
-      },
-    })),
+      }),
+    ),
   eliminarItemDraft: (lineId) =>
-    set((state) => ({
-      draft: {
+    set((state) =>
+      updateActivePrecuentaDraft(state, {
         ...state.draft,
         items: state.draft.items.filter((item) => item.id !== lineId),
-      },
-    })),
+      }),
+    ),
   registrarClienteTemporal: (payload) =>
     set((state) => {
       const cliente = payload.esTemporal
         ? payload
         : createTemporaryClient(payload);
+      const nextDraft = {
+        ...state.draft,
+        clienteSeleccionado: cliente,
+      };
+
       return {
         clientesTemporales: [
           cliente,
           ...state.clientesTemporales.filter((item) => item.id !== cliente.id),
         ],
-        draft: {
-          ...state.draft,
-          clienteSeleccionado: cliente,
-        },
+        ...updateActivePrecuentaDraft(state, nextDraft),
       };
     }),
   setFiltrosVentas: (updater) =>

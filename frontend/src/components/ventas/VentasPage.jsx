@@ -1,6 +1,6 @@
 import { startTransition, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { BarChart3, CreditCard, ListOrdered, Wallet } from 'lucide-react';
+import { BarChart3, CreditCard, ListOrdered, Plus, Wallet } from 'lucide-react';
 import useToast from '../../hooks/useToast';
 import {
   crearNotaCreditoVenta,
@@ -27,6 +27,7 @@ import {
 import { useAppStore } from '../../store/useStore';
 import {
   buildVentaPayload,
+  calculateVentaTotals,
   printVentaTicket,
 } from '../../utils/ventas';
 import CuentasPorCobrar from './CuentasPorCobrar';
@@ -49,6 +50,11 @@ export default function VentasPage() {
     detalleTab,
     cargarVentaEnDraft,
     resetDraft,
+    precuentas,
+    precuentaActivaId,
+    agregarPrecuenta,
+    setPrecuentaActiva,
+    cerrarPrecuenta,
     setDraftField,
     addProductoAlDraft,
     actualizarItemDraft,
@@ -77,13 +83,13 @@ export default function VentasPage() {
 
   const crearVentaMutation = useMutation({
     mutationFn: crearVentaCompleta,
-    onSuccess: (venta) => {
+    onSuccess: (venta, variables) => {
       invalidateVentas();
       toast.success(`Venta ${venta.numero_venta} registrada`);
       if (draft.imprimirTicket) {
         printVentaTicket(venta, empresaActiva);
       }
-      resetDraft();
+      cerrarPrecuenta(variables.precuentaId);
       setVentaSeleccionada(null);
       setPosFocusSignal((current) => current + 1);
       startTransition(() => {
@@ -375,12 +381,9 @@ export default function VentasPage() {
   ];
 
   return (
-    <div className="space-y-6">
-      <section className="surface p-3">
-        <div className="mb-2 text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-          Modulo de ventas
-        </div>
-        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="space-y-4">
+      <section className="surface p-2">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = vistaActual === tab.key;
@@ -389,20 +392,15 @@ export default function VentasPage() {
                 key={tab.key}
                 type="button"
                 onClick={() => setVistaActual(tab.key)}
-                className={`tab-card min-h-[68px] px-3 py-2.5 ${active ? 'tab-card-active' : ''}`}
+                className={`module-nav-card min-h-[52px] ${active ? 'module-nav-card-active' : ''}`}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <Icon
-                    className={`h-3.5 w-3.5 ${
-                      active ? 'text-[var(--accent)]' : 'text-soft'
-                    }`}
-                  />
-                  <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-                    {tab.note}
+                <div className="flex items-center gap-3">
+                  <span className="module-nav-icon">
+                    <Icon className="h-3.5 w-3.5" />
                   </span>
-                </div>
-                <div className="mt-2.5 font-display text-[1.15rem] leading-none text-main">
-                  {tab.label}
+                  <span className="module-nav-label">
+                    {tab.label}
+                  </span>
                 </div>
               </button>
             );
@@ -411,35 +409,48 @@ export default function VentasPage() {
       </section>
 
       {vistaActual === VENTAS_VISTAS.POS && (
-        <VentaForm
-          draft={draft}
-          localClients={clientesTemporales}
-          isLoading={
-            crearVentaMutation.isPending || actualizarVentaMutation.isPending
-          }
-          error={
-            crearVentaMutation.isError
-              ? extractApiError(
-                  crearVentaMutation.error,
-                  'No fue posible registrar la venta',
-                )
-              : actualizarVentaMutation.isError
+        <>
+          <PrecuentasBar
+            precuentas={precuentas}
+            activeId={precuentaActivaId}
+            onSelect={setPrecuentaActiva}
+            onAdd={agregarPrecuenta}
+          />
+          <VentaForm
+            draft={draft}
+            localClients={clientesTemporales}
+            isLoading={
+              crearVentaMutation.isPending || actualizarVentaMutation.isPending
+            }
+            error={
+              crearVentaMutation.isError
                 ? extractApiError(
-                    actualizarVentaMutation.error,
-                    'No fue posible actualizar la venta',
+                    crearVentaMutation.error,
+                    'No fue posible registrar la venta',
                   )
-                : null
-          }
-          onChangeField={setDraftField}
-          onAddProduct={addProductoAlDraft}
-          onUpdateItem={actualizarItemDraft}
-          onRemoveItem={eliminarItemDraft}
-          onSelectClient={setClienteSeleccionado}
-          onCreateQuickClient={registrarClienteTemporal}
-          onReset={handleOpenPos}
-          onSubmit={handleSubmitVenta}
-          focusSignal={posFocusSignal}
-        />
+                : actualizarVentaMutation.isError
+                  ? extractApiError(
+                      actualizarVentaMutation.error,
+                      'No fue posible actualizar la venta',
+                    )
+                  : null
+            }
+            onChangeField={setDraftField}
+            onAddProduct={addProductoAlDraft}
+            onUpdateItem={actualizarItemDraft}
+            onRemoveItem={eliminarItemDraft}
+            onSelectClient={setClienteSeleccionado}
+            onCreateQuickClient={registrarClienteTemporal}
+            onReset={handleOpenPos}
+            onSubmit={(payload) =>
+              handleSubmitVenta({
+                ...payload,
+                precuentaId: precuentaActivaId,
+              })
+            }
+            focusSignal={posFocusSignal}
+          />
+        </>
       )}
 
       {vistaActual === VENTAS_VISTAS.LISTA && (
@@ -488,5 +499,52 @@ export default function VentasPage() {
 
       <ToastContainer toasts={toasts} onClose={closeToast} />
     </div>
+  );
+}
+
+function PrecuentasBar({ precuentas = [], activeId, onSelect, onAdd }) {
+  return (
+    <section className="surface px-3 py-2">
+      <div className="flex items-center gap-2 overflow-x-auto">
+        {precuentas.map((precuenta) => {
+          const active = precuenta.id === activeId;
+          const total = calculateVentaTotals(precuenta.draft).total;
+          const itemCount = precuenta.draft.items.length;
+
+          return (
+            <button
+              key={precuenta.id}
+              type="button"
+              onClick={() => onSelect(precuenta.id)}
+              className={`flex min-h-10 min-w-[148px] items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition ${
+                active
+                  ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-main'
+                  : 'border-app bg-white/72 text-soft hover:bg-white hover:text-main'
+              }`}
+            >
+              <span>
+                <span className="block text-[12px] font-semibold">
+                  {precuenta.label}
+                </span>
+                <span className="mt-0.5 block text-[10px] text-muted">
+                  {itemCount} lineas
+                </span>
+              </span>
+              <span className="text-[11px] font-semibold">
+                ${Math.round(total).toLocaleString('es-CO')}
+              </span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={onAdd}
+          className="flex min-h-10 shrink-0 items-center gap-2 rounded-md border border-app bg-white/72 px-3 py-2 text-[12px] font-semibold text-main transition hover:border-[var(--accent-line)] hover:bg-white"
+        >
+          <Plus className="h-4 w-4" />
+          Nueva precuenta
+        </button>
+      </div>
+    </section>
   );
 }

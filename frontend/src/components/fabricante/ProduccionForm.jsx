@@ -132,12 +132,12 @@ export default function ProduccionForm({
 
   return (
     <div className="grid gap-6 xl:grid-cols-[0.94fr_1.06fr]">
-      <section className="surface p-5 sm:p-6">
-        <div className="flex flex-col gap-4 border-b border-app pb-5 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="eyebrow">Orden de produccion</div>
-            <h2 className="section-title mt-2">Fabricar lote</h2>
-            <p className="body-copy mt-2 max-w-2xl">
+      <section className="surface p-4 sm:p-5">
+        <div className="flex flex-col gap-4 border-b border-app pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-2">
+            <div className="section-chip">Orden de produccion</div>
+            <div className="text-sm font-semibold text-main">Fabricar lote</div>
+            <p className="max-w-2xl text-[12px] text-soft">
               Selecciona el producto, valida cobertura de ingredientes y decide
               si el resultado debe vincularse al inventario general antes de
               producir.
@@ -147,7 +147,7 @@ export default function ProduccionForm({
           <button
             type="button"
             onClick={onCancel}
-            className="app-button-secondary min-h-11"
+            className="app-button-secondary min-h-10"
           >
             <ArrowLeft className="h-4 w-4" />
             Volver
@@ -262,9 +262,9 @@ export default function ProduccionForm({
           <div>
             <div className="flex flex-col gap-4 border-b border-app pb-5 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <div className="eyebrow">Simulacion</div>
-                <h3 className="section-title mt-2">{product.nombre}</h3>
-                <p className="body-copy mt-2 max-w-2xl">
+                <div className="section-chip">Simulacion</div>
+                <h3 className="mt-3 text-sm font-semibold text-main">{product.nombre}</h3>
+                <p className="mt-2 max-w-2xl text-[12px] text-soft">
                   {product.descripcion}
                 </p>
               </div>
@@ -381,8 +381,8 @@ export default function ProduccionForm({
             >
               <div className="flex flex-col gap-4 border-b border-app pb-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <div className="eyebrow">Empaque</div>
-                  <div className="mt-2 text-sm font-semibold text-main">
+                  <div className="section-chip">Empaque</div>
+                  <div className="mt-3 text-sm font-semibold text-main">
                     Distribuye el lote fabricado en varias presentaciones.
                   </div>
                 </div>

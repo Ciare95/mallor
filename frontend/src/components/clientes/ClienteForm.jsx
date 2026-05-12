@@ -20,6 +20,10 @@ import {
   validateClienteForm,
 } from '../../utils/clientes';
 import { formatCurrency } from '../../utils/formatters';
+import {
+  calculateNitVerificationDigit,
+  sanitizeNumeric,
+} from '../../utils/nit';
 import { SectionShell } from './shared';
 
 const EMPTY_ERRORS = {};
@@ -77,12 +81,36 @@ export default function ClienteForm({
   }, [submitError, touched, validationErrors]);
 
   const canSubmit = Object.keys(validationErrors).length === 0;
+  const showVerificationDigit = form.tipo_documento === 'NIT';
 
   const setField = (field, value) => {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
+    setForm((current) => {
+      const isNitDocument = current.tipo_documento === 'NIT';
+      const normalizedValue = (
+        field === 'numero_documento' && isNitDocument
+      )
+        ? sanitizeNumeric(value)
+        : value;
+      const next = {
+        ...current,
+        [field]: normalizedValue,
+      };
+
+      if (field === 'tipo_documento') {
+        next.digito_verificacion =
+          value === 'NIT'
+            ? calculateNitVerificationDigit(next.numero_documento)
+            : '';
+      }
+
+      if (field === 'numero_documento') {
+        next.digito_verificacion = current.tipo_documento === 'NIT'
+          ? calculateNitVerificationDigit(normalizedValue)
+          : '';
+      }
+
+      return next;
+    });
   };
 
   const handleBlur = (field) => {
@@ -157,14 +185,16 @@ export default function ClienteForm({
                   : 'Documento unico por tipo.'
               }
             />
-            <InputField
-              label="Digito de verificacion"
-              value={form.digito_verificacion}
-              onChange={(value) => setField('digito_verificacion', value)}
-              onBlur={() => handleBlur('digito_verificacion')}
-              error={visibleErrors.digito_verificacion}
-              helper="Opcional para NIT. Factus lo usara si aplica."
-            />
+            {showVerificationDigit && (
+              <InputField
+                label="Digito de verificacion"
+                value={form.digito_verificacion}
+                onBlur={() => handleBlur('digito_verificacion')}
+                error={visibleErrors.digito_verificacion}
+                helper="Se calcula automaticamente desde el NIT."
+                readOnly
+              />
+            )}
 
             {form.tipo_cliente === 'NATURAL' ? (
               <InputField
@@ -411,6 +441,7 @@ function InputField({
   type = 'text',
   min,
   step,
+  readOnly = false,
 }) {
   const iconNode = icon
     ? createElement(icon, {
@@ -427,15 +458,16 @@ function InputField({
         <input
           type={type}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => onChange?.(event.target.value)}
           onBlur={onBlur}
           min={min}
           step={step}
+          readOnly={readOnly}
           className={`app-input min-h-11 ${icon ? 'pl-10' : ''} ${
             error
               ? 'border-[rgba(159,47,45,0.28)] focus:border-[rgba(159,47,45,0.42)] focus:shadow-none'
               : ''
-          }`}
+          } ${readOnly ? 'bg-[var(--panel-soft)] text-soft' : ''}`}
         />
       </div>
       {(error || helper) && (

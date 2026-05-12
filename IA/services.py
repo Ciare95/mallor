@@ -48,6 +48,28 @@ SENSITIVE_PATTERNS = (
 
 TOOL_KEYWORDS = (
     ('resumen_facturacion_electronica', ('facturacion', 'factura electronica', 'factus', 'dian')),
+    ('utilidad_periodo', (
+        'ganancia',
+        'utilidad',
+        'utilidad neta',
+        'comparando ventas con gastos',
+        'comparar ventas con gastos',
+        'ventas con gastos',
+        'ventas y gastos',
+        'margen del negocio',
+    )),
+    ('proveedores_por_pagar', (
+        'proveedor le debo',
+        'proveedores les debo',
+        'a que proveedor le debo pagar',
+        'a que proveedores les debo pagar',
+        'que proveedor debo pagar',
+        'que proveedores debo pagar',
+        'proveedores por pagar',
+        'cuentas por pagar',
+        'facturas de compra pendientes',
+        'compras pendientes',
+    )),
     ('clientes_con_saldo_pendiente', (
         'que clientes me deben',
         'clientes que me deben',
@@ -176,8 +198,9 @@ class IAService:
                     metadatos = {'error': str(exc)}
             else:
                 respuesta = (
-                    'Puedo ayudarte con ventas, inventario, clientes, cartera '
-                    'y facturacion permitida. Reformula la consulta con uno de esos temas.'
+                    'Puedo ayudarte con ventas, inventario, clientes, proveedores, '
+                    'cartera y facturacion permitida de la empresa activa. '
+                    'Reformula la consulta con uno de esos temas.'
                 )
 
         tiempo = time.monotonic() - inicio
@@ -213,12 +236,30 @@ class IAService:
     @staticmethod
     def _infer_period_params(texto: str) -> Dict[str, Any]:
         normalized = texto.lower()
+        if any(
+            phrase in normalized for phrase in (
+                'todo el tiempo',
+                'todo el periodo de tiempo',
+                'todo el período de tiempo',
+                'todo el periodo',
+                'todo el período',
+                'todos los tiempos',
+                'historico',
+                'histórico',
+                'no solo de este mes',
+                'desde que empece',
+                'desde que empecé',
+            )
+        ):
+            return {'periodo': 'todo'}
         if 'hoy' in normalized:
             return {'periodo': 'hoy'}
         if 'semana' in normalized:
             return {'periodo': 'semana'}
         if 'mes' in normalized:
             return {'periodo': 'mes'}
+        if re.search(r'\ben total\b', normalized):
+            return {'periodo': 'todo'}
         return {'periodo': 'mes'}
 
     @staticmethod
@@ -237,6 +278,7 @@ class IAService:
                     'resumen_ventas_periodo',
                     'productos_mas_vendidos',
                     'mejores_clientes',
+                    'utilidad_periodo',
                 ):
                     params.update(IAService._infer_period_params(texto))
                 if tool_name in (
@@ -244,6 +286,7 @@ class IAService:
                     'mejores_clientes',
                     'productos_bajo_stock',
                     'clientes_con_saldo_pendiente',
+                    'proveedores_por_pagar',
                 ):
                     params['limite'] = 10
                 return {'tool': tool_name, 'params': params}
@@ -489,6 +532,43 @@ class IAService:
                 f"Estado documental: {estados_text}."
             )
 
+        if herramienta == 'utilidad_periodo':
+            resumen = resultado.get('resumen', {})
+            gastos = resultado.get('gastos', {})
+            utilidad = resumen.get('utilidad_neta', 0)
+            periodo_consultado = resultado.get('periodo_consultado')
+            marco = (
+                'En todo el tiempo registrado'
+                if periodo_consultado == 'todo'
+                else 'En el periodo consultado'
+            )
+            return (
+                f"{marco} vendiste {IAService._format_currency(resumen.get('total_ventas', 0))} "
+                f"y registraste {IAService._format_currency(resumen.get('total_gastos', 0))} en gastos. "
+                f"La utilidad neta estimada es {IAService._format_currency(utilidad)}. "
+                f"Compras de mercancia: {IAService._format_currency((gastos.get('compras_mercancia') or {}).get('monto', 0))}."
+            )
+
+        if herramienta == 'proveedores_por_pagar':
+            total = (resultado.get('total') or {}).get('total_pendiente', 0)
+            cantidad_facturas = (resultado.get('total') or {}).get('cantidad_facturas', 0)
+            proveedores = resultado.get('resultados', [])
+            if not proveedores:
+                return 'No tienes facturas de compra pendientes por pagar en este momento.'
+            top = '; '.join(
+                (
+                    f"{item.get('nombre', 'Proveedor')} tiene "
+                    f"{IAService._format_currency(item.get('total_pendiente', 0))} "
+                    f"pendientes en {item.get('cantidad_facturas', 0)} factura(s)"
+                )
+                for item in proveedores[:5]
+            )
+            return (
+                f"Tienes {IAService._format_currency(total)} pendientes en "
+                f"{cantidad_facturas} factura(s) de compra. "
+                f"Los principales proveedores por pagar son: {top}."
+            )
+
         return 'No encontre una forma segura de resumir esta consulta.'
 
     @staticmethod
@@ -574,6 +654,16 @@ class IAService:
                 'tool': 'resumen_facturacion_electronica',
                 'label': 'Facturacion electronica',
                 'consulta': 'Dame un resumen de facturacion electronica.',
+            },
+            {
+                'tool': 'utilidad_periodo',
+                'label': 'Ganancia vs gastos',
+                'consulta': 'Cual es mi ganancia comparando ventas con gastos este mes?',
+            },
+            {
+                'tool': 'proveedores_por_pagar',
+                'label': 'Proveedores por pagar',
+                'consulta': 'A que proveedor le debo pagar?',
             },
         ]
         allowed = allowed_tools_for_role(contexto.rol_empresa)

@@ -227,26 +227,24 @@ export default function ProductoFabricadoForm({
 
   return (
     <form className="space-y-6" onSubmit={handleSubmit}>
-      <section className="surface p-5 sm:p-6">
-        <div className="flex flex-col gap-4 border-b border-app pb-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="eyebrow">
+      <section className="surface p-4 sm:p-5">
+        <div className="flex flex-col gap-4 border-b border-app pb-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="space-y-2">
+            <div className="section-chip">
               {isEdit ? 'Edicion de lote' : 'Nuevo producto fabricado'}
             </div>
-            <h2 className="section-title mt-2">
+            <div className="text-sm font-semibold text-main">
               {isEdit ? product.nombre : 'Construccion de producto'}
-            </h2>
-            <p className="body-copy mt-2 max-w-2xl">
-              Define el lote, construye la receta y observa como cambian en
-              tiempo real el costo unitario, la utilidad y la capacidad de
-              produccion.
+            </div>
+            <p className="max-w-2xl text-[12px] text-soft">
+              Lote, receta y utilidad en una ficha de trabajo mas compacta.
             </p>
           </div>
 
           <button
             type="button"
             onClick={onCancel}
-            className="app-button-secondary min-h-11"
+            className="app-button-secondary min-h-10"
           >
             <ArrowLeft className="h-4 w-4" />
             Volver
@@ -412,9 +410,9 @@ export default function ProductoFabricadoForm({
       <section className="surface p-5 sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <div className="eyebrow">Validacion de receta</div>
-            <h3 className="section-title mt-2">Lectura de disponibilidad</h3>
-            <p className="body-copy mt-2 max-w-2xl">
+            <div className="section-chip">Validacion de receta</div>
+            <h3 className="mt-3 text-sm font-semibold text-main">Lectura de disponibilidad</h3>
+            <p className="mt-2 max-w-2xl text-[12px] text-soft">
               El sistema advierte faltantes antes de guardar y deja listo el
               producto para pasar a produccion.
             </p>

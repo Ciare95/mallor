@@ -1,6 +1,6 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import IAPage from './IAPage';
 import {
   enviarConsultaIA,
@@ -38,7 +38,10 @@ const resetStore = () => {
 };
 
 describe('IAPage', () => {
+  let confirmSpy;
+
   beforeEach(() => {
+    confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     resetStore();
     obtenerSugerenciasIA.mockResolvedValue({
       results: [
@@ -58,6 +61,10 @@ describe('IAPage', () => {
     limpiarHistorialIA.mockResolvedValue({ deleted: 0 });
   });
 
+  afterEach(() => {
+    confirmSpy?.mockRestore();
+  });
+
   it('carga sugerencias dentro de la empresa activa', async () => {
     renderWithProviders(<IAPage />, { router: false });
 
@@ -71,7 +78,7 @@ describe('IAPage', () => {
     renderWithProviders(<IAPage />, { router: false });
 
     const input = screen.getByPlaceholderText(
-      /pregunta por ventas, inventario, cartera/i,
+      /pregunta por ventas, clientes, proveedores, inventario, cartera o facturacion/i,
     );
     await user.type(input, 'ventas de hoy');
     await user.click(screen.getByRole('button', { name: /enviar/i }));
@@ -93,7 +100,9 @@ describe('IAPage', () => {
     renderWithProviders(<IAPage />, { router: false });
 
     await user.type(
-      screen.getByPlaceholderText(/pregunta por ventas, inventario, cartera/i),
+      screen.getByPlaceholderText(
+        /pregunta por ventas, clientes, proveedores, inventario, cartera o facturacion/i,
+      ),
       'ventas de hoy',
     );
     await user.click(screen.getByRole('button', { name: /enviar/i }));
@@ -103,7 +112,7 @@ describe('IAPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('envia feedback sobre mensajes persistidos y limpia la sesion', async () => {
+  it('envia feedback sobre mensajes persistidos, limpia la sesion y borra el historial', async () => {
     const user = userEvent.setup();
     listarHistorialIA.mockImplementation(({ sesionId } = {}) =>
       Promise.resolve({
@@ -152,5 +161,36 @@ describe('IAPage', () => {
         expect.any(Object),
       );
     });
+
+    await user.click(screen.getByRole('button', { name: /borrar historial/i }));
+    await waitFor(() => {
+      expect(limpiarHistorialIA).toHaveBeenNthCalledWith(2);
+    });
+  });
+
+  it('pide confirmacion antes de borrar todo el historial', async () => {
+    const user = userEvent.setup();
+    confirmSpy.mockReturnValue(false);
+    listarHistorialIA.mockResolvedValue({
+      results: [
+        {
+          id: 11,
+          sesion_id: '00000000-0000-4000-8000-000000000000',
+          consulta: 'ventas hoy',
+          respuesta: 'Sin ventas',
+          created_at: '2026-05-07T10:00:00Z',
+        },
+      ],
+    });
+
+    renderWithProviders(<IAPage />, { router: false });
+
+    const callsBefore = limpiarHistorialIA.mock.calls.length;
+    await user.click(await screen.findByRole('button', { name: /borrar historial/i }));
+
+    expect(window.confirm).toHaveBeenCalledWith(
+      '¿Estás seguro de borrar todo el historial IA? Esta acción no se puede deshacer.',
+    );
+    expect(limpiarHistorialIA.mock.calls.length).toBe(callsBefore);
   });
 });

@@ -2,7 +2,6 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity,
   Building2,
   CreditCard,
   Factory,
@@ -15,10 +14,12 @@ import {
   ReceiptText,
   Sparkles,
   Settings,
+  UserRound,
   Users,
 } from 'lucide-react';
 import { useAppStore } from '../store/useStore';
 import { useAuth } from '../hooks/useAuth';
+import mallorLogo from '../assets/mallor-logo.png';
 import {
   listarEmpresas,
   seleccionarEmpresa,
@@ -72,7 +73,7 @@ export default function Layout() {
   const navItems = [
     { path: '/', label: 'Inicio', icon: Home, end: true },
     { path: '/ventas', label: 'Ventas', icon: CreditCard, end: false },
-    { path: '/clientes', label: 'Clientes', icon: Building2, end: false },
+    { path: '/clientes', label: 'Clientes', icon: UserRound, end: false },
     {
       path: '/mi-empresa',
       label: 'Mi empresa',
@@ -120,27 +121,27 @@ export default function Layout() {
       <div className="pointer-events-none absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(24,23,22,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(24,23,22,0.03)_1px,transparent_1px)] [background-size:32px_32px]" />
       <div className="relative flex min-h-screen">
         <aside
-          className={`hidden border-r border-app bg-panel/90 backdrop-blur xl:flex xl:flex-col ${
+          className={`sticky top-0 hidden h-screen self-start border-r border-app bg-panel/90 backdrop-blur xl:flex xl:flex-col ${
             sidebarOpen ? 'xl:w-64' : 'xl:w-20'
           }`}
         >
-          <div className="border-b border-app px-4 py-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-app bg-[var(--accent-soft)] text-[var(--accent)]">
-                <Activity className="h-4 w-4" />
+          <div className={`border-b border-app ${sidebarOpen ? 'px-5 py-5' : 'px-2 py-4'}`}>
+            <div className="flex items-center justify-center">
+              <div className={`flex items-center justify-center ${
+                sidebarOpen
+                  ? 'w-full max-w-[104px]'
+                  : 'w-9'
+              }`}>
+                <img
+                  src={mallorLogo}
+                  alt="Mallor"
+                  className="h-auto w-full object-contain"
+                />
               </div>
-              {sidebarOpen && (
-                <div>
-                  <div className="font-display text-[1.55rem] text-main">
-                    Mallor
-                  </div>
-                  <div className="eyebrow">consola operativa</div>
-                </div>
-              )}
             </div>
           </div>
 
-          <nav className="flex-1 px-3 py-4">
+          <nav className="flex-1 overflow-y-auto px-3 py-4">
             <div className="mb-3 px-2 text-[10px] uppercase tracking-[0.28em] text-muted">
               {sidebarOpen ? 'Modulos' : 'Menu'}
             </div>
@@ -239,7 +240,6 @@ export default function Layout() {
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
-                <div className="app-pill">React + DRF</div>
               </div>
             </div>
 

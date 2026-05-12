@@ -6,10 +6,12 @@ export default function HistorialIA({
   onSelectSession,
   onNewSession,
   onClearSession,
-  isClearing,
+  onClearHistory,
+  isClearingSession,
+  isClearingHistory,
 }) {
   return (
-    <aside className="surface flex min-h-[360px] flex-col p-4">
+    <aside className="surface flex h-full min-h-0 flex-col overflow-hidden p-4">
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="eyebrow">Sesiones</div>
@@ -28,7 +30,7 @@ export default function HistorialIA({
         </button>
       </div>
 
-      <div className="mt-4 flex-1 space-y-2 overflow-y-auto pr-1">
+      <div className="mt-4 flex-1 min-h-0 space-y-2 overflow-y-auto pr-1">
         {sessions.length ? (
           sessions.map((session) => {
             const active = session.sesion_id === activeSessionId;
@@ -68,11 +70,21 @@ export default function HistorialIA({
       <button
         type="button"
         onClick={onClearSession}
-        disabled={!activeSessionId || isClearing}
+        disabled={!activeSessionId || isClearingSession}
         className="app-button-secondary mt-4 w-full"
       >
         <Trash2 className="h-4 w-4" />
         Limpiar sesion
+      </button>
+
+      <button
+        type="button"
+        onClick={onClearHistory}
+        disabled={!sessions.length || isClearingHistory}
+        className="app-button-secondary mt-2 w-full"
+      >
+        <Trash2 className="h-4 w-4" />
+        Borrar historial
       </button>
     </aside>
   );

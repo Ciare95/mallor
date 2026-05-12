@@ -50,7 +50,10 @@ describe('LoginPage', () => {
     renderWithProviders(<LoginPage />, { route: '/login' });
 
     await user.type(screen.getByLabelText(/usuario/i), 'admin');
-    await user.type(screen.getByLabelText(/contrasena/i), 'Secret123');
+    await user.type(
+      screen.getByLabelText(/contrasena/i, { selector: 'input' }),
+      'Secret123',
+    );
     await user.click(screen.getByRole('checkbox', { name: /recordarme/i }));
     await user.click(screen.getByRole('button', { name: /entrar/i }));
 
@@ -65,5 +68,22 @@ describe('LoginPage', () => {
       expect(useAppStore.getState().token).toBe('access-token');
       expect(localStorage.getItem('token')).toBeNull();
     });
+  });
+
+  it('permite mostrar y ocultar la contrasena', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<LoginPage />, { route: '/login' });
+
+    const passwordInput = screen.getByLabelText(/contrasena/i, {
+      selector: 'input',
+    });
+    expect(passwordInput).toHaveAttribute('type', 'password');
+
+    await user.click(screen.getByRole('button', { name: /mostrar contrasena/i }));
+    expect(passwordInput).toHaveAttribute('type', 'text');
+
+    await user.click(screen.getByRole('button', { name: /ocultar contrasena/i }));
+    expect(passwordInput).toHaveAttribute('type', 'password');
   });
 });

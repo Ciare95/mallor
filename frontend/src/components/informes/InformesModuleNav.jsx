@@ -27,7 +27,7 @@ const NAV_ITEMS = [
 
 export default function InformesModuleNav() {
   return (
-    <section className="surface p-3">
+    <section className="surface p-2.5">
       <div className="grid gap-3 lg:grid-cols-3">
         {NAV_ITEMS.map((item) => {
           const Icon = item.icon;
@@ -38,32 +38,15 @@ export default function InformesModuleNav() {
               to={item.path}
               end={item.end}
               className={({ isActive }) =>
-                `rounded-[24px] border px-4 py-4 transition ${
-                  isActive
-                    ? 'border-[var(--accent-line)] bg-[var(--accent-soft)]'
-                    : 'border-app bg-white/72 hover:border-[var(--accent-line)] hover:bg-white'
-                }`
+                `module-nav-card ${isActive ? 'module-nav-card-active' : ''}`
               }
             >
-              {({ isActive }) => (
-                <div className="flex items-start gap-4">
-                  <div
-                    className={`rounded-2xl border p-3 ${
-                      isActive
-                        ? 'border-[var(--accent-line)] bg-white/90 text-[var(--accent)]'
-                        : 'border-app bg-[var(--panel-soft)] text-soft'
-                    }`}
-                  >
+              {() => (
+                <div className="flex items-center gap-3">
+                  <div className="module-nav-icon">
                     <Icon className="h-4 w-4" />
                   </div>
-                  <div className="min-w-0">
-                    <div className="font-display text-[1.3rem] leading-none text-main">
-                      {item.label}
-                    </div>
-                    <div className="mt-2 text-[13px] leading-6 text-soft">
-                      {item.description}
-                    </div>
-                  </div>
+                  <div className="module-nav-label">{item.label}</div>
                 </div>
               )}
             </NavLink>

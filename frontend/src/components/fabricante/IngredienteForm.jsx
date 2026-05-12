@@ -105,25 +105,24 @@ export default function IngredienteForm({
 
   return (
     <div className="grid gap-6 xl:grid-cols-[1.08fr_0.92fr]">
-      <section className="surface p-5 sm:p-6">
-        <div className="flex flex-col gap-4 border-b border-app pb-5 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="eyebrow">
+      <section className="surface p-4 sm:p-5">
+        <div className="flex flex-col gap-4 border-b border-app pb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-2">
+            <div className="section-chip">
               {isEdit ? 'Edicion de insumo' : 'Alta de materia prima'}
             </div>
-            <h2 className="section-title mt-2">
+            <div className="text-sm font-semibold text-main">
               {isEdit ? ingredient.nombre : 'Nuevo ingrediente'}
-            </h2>
-            <p className="body-copy mt-2 max-w-2xl">
-              Registra costo base, unidad de compra, proveedor principal y
-              niveles de reposicion para mantener la receta sincronizada.
+            </div>
+            <p className="max-w-2xl text-[12px] text-soft">
+              Costo base, proveedor y niveles de reposicion de la receta.
             </p>
           </div>
 
           <button
             type="button"
             onClick={onCancel}
-            className="app-button-secondary min-h-11"
+            className="app-button-secondary min-h-10"
           >
             <ArrowLeft className="h-4 w-4" />
             Volver
@@ -286,8 +285,8 @@ export default function IngredienteForm({
 
       <aside className="space-y-6">
         <section className="surface p-5 sm:p-6">
-          <div className="eyebrow">Lectura operativa</div>
-          <h3 className="section-title mt-2">Resumen del ingrediente</h3>
+          <div className="section-chip">Lectura operativa</div>
+          <h3 className="mt-3 text-sm font-semibold text-main">Resumen del ingrediente</h3>
 
           <div className="mt-5 grid gap-3">
             <StatCard
@@ -314,7 +313,7 @@ export default function IngredienteForm({
         </section>
 
         <section className="surface p-5 sm:p-6">
-          <div className="eyebrow">Validacion</div>
+          <div className="section-chip">Validacion</div>
           <div className="mt-4 space-y-3">
             <CheckRow
               ok={Boolean(form.nombre.trim())}

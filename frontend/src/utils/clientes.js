@@ -1,3 +1,5 @@
+import { calculateNitVerificationDigit } from './nit';
+
 const DAY_MS = 86400000;
 
 export const DOCUMENTO_LABELS = {
@@ -140,7 +142,10 @@ export const calculateDaysPastDue = (venta, diasPlazo = 0) => {
 export const buildClientePayload = (form) => ({
   tipo_documento: form.tipo_documento,
   numero_documento: form.numero_documento.trim(),
-  digito_verificacion: form.digito_verificacion.trim(),
+  digito_verificacion:
+    form.tipo_documento === 'NIT'
+      ? calculateNitVerificationDigit(form.numero_documento)
+      : '',
   nombre: form.nombre.trim(),
   razon_social: form.razon_social.trim(),
   nombre_comercial: form.nombre_comercial.trim(),
@@ -164,7 +169,10 @@ export const buildClientePayload = (form) => ({
 export const createClienteFormState = (cliente) => ({
   tipo_documento: cliente?.tipo_documento || 'CC',
   numero_documento: cliente?.numero_documento || '',
-  digito_verificacion: cliente?.digito_verificacion || '',
+  digito_verificacion:
+    cliente?.tipo_documento === 'NIT'
+      ? calculateNitVerificationDigit(cliente?.numero_documento || '')
+      : '',
   nombre: cliente?.nombre || '',
   razon_social: cliente?.razon_social || '',
   nombre_comercial: cliente?.nombre_comercial || '',
@@ -201,7 +209,11 @@ export const validateClienteForm = ({
       'Ya existe un cliente con este tipo y numero de documento.';
   }
 
-  if (form.digito_verificacion.trim() && !/^\d+$/.test(form.digito_verificacion.trim())) {
+  if (
+    form.tipo_documento === 'NIT' &&
+    form.digito_verificacion.trim() &&
+    !/^\d+$/.test(form.digito_verificacion.trim())
+  ) {
     errors.digito_verificacion = 'El digito de verificacion debe ser numerico.';
   }
 

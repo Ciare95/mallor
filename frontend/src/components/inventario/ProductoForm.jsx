@@ -178,29 +178,28 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <section className="surface p-5 sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="flex items-start gap-4">
+      <section className="surface p-4 sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-start gap-3">
             <button
               type="button"
               onClick={onCancel}
-              className="app-button-secondary min-h-11"
+              className="app-button-secondary min-h-10"
             >
               <ArrowLeft className="h-4 w-4" />
               Volver
             </button>
-            <div>
-              <div className="eyebrow">Producto</div>
-              <h1 className="section-title mt-2">
+            <div className="space-y-2">
+              <div className="section-chip">Producto</div>
+              <div className="text-sm font-semibold text-main">
                 {producto ? 'Editar producto' : 'Crear producto'}
-              </h1>
-              <p className="body-copy mt-2 max-w-2xl">
-                Registra datos comerciales, stock, precios y evidencia visual
-                del inventario con una jerarquia mas clara.
-              </p>
+              </div>
+              <div className="text-[12px] text-soft">
+                Datos comerciales, stock y precio en una sola ficha.
+              </div>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
             <Kpi
               label="Margen"
               value={`${Number.isFinite(margen) ? margen.toFixed(1) : '0.0'}%`}
@@ -225,14 +224,14 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
 
       <div className="grid gap-6 xl:grid-cols-[1fr_320px]">
         <section className="surface p-5 sm:p-6">
-          <div className="mb-6 flex items-center gap-3">
+          <div className="mb-5 flex items-center gap-3">
             <div className="rounded-lg border border-[var(--accent-line)] bg-[var(--accent-soft)] p-3 text-[var(--accent)]">
               <Package className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="section-title">Datos del producto</h2>
-              <p className="body-copy mt-1">
-                Campos del modelo de inventario y validacion en tiempo real.
+              <div className="text-sm font-semibold text-main">Datos del producto</div>
+              <p className="mt-1 text-[12px] text-soft">
+                Campos base y validacion en tiempo real.
               </p>
             </div>
           </div>
@@ -405,7 +404,7 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
 
         <aside className="space-y-6">
           <section className="surface p-5 sm:p-6">
-            <h2 className="section-title">Imagen del producto</h2>
+            <div className="text-sm font-semibold text-main">Imagen del producto</div>
             <div className="mt-4 overflow-hidden rounded-xl border border-dashed border-app bg-[var(--panel-soft)]">
               {previewUrl ? (
                 <img
@@ -433,7 +432,7 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
           </section>
 
           <section className="surface p-5 sm:p-6">
-            <h2 className="section-title">Revision rapida</h2>
+            <div className="text-sm font-semibold text-main">Revision rapida</div>
             <div className="mt-4 space-y-3 text-sm">
               <CheckItem valid={!!formData.nombre.trim()} label="Nombre completo" />
               <CheckItem valid={precioCompra > 0} label="Precio de compra valido" />

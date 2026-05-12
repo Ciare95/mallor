@@ -9,16 +9,20 @@ export function SectionShell({
   children,
   className = '',
 }) {
+  const hasUtility = Boolean(eyebrow || title || description || actions);
+
   return (
     <section className={`surface p-4 sm:p-5 xl:p-6 ${className}`}>
-      {(eyebrow || title || description || actions) && (
-        <div className="mb-5 flex flex-col gap-4 border-b border-app pb-4 lg:flex-row lg:items-end lg:justify-between">
-          <div className="space-y-2">
-            {eyebrow && <div className="eyebrow">{eyebrow}</div>}
-            {title && <h2 className="section-title">{title}</h2>}
-            {description && <p className="max-w-3xl body-copy">{description}</p>}
-          </div>
-          {actions && <div className="flex flex-wrap gap-2.5">{actions}</div>}
+      {hasUtility && (
+        <div className={`section-utility ${actions ? 'sm:flex-row sm:items-center sm:justify-between' : ''}`}>
+          {eyebrow ? (
+            <div className="section-chip">{eyebrow}</div>
+          ) : (
+            <div />
+          )}
+          {actions && (
+            <div className="section-utility-actions">{actions}</div>
+          )}
         </div>
       )}
       {children}

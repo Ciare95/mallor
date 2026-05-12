@@ -200,6 +200,17 @@
     box-shadow: 0 0 0 4px rgba(47, 106, 82, 0.08);
   }
 
+  .app-input-no-spin::-webkit-outer-spin-button,
+  .app-input-no-spin::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .app-input-no-spin[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
   .table-shell {
     @apply overflow-hidden rounded-xl;
     border: 1px solid var(--line);
@@ -239,6 +250,54 @@
   .tab-card-active {
     border-color: var(--accent-line);
     background: var(--accent-soft);
+  }
+
+  .module-nav-card {
+    @apply rounded-lg border px-3 py-2.5 text-left transition;
+    border-color: var(--line);
+    background: rgba(255, 255, 255, 0.44);
+  }
+
+  .module-nav-card:hover {
+    background: rgba(255, 255, 255, 0.82);
+    border-color: var(--accent-line);
+  }
+
+  .module-nav-card-active {
+    border-color: var(--accent-line);
+    background: rgba(237, 243, 236, 0.9);
+  }
+
+  .module-nav-icon {
+    @apply inline-flex h-7 w-7 items-center justify-center rounded-md border;
+    border-color: var(--line);
+    background: rgba(255, 255, 255, 0.74);
+    color: var(--text-soft);
+  }
+
+  .module-nav-card-active .module-nav-icon {
+    border-color: var(--accent-line);
+    color: var(--accent);
+  }
+
+  .module-nav-label {
+    @apply text-[12px] font-semibold leading-none;
+    color: var(--text-main);
+  }
+
+  .section-chip {
+    @apply inline-flex items-center rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.24em];
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.76);
+    color: var(--text-muted);
+  }
+
+  .section-utility {
+    @apply mb-4 flex flex-col gap-3;
+  }
+
+  .section-utility-actions {
+    @apply flex flex-wrap gap-2.5;
   }
 
   .empty-state {
