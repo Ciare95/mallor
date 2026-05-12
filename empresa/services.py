@@ -46,16 +46,20 @@ class EmpresaService:
         if not getattr(usuario, 'is_authenticated', False):
             return None
 
+        if not EmpresaService.es_admin_interno(usuario):
+            return EmpresaUsuario.objects.filter(
+                usuario=usuario,
+                activo=True,
+            ).select_related('empresa').first()
+
         empresa = EmpresaService.asegurar_empresa_inicial()
-        rol = (
-            EmpresaUsuario.Rol.PROPIETARIO
-            if getattr(usuario, 'is_superuser', False) or getattr(usuario, 'is_admin', False)
-            else EmpresaUsuario.Rol.EMPLEADO
-        )
         membresia, _ = EmpresaUsuario.objects.get_or_create(
             empresa=empresa,
             usuario=usuario,
-            defaults={'rol': rol, 'activo': True},
+            defaults={
+                'rol': EmpresaUsuario.Rol.PROPIETARIO,
+                'activo': True,
+            },
         )
         return membresia
 

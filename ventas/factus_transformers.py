@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from core.exceptions import FacturacionValidacionError
+from core.exceptions import FacturacionOperacionError, FacturacionValidacionError
 from ventas.models import Venta, VentaFacturaElectronica
 
 
@@ -53,7 +53,10 @@ def build_reference_code(venta: Venta) -> str:
     documento = getattr(venta, 'factura_documento', None)
     if documento and documento.reference_code:
         return documento.reference_code
-    return f'VENTA-{venta.id}'
+    empresa_id = venta.empresa_id or 0
+    created_at = venta.created_at or venta.fecha_venta or timezone.now()
+    timestamp = timezone.localtime(created_at).strftime('%Y%m%d%H%M%S')
+    return f'MLR-E{empresa_id}-V{venta.id}-{timestamp}'
 
 
 def _validate_cliente(venta: Venta) -> None:
@@ -236,6 +239,48 @@ def extract_bill_result(payload: Dict[str, Any]) -> Dict[str, Any]:
         ),
         'raw': payload,
     }
+
+
+def validate_bill_response(
+    request_payload: Dict[str, Any],
+    response_payload: Dict[str, Any],
+) -> None:
+    data = _first_data(response_payload)
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    data = data or {}
+
+    request_customer = request_payload.get('customer') or {}
+    response_customer = data.get('customer') or {}
+    request_identification = str(
+        request_customer.get('identification') or '',
+    ).strip()
+    response_identification = str(
+        response_customer.get('identification') or '',
+    ).strip()
+
+    request_total = str(
+        ((request_payload.get('payment_details') or [{}])[0]).get('amount') or '',
+    ).strip()
+    response_total = str(
+        ((data.get('totals') or {}).get('total')) or '',
+    ).strip()
+
+    if (
+        request_identification
+        and response_identification
+        and request_identification != response_identification
+    ):
+        raise FacturacionOperacionError(
+            'Factus devolvio una factura con un cliente distinto al enviado.',
+            code='factus_respuesta_inconsistente',
+        )
+
+    if request_total and response_total and request_total != response_total:
+        raise FacturacionOperacionError(
+            'Factus devolvio una factura con total distinto al enviado.',
+            code='factus_respuesta_inconsistente',
+        )
 
 
 def build_credit_note_payload(

@@ -2,6 +2,7 @@ import { Suspense, lazy } from 'react';
 import { createBrowserRouter } from 'react-router-dom';
 import Layout from '../components/Layout';
 import ProtectedRoute from '../components/ProtectedRoute';
+import RoleRoute from '../components/RoleRoute';
 
 const LoginPage = lazy(() => import('../pages/LoginPage'));
 const HomePage = lazy(() => import('../pages/HomePage'));
@@ -48,21 +49,77 @@ export const router = createBrowserRouter([
       {
         element: <Layout />,
         children: [
-          { index: true, element: withSuspense(HomePage) },
+          {
+            index: true,
+            element: (
+              <RoleRoute route="home">
+                {withSuspense(HomePage)}
+              </RoleRoute>
+            ),
+          },
           { path: 'about', element: withSuspense(AboutPage) },
-          { path: 'usuarios', element: withSuspense(UsuariosPage) },
+          {
+            path: 'usuarios',
+            element: (
+              <RoleRoute route="usuarios">
+                {withSuspense(UsuariosPage)}
+              </RoleRoute>
+            ),
+          },
           { path: 'mi-empresa', element: withSuspense(MiEmpresaPage) },
           { path: 'empresas-admin', element: withSuspense(EmpresasAdminPage) },
           { path: 'inventario', element: withSuspense(ProductosPage) },
           { path: 'ventas', element: withSuspense(VentasPage) },
           { path: 'clientes', element: withSuspense(ClientesPage) },
-          { path: 'facturacion', element: withSuspense(FacturacionPage) },
+          {
+            path: 'facturacion',
+            element: (
+              <RoleRoute route="facturacion">
+                {withSuspense(FacturacionPage)}
+              </RoleRoute>
+            ),
+          },
           { path: 'proveedores', element: withSuspense(ProveedoresPage) },
-          { path: 'fabricante', element: withSuspense(FabricantePage) },
-          { path: 'informes', element: withSuspense(DashboardInformesPage) },
-          { path: 'informes/cierres', element: withSuspense(CierresCajaPage) },
-          { path: 'informes/reportes', element: withSuspense(ReportesPage) },
-          { path: 'ia', element: withSuspense(IAPage) },
+          {
+            path: 'fabricante',
+            element: (
+              <RoleRoute route="fabricante">
+                {withSuspense(FabricantePage)}
+              </RoleRoute>
+            ),
+          },
+          {
+            path: 'informes',
+            element: (
+              <RoleRoute route="informes">
+                {withSuspense(DashboardInformesPage)}
+              </RoleRoute>
+            ),
+          },
+          {
+            path: 'informes/cierres',
+            element: (
+              <RoleRoute route="informes">
+                {withSuspense(CierresCajaPage)}
+              </RoleRoute>
+            ),
+          },
+          {
+            path: 'informes/reportes',
+            element: (
+              <RoleRoute route="informes">
+                {withSuspense(ReportesPage)}
+              </RoleRoute>
+            ),
+          },
+          {
+            path: 'ia',
+            element: (
+              <RoleRoute route="ia">
+                {withSuspense(IAPage)}
+              </RoleRoute>
+            ),
+          },
         ],
       },
     ],

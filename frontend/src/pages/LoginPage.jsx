@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, LockKeyhole, LogIn } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import mallorLogo from '../assets/mallor-logo.png';
+import { getDefaultAuthenticatedPath } from '../utils/roleAccess';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -27,12 +28,22 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      await login({
+      const session = await login({
         username: form.username.trim(),
         password: form.password,
         rememberMe: form.rememberMe,
       });
-      navigate(searchParams.get('next') || '/', { replace: true });
+      const empresaActiva = session.empresas?.find(
+        (item) => String(item.id) === String(session.empresa_activa),
+      );
+      navigate(
+        getDefaultAuthenticatedPath({
+          role: empresaActiva?.rol_usuario,
+          user: session.user,
+          nextPath: searchParams.get('next'),
+        }),
+        { replace: true },
+      );
     } catch (requestError) {
       setError(
         requestError.response?.data?.detail

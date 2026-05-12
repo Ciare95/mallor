@@ -24,6 +24,10 @@ import {
   listarEmpresas,
   seleccionarEmpresa,
 } from '../services/empresas.service';
+import {
+  canAccessRoute,
+  isAdminInterno,
+} from '../utils/roleAccess';
 
 export default function Layout() {
   const location = useLocation();
@@ -36,8 +40,7 @@ export default function Layout() {
   const { logout } = useAuth();
   const queryClient = useQueryClient();
   const rolEmpresa = empresaActiva?.rol_usuario;
-  const puedeAdministrarEmpresa = ['PROPIETARIO', 'ADMIN'].includes(rolEmpresa);
-  const esAdminInterno = Boolean(user?.is_superuser || user?.is_staff);
+  const esUsuarioInterno = isAdminInterno(user);
 
   const empresasQuery = useQuery({
     queryKey: ['empresas'],
@@ -45,6 +48,7 @@ export default function Layout() {
   });
 
   const empresas = empresasQuery.data?.results ?? [];
+  const puedeCambiarEmpresa = empresas.length > 1;
 
   useEffect(() => {
     const empresasDisponibles = empresasQuery.data?.results ?? [];
@@ -71,7 +75,13 @@ export default function Layout() {
   });
 
   const navItems = [
-    { path: '/', label: 'Inicio', icon: Home, end: true },
+    {
+      path: '/',
+      label: 'Inicio',
+      icon: Home,
+      end: true,
+      hidden: !canAccessRoute('home', { role: rolEmpresa, user }),
+    },
     { path: '/ventas', label: 'Ventas', icon: CreditCard, end: false },
     { path: '/clientes', label: 'Clientes', icon: UserRound, end: false },
     {
@@ -85,26 +95,44 @@ export default function Layout() {
       label: 'Facturacion',
       icon: ReceiptText,
       end: false,
-      hidden: !puedeAdministrarEmpresa,
+      hidden: !canAccessRoute('facturacion', { role: rolEmpresa, user }),
     },
     { path: '/proveedores', label: 'Proveedores', icon: Factory, end: false },
-    { path: '/fabricante', label: 'Fabricante', icon: FlaskConical, end: false },
+    {
+      path: '/fabricante',
+      label: 'Fabricante',
+      icon: FlaskConical,
+      end: false,
+      hidden: !canAccessRoute('fabricante', { role: rolEmpresa, user }),
+    },
     { path: '/inventario', label: 'Inventario', icon: PackageSearch, end: false },
-    { path: '/informes', label: 'Informes', icon: PieChart, end: false },
-    { path: '/ia', label: 'IA', icon: Sparkles, end: false },
+    {
+      path: '/informes',
+      label: 'Informes',
+      icon: PieChart,
+      end: false,
+      hidden: !canAccessRoute('informes', { role: rolEmpresa, user }),
+    },
+    {
+      path: '/ia',
+      label: 'IA',
+      icon: Sparkles,
+      end: false,
+      hidden: !canAccessRoute('ia', { role: rolEmpresa, user }),
+    },
     {
       path: '/usuarios',
       label: 'Usuarios',
       icon: Users,
       end: false,
-      hidden: !puedeAdministrarEmpresa,
+      hidden: !canAccessRoute('usuarios', { role: rolEmpresa, user }),
     },
     {
       path: '/empresas-admin',
       label: 'Empresas SaaS',
       icon: Settings,
       end: false,
-      hidden: !esAdminInterno,
+      hidden: !esUsuarioInterno,
     },
     { path: '/about', label: 'Acerca', icon: FileText, end: false },
   ].filter((item) => !item.hidden);
@@ -206,25 +234,33 @@ export default function Layout() {
               </div>
 
               <div className="hidden items-center gap-3 md:flex">
-                <label className="flex items-center gap-2 rounded-full border border-app bg-white/70 px-3 py-1.5">
+                <div className="flex items-center gap-2 rounded-full border border-app bg-white/70 px-3 py-1.5">
                   <span className="text-[10px] uppercase tracking-[0.22em] text-muted">
                     Empresa
                   </span>
-                  <select
-                    value={empresaActiva?.id || ''}
-                    onChange={(event) =>
-                      seleccionarEmpresaMutation.mutate(event.target.value)
-                    }
-                    className="bg-transparent text-[12px] font-semibold text-main outline-none"
-                    disabled={empresasQuery.isLoading || empresas.length <= 1}
-                  >
-                    {empresas.map((empresa) => (
-                      <option key={empresa.id} value={empresa.id}>
-                        {empresa.nombre_comercial || empresa.razon_social}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  {puedeCambiarEmpresa ? (
+                    <select
+                      value={empresaActiva?.id || ''}
+                      onChange={(event) =>
+                        seleccionarEmpresaMutation.mutate(event.target.value)
+                      }
+                      className="bg-transparent text-[12px] font-semibold text-main outline-none"
+                      disabled={empresasQuery.isLoading}
+                    >
+                      {empresas.map((empresa) => (
+                        <option key={empresa.id} value={empresa.id}>
+                          {empresa.nombre_comercial || empresa.razon_social}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-[12px] font-semibold text-main">
+                      {empresaActiva?.nombre_comercial
+                        || empresaActiva?.razon_social
+                        || 'Sin empresa'}
+                    </span>
+                  )}
+                </div>
                 <div className="app-pill border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]">
                   {rolEmpresa || 'Sin rol'}
                 </div>

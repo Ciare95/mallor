@@ -3,7 +3,7 @@ import zlib
 from typing import Any, Dict, Optional
 
 from django.db import transaction
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from django.utils import timezone
 
 from core.exceptions import (
@@ -20,6 +20,7 @@ from ventas.factus_transformers import (
     build_factus_bill_payload,
     build_reference_code,
     extract_bill_result,
+    validate_bill_response,
     validar_venta_facturable,
 )
 from ventas.models import (
@@ -40,6 +41,17 @@ def _parse_optional_date(value: Any):
     if hasattr(value, 'year'):
         return value
     return parse_date(str(value))
+
+
+def _parse_optional_datetime(value: Any):
+    if not value:
+        return None
+    if hasattr(value, 'hour'):
+        return value
+    parsed = parse_datetime(str(value))
+    if parsed is not None:
+        return parsed
+    return None
 
 
 def _extract_rows(payload: Dict[str, Any]) -> list[Dict[str, Any]]:
@@ -190,7 +202,9 @@ class FacturacionElectronicaService:
     def _next_retry_reference_code(
         documento: VentaFacturaElectronica,
     ) -> str:
-        base_reference = f'VENTA-{documento.venta_id}'
+        base_reference = documento.reference_code
+        if '-R' in base_reference:
+            base_reference = base_reference.rsplit('-R', 1)[0]
         retry_prefix = f'{base_reference}-R'
         next_retry = 1
 
@@ -358,13 +372,17 @@ class FacturacionElectronicaService:
 
         try:
             response = self._adapter_for_empresa(empresa).emitir_factura(payload)
+            validate_bill_response(payload, response)
             parsed = extract_bill_result(response)
             documento.status = VentaFacturaElectronica.Status.EMITIDA
             documento.bill_number = parsed['bill_number']
             documento.cufe = parsed['cufe']
             documento.resolution_number = parsed['resolution_number']
             documento.response_payload = response
-            documento.validated_at = timezone.now()
+            documento.validated_at = (
+                _parse_optional_datetime(parsed['validated_at'])
+                or timezone.now()
+            )
             documento.save()
             documento.sync_venta_fields()
             self._registrar_intento(
@@ -379,6 +397,8 @@ class FacturacionElectronicaService:
             documento.status = VentaFacturaElectronica.Status.ERROR
             documento.last_error_code = getattr(exc, 'code', 'factus_error')
             documento.last_error_message = getattr(exc, 'message', str(exc))
+            if 'response' in locals():
+                documento.response_payload = response
             if self._is_pending_dian_conflict(
                 documento.last_error_code,
                 documento.last_error_message,

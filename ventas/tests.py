@@ -17,7 +17,10 @@ from core.exceptions import (
 )
 from inventario.models import HistorialInventario, Producto
 from usuario.models import Usuario
-from ventas.factus_transformers import build_factus_bill_payload
+from ventas.factus_transformers import (
+    build_factus_bill_payload,
+    build_reference_code,
+)
 from ventas.facturacion_services import FacturacionElectronicaService
 from ventas.models import (
     Abono,
@@ -835,6 +838,15 @@ class FacturacionElectronicaTest(TestCase):
             [{'code': '01', 'rate': '0.00'}],
         )
 
+    def test_build_reference_code_es_estable_y_no_colisiona_por_id_simple(self):
+        venta = self._crear_venta_facturable()
+
+        reference_code = build_reference_code(venta)
+
+        self.assertEqual(reference_code, build_reference_code(venta))
+        self.assertTrue(reference_code.startswith(f'MLR-E{venta.empresa_id}-V{venta.id}-'))
+        self.assertNotEqual(reference_code, f'VENTA-{venta.id}')
+
     def test_build_factus_bill_payload_valida_cliente_sin_municipio(self):
         self.cliente.municipio_codigo = ''
         self.cliente.save(update_fields=['municipio_codigo'])
@@ -930,6 +942,35 @@ class FacturacionElectronicaTest(TestCase):
         self.assertEqual(venta.estado, Venta.Estado.TERMINADA)
         self.assertEqual(documento.status, VentaFacturaElectronica.Status.ERROR)
 
+    def test_emitir_factura_falla_si_factus_devuelve_cliente_o_total_distinto(self):
+        venta = self._crear_venta_facturable()
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        with patch.object(
+            service.adapter,
+            'emitir_factura',
+            return_value={
+                'data': {
+                    'number': 'SETP-99',
+                    'cufe': 'CUFE-999',
+                    'customer': {
+                        'identification': '999999999',
+                    },
+                    'totals': {
+                        'total': '3000.00',
+                    },
+                },
+            },
+            create=True,
+        ):
+            with self.assertRaises(FacturacionOperacionError) as exc:
+                service.emitir_factura(venta.id)
+
+        documento = VentaFacturaElectronica.objects.get(venta=venta)
+        self.assertEqual(exc.exception.code, 'factus_respuesta_inconsistente')
+        self.assertEqual(documento.status, VentaFacturaElectronica.Status.ERROR)
+        self.assertEqual(documento.response_payload['data']['number'], 'SETP-99')
+
     def test_emitir_factura_rota_referencia_si_factus_deja_pendiente_dian(self):
         venta = self._crear_venta_facturable()
         service = FacturacionElectronicaService(adapter=self._build_adapter())
@@ -948,14 +989,15 @@ class FacturacionElectronicaTest(TestCase):
 
         documento = VentaFacturaElectronica.objects.get(venta=venta)
         self.assertEqual(documento.status, VentaFacturaElectronica.Status.ERROR)
-        self.assertEqual(documento.reference_code, f'VENTA-{venta.id}-R1')
+        self.assertTrue(documento.reference_code.endswith('-R1'))
 
     def test_reintentar_usa_referencia_rotada_por_conflicto_pendiente_dian(self):
         venta = self._crear_venta_facturable()
+        base_reference = build_reference_code(venta)
         documento = VentaFacturaElectronica.objects.create(
             venta=venta,
             status=VentaFacturaElectronica.Status.ERROR,
-            reference_code=f'VENTA-{venta.id}',
+            reference_code=base_reference,
             last_error_code='factus_http_409',
             last_error_message=(
                 'Factus respondio 409: Se encontro una factura pendiente '
@@ -979,13 +1021,13 @@ class FacturacionElectronicaTest(TestCase):
             documento = service.reintentar_emision(venta.id)
 
         payload = emitir.call_args.args[0]
-        self.assertEqual(payload['reference_code'], f'VENTA-{venta.id}-R1')
+        self.assertEqual(payload['reference_code'], f'{base_reference}-R1')
         self.assertEqual(
             payload['payment_details'][0]['reference_code'],
-            f'VENTA-{venta.id}-R1',
+            f'{base_reference}-R1',
         )
         self.assertEqual(documento.status, VentaFacturaElectronica.Status.EMITIDA)
-        self.assertEqual(documento.reference_code, f'VENTA-{venta.id}-R1')
+        self.assertEqual(documento.reference_code, f'{base_reference}-R1')
 
 
 class VentaTenantApiTest(TestCase):
