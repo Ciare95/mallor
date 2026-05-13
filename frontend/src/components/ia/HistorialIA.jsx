@@ -22,7 +22,7 @@ export default function HistorialIA({
         <button
           type="button"
           onClick={onNewSession}
-          className="flex h-10 w-10 items-center justify-center rounded-md border border-app bg-white/70 text-soft transition hover:bg-white hover:text-main"
+          className="ia-icon-button flex h-10 w-10 items-center justify-center rounded-md border border-app text-soft transition hover:text-main"
           title="Nueva sesion"
           aria-label="Nueva sesion"
         >
@@ -42,7 +42,7 @@ export default function HistorialIA({
                 className={`w-full rounded-lg border px-3 py-3 text-left transition ${
                   active
                     ? 'border-[var(--accent-line)] bg-[var(--accent-soft)]'
-                    : 'border-app bg-white/62 hover:bg-white'
+                    : 'ia-session-row border-app'
                 }`}
               >
                 <div className="line-clamp-2 text-[12px] font-semibold text-main">

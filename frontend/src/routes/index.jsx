@@ -13,6 +13,7 @@ const EmpresasAdminPage = lazy(() => import('../pages/EmpresasAdminPage'));
 const ProductosPage = lazy(() => import('../pages/inventario/ProductosPage'));
 const VentasPage = lazy(() => import('../pages/ventas/VentasPage'));
 const ClientesPage = lazy(() => import('../pages/clientes/ClientesPage'));
+const ContadoresPage = lazy(() => import('../pages/contadores/ContadoresPage'));
 const FacturacionPage = lazy(() => import('../pages/facturacion/FacturacionPage'));
 const ProveedoresPage = lazy(() => import('../pages/proveedores/ProveedoresPage'));
 const FabricantePage = lazy(() => import('../pages/fabricante/FabricantePage'));
@@ -76,6 +77,14 @@ export const router = createBrowserRouter([
             element: (
               <RoleRoute route="facturacion">
                 {withSuspense(FacturacionPage)}
+              </RoleRoute>
+            ),
+          },
+          {
+            path: 'contadores',
+            element: (
+              <RoleRoute route="contadores">
+                {withSuspense(ContadoresPage)}
               </RoleRoute>
             ),
           },

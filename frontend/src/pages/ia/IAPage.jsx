@@ -227,7 +227,7 @@ export default function IAPage() {
         isClearingHistory={clearAllMutation.isPending}
       />
 
-      <section className="surface flex min-h-[620px] flex-col overflow-hidden">
+      <section className="ia-chat-shell surface flex min-h-[620px] flex-col overflow-hidden">
         <div className="border-b border-app px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -263,7 +263,7 @@ export default function IAPage() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-[rgba(255,255,255,0.36)] px-5 py-5">
+        <div className="ia-chat-scroll flex-1 overflow-y-auto px-5 py-5">
           {messages.length ? (
             <div className="space-y-4">
               {messages.map((message) => (

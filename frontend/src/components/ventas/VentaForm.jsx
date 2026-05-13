@@ -36,13 +36,21 @@ export default function VentaForm({
   onReset,
   onSubmit,
   focusSignal = 0,
+  openCobroSignal = 0,
+  submitSignal = 0,
 }) {
   const [productQuery, setProductQuery] = useState('');
   const [clientQuery, setClientQuery] = useState('');
   const [showClientModal, setShowClientModal] = useState(false);
   const [showCobroModal, setShowCobroModal] = useState(false);
   const [cashManualOverride, setCashManualOverride] = useState(false);
+  const [activeProductIndex, setActiveProductIndex] = useState(-1);
   const productSearchRef = useRef(null);
+  const lastCobroSignalRef = useRef(0);
+  const lastSubmitSignalRef = useRef(0);
+  const productResultsId = useRef(
+    `ventas-product-results-${Math.random().toString(36).slice(2, 8)}`,
+  );
   const deferredProductQuery = useDeferredValue(productQuery.trim());
   const deferredClientQuery = useDeferredValue(clientQuery.trim());
   const showClientResults = deferredClientQuery.length >= 2;
@@ -61,23 +69,6 @@ export default function VentaForm({
       draft.efectivoRecibido === undefined)
       ? String(resumen.efectivoRecibido)
       : draft.efectivoRecibido;
-
-  useEffect(() => {
-    productSearchRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      productSearchRef.current?.focus();
-    });
-  }, [focusSignal]);
-
-  useEffect(() => {
-    if (!autoCashEnabled) {
-      setCashManualOverride(false);
-    }
-  }, [autoCashEnabled]);
-
   const productosQuery = useQuery({
     queryKey: ['ventas', 'pos', 'productos', deferredProductQuery],
     queryFn: () => buscarProductos(deferredProductQuery),
@@ -97,6 +88,10 @@ export default function VentaForm({
   });
 
   const selectedClient = draft.clienteSeleccionado || CONSUMIDOR_FINAL;
+  const productResults = useMemo(
+    () => (productosQuery.data || []).slice(0, 6),
+    [productosQuery.data],
+  );
   const canSubmit =
     draft.items.length > 0 &&
     (
@@ -105,12 +100,68 @@ export default function VentaForm({
       resumen.efectivoRecibido >= resumen.total
     );
 
+  useEffect(() => {
+    productSearchRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      productSearchRef.current?.focus();
+    });
+  }, [focusSignal]);
+
+  useEffect(() => {
+    if (!autoCashEnabled) {
+      setCashManualOverride(false);
+    }
+  }, [autoCashEnabled]);
+
+  useEffect(() => {
+    setActiveProductIndex(-1);
+  }, [deferredProductQuery]);
+
+  useEffect(() => {
+    if (!productResults.length) {
+      setActiveProductIndex(-1);
+      return;
+    }
+    if (activeProductIndex >= productResults.length) {
+      setActiveProductIndex(productResults.length - 1);
+    }
+  }, [activeProductIndex, productResults]);
+
+  useEffect(() => {
+    if (!openCobroSignal || openCobroSignal === lastCobroSignalRef.current) {
+      return;
+    }
+    lastCobroSignalRef.current = openCobroSignal;
+    setShowCobroModal(true);
+  }, [openCobroSignal]);
+
+  useEffect(() => {
+    if (
+      !submitSignal ||
+      submitSignal === lastSubmitSignalRef.current
+    ) {
+      return;
+    }
+    lastSubmitSignalRef.current = submitSignal;
+    if (showCobroModal || !canSubmit) {
+      return;
+    }
+    onSubmit({
+      ...draft,
+      estado: draft.estado,
+    });
+  }, [canSubmit, draft, onSubmit, showCobroModal, submitSignal]);
+
   const submitLabel =
     draft.estado === 'PENDIENTE' ? 'Guardar como pendiente' : 'Registrar venta';
 
   const addProductAndClear = (producto) => {
     onAddProduct(producto);
     setProductQuery('');
+    setActiveProductIndex(-1);
     requestAnimationFrame(() => {
       productSearchRef.current?.focus();
     });
@@ -160,6 +211,43 @@ export default function VentaForm({
     onChangeField('efectivoRecibido', String(amount));
   };
 
+  const handleProductSearchKeyDown = (event) => {
+    if (!productResults.length) {
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveProductIndex((current) =>
+        current < productResults.length - 1 ? current + 1 : 0,
+      );
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveProductIndex((current) =>
+        current > 0 ? current - 1 : productResults.length - 1,
+      );
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      const activeProduct =
+        activeProductIndex >= 0
+          ? productResults[activeProductIndex]
+          : productResults.length === 1
+            ? productResults[0]
+            : null;
+      if (!activeProduct) {
+        return;
+      }
+
+      event.preventDefault();
+      addProductAndClear(activeProduct);
+    }
+  };
+
   return (
     <div className="grid gap-4 xl:grid-cols-[1.45fr_0.92fr]">
       <SectionShell
@@ -178,8 +266,18 @@ export default function VentaForm({
                     type="text"
                     value={productQuery}
                     onChange={(event) => setProductQuery(event.target.value)}
+                    onKeyDown={handleProductSearchKeyDown}
                     placeholder="Nombre, codigo interno o codigo de barras"
                     className="app-input min-h-11 px-11"
+                    aria-controls={productResultsId.current}
+                    aria-activedescendant={
+                      activeProductIndex >= 0
+                        ? `${productResultsId.current}-${productResults[activeProductIndex]?.id}`
+                        : undefined
+                    }
+                    aria-autocomplete="list"
+                    aria-expanded={productResults.length > 0}
+                    role="combobox"
                   />
                 </div>
               </label>
@@ -195,14 +293,25 @@ export default function VentaForm({
 
               {deferredProductQuery.length >= 2 &&
                 !productosQuery.isFetching &&
-                (productosQuery.data || []).length > 0 && (
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {productosQuery.data.slice(0, 6).map((producto) => (
+                productResults.length > 0 && (
+                  <div
+                    id={productResultsId.current}
+                    role="listbox"
+                    className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+                  >
+                    {productResults.map((producto, index) => (
                       <button
                         key={producto.id}
+                        id={`${productResultsId.current}-${producto.id}`}
                         type="button"
                         onClick={() => addProductAndClear(producto)}
-                        className="rounded-xl border border-app bg-white/72 p-4 text-left transition hover:border-[var(--accent-line)] hover:bg-white"
+                        role="option"
+                        aria-selected={activeProductIndex === index}
+                        className={`rounded-xl border p-4 text-left transition ${
+                          activeProductIndex === index
+                            ? 'border-[var(--accent-line)] bg-[var(--accent-soft)]'
+                            : 'border-app bg-white/72 hover:border-[var(--accent-line)] hover:bg-white'
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -651,6 +760,7 @@ function CobroFields({
   handleCashReceivedFocus,
   applyCashSuggestion,
   setCashManualOverride,
+  firstFieldRef,
 }) {
   return (
     <div className="grid gap-5 xl:grid-cols-2">
@@ -659,6 +769,7 @@ function CobroFields({
         <div className="relative">
           <BadgePercent className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <input
+            ref={firstFieldRef}
             type="number"
             min="0"
             max="100"
@@ -792,6 +903,17 @@ function CobroModal({
   applyCashSuggestion,
   setCashManualOverride,
 }) {
+  const firstFieldRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      firstFieldRef.current?.focus();
+    });
+  }, [open]);
+
   if (!open) {
     return null;
   }
@@ -835,6 +957,7 @@ function CobroModal({
             handleCashReceivedFocus={handleCashReceivedFocus}
             applyCashSuggestion={applyCashSuggestion}
             setCashManualOverride={setCashManualOverride}
+            firstFieldRef={firstFieldRef}
           />
         </div>
 

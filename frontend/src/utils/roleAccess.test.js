@@ -19,6 +19,20 @@ describe('roleAccess', () => {
     expect(getDefaultAuthenticatedPath({ role: 'PROPIETARIO', user: {} })).toBe('/');
   });
 
+  it('redirige contadores al modulo contable y bloquea administracion', () => {
+    const context = {
+      role: 'CONTADOR',
+      user: { is_staff: false, is_superuser: false },
+    };
+
+    expect(getDefaultAuthenticatedPath(context)).toBe('/contadores');
+    expect(canAccessRoute('contadores', context)).toBe(true);
+    expect(canAccessRoute('informes', context)).toBe(true);
+    expect(canAccessRoute('home', context)).toBe(false);
+    expect(canAccessRoute('facturacion', context)).toBe(false);
+    expect(canAccessRoute('usuarios', context)).toBe(false);
+  });
+
   it('bloquea home, fabricante, informes e ia para empleado', () => {
     const context = {
       role: 'EMPLEADO',

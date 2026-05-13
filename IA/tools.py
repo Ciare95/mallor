@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Callable, Dict, Iterable, List, Optional
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
@@ -30,6 +31,7 @@ ADMIN_ROLES = (
 )
 ALL_ROLES = ADMIN_ROLES + (EmpresaUsuario.Rol.EMPLEADO,)
 MAX_TOOL_RESULTS = getattr(settings, 'IA_MAX_TOOL_RESULTS', 20)
+BUSINESS_TIMEZONE = ZoneInfo('America/Bogota')
 
 
 class IAToolError(ValueError):
@@ -71,7 +73,7 @@ def _period_dates(
     queryset=None,
     date_field: Optional[str] = None,
 ) -> tuple[date, date]:
-    today = timezone.localdate()
+    today = timezone.localdate(timezone=BUSINESS_TIMEZONE)
     periodo = str(params.get('periodo') or '').lower().strip()
     fecha_inicio = params.get('fecha_inicio')
     fecha_fin = params.get('fecha_fin')
@@ -93,8 +95,13 @@ def _period_dates(
     if periodo in {'todo', 'historico', 'histórico'}:
         if queryset is not None and date_field:
             primer_valor = queryset.aggregate(primera_fecha=Min(date_field))['primera_fecha']
+            if isinstance(primer_valor, datetime):
+                return timezone.localtime(
+                    primer_valor,
+                    BUSINESS_TIMEZONE,
+                ).date(), today
             if isinstance(primer_valor, date):
-                return getattr(primer_valor, 'date', lambda: primer_valor)(), today
+                return primer_valor, today
         return today, today
     if periodo == 'mes' or not periodo:
         return today.replace(day=1), today
@@ -125,6 +132,9 @@ def _tool_resumen_ventas_periodo(context, params):
     )
     return {
         'tipo': 'resumen_ventas_periodo',
+        'periodo_consultado': _period_scope(params),
+        'fecha_inicio': start,
+        'fecha_fin': end,
         'datos': ReporteEstadisticasService.estadisticas_ventas_periodo(start, end),
     }
 

@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
+  ClipboardCheck,
   CreditCard,
   Factory,
   FileText,
@@ -97,6 +98,13 @@ export default function Layout() {
       end: false,
       hidden: !canAccessRoute('facturacion', { role: rolEmpresa, user }),
     },
+    {
+      path: '/contadores',
+      label: 'Contadores',
+      icon: ClipboardCheck,
+      end: false,
+      hidden: !canAccessRoute('contadores', { role: rolEmpresa, user }),
+    },
     { path: '/proveedores', label: 'Proveedores', icon: Factory, end: false },
     {
       path: '/fabricante',
@@ -146,7 +154,8 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-app text-main">
-      <div className="pointer-events-none absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(24,23,22,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(24,23,22,0.03)_1px,transparent_1px)] [background-size:32px_32px]" />
+      <div className="app-grid-overlay pointer-events-none absolute inset-0 opacity-70" />
+      <div className="app-top-glow pointer-events-none absolute inset-x-0 top-0 h-[340px]" />
       <div className="relative flex min-h-screen">
         <aside
           className={`sticky top-0 hidden h-screen self-start border-r border-app bg-panel/90 backdrop-blur xl:flex xl:flex-col ${
@@ -234,7 +243,7 @@ export default function Layout() {
               </div>
 
               <div className="hidden items-center gap-3 md:flex">
-                <div className="flex items-center gap-2 rounded-full border border-app bg-white/70 px-3 py-1.5">
+                <div className="flex items-center gap-2 rounded-full border border-app bg-panel px-3 py-1.5 shadow-[0_10px_24px_rgba(24,23,22,0.04)]">
                   <span className="text-[10px] uppercase tracking-[0.22em] text-muted">
                     Empresa
                   </span>
@@ -270,7 +279,7 @@ export default function Layout() {
                 <button
                   type="button"
                   onClick={logout}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-app bg-white/70 text-soft transition hover:bg-white"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-app bg-panel text-soft transition hover:bg-panel-strong"
                   title="Salir"
                   aria-label="Cerrar sesion"
                 >
@@ -291,7 +300,7 @@ export default function Layout() {
                       `inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-2 text-[12px] font-semibold transition ${
                         isActive
                           ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]'
-                          : 'border-app bg-white/60 text-soft'
+                          : 'border-app bg-panel text-soft'
                       }`
                     }
                   >

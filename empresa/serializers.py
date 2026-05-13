@@ -1,12 +1,130 @@
 from rest_framework import serializers
 
-from empresa.models import Empresa, EmpresaUsuario
+from empresa.models import Empresa, EmpresaConfiguracion, EmpresaUsuario
 from empresa.services import EmpresaService
 from ventas.models import FactusCredential
 
 
+class EmpresaConfiguracionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EmpresaConfiguracion
+        fields = [
+            'tema',
+            'permitir_stock_negativo_ventas',
+            'atajos_ventas_activos',
+            'atajos_ventas',
+        ]
+
+    @staticmethod
+    def _normalizar_atajo(value: str) -> str:
+        aliases = {
+            'DEL': 'Delete',
+            'DELETE': 'Delete',
+            'SUPR': 'Delete',
+            'ESC': 'Escape',
+            'ESCAPE': 'Escape',
+            'ENTER': 'Enter',
+            'RETURN': 'Enter',
+            'SPACE': 'Space',
+            'TAB': 'Tab',
+        }
+        modifiers_order = ['Ctrl', 'Alt', 'Shift', 'Meta']
+        modifiers_map = {
+            'CTRL': 'Ctrl',
+            'CONTROL': 'Ctrl',
+            'ALT': 'Alt',
+            'SHIFT': 'Shift',
+            'META': 'Meta',
+            'CMD': 'Meta',
+            'COMMAND': 'Meta',
+        }
+        parts = [part.strip() for part in str(value).split('+') if part.strip()]
+        if not parts:
+            return ''
+
+        normalized_modifiers = []
+        main_key = None
+
+        for part in parts:
+            upper = part.upper()
+            if upper in modifiers_map:
+                modifier = modifiers_map[upper]
+                if modifier not in normalized_modifiers:
+                    normalized_modifiers.append(modifier)
+                continue
+
+            if len(part) == 1:
+                main_key = part.upper()
+            else:
+                main_key = aliases.get(upper, part.title())
+
+        ordered_modifiers = [
+            modifier
+            for modifier in modifiers_order
+            if modifier in normalized_modifiers
+        ]
+        if main_key:
+            ordered_modifiers.append(main_key)
+        return '+'.join(ordered_modifiers)
+
+    def validate_atajos_ventas(self, value):
+        if not isinstance(value, dict):
+            raise serializers.ValidationError(
+                'Los atajos deben enviarse como objeto JSON.',
+            )
+
+        allowed_keys = set(EmpresaConfiguracion.ATAJOS_VENTAS_KEYS)
+        incoming_keys = set(value.keys())
+        if incoming_keys != allowed_keys:
+            raise serializers.ValidationError(
+                'Los atajos deben incluir exactamente las llaves esperadas.',
+            )
+
+        normalized = {}
+        seen = set()
+        for key in EmpresaConfiguracion.ATAJOS_VENTAS_KEYS:
+            shortcut = self._normalizar_atajo(value.get(key, ''))
+            if not shortcut:
+                raise serializers.ValidationError({
+                    key: 'Este atajo no puede estar vacio.',
+                })
+            if shortcut in seen:
+                raise serializers.ValidationError({
+                    key: 'No puede repetir atajos entre acciones.',
+                })
+            normalized[key] = shortcut
+            seen.add(shortcut)
+
+        return normalized
+
+    def validate(self, attrs):
+        atajos_activos = attrs.get(
+            'atajos_ventas_activos',
+            getattr(self.instance, 'atajos_ventas_activos', True),
+        )
+        atajos_ventas = attrs.get(
+            'atajos_ventas',
+            getattr(
+                self.instance,
+                'atajos_ventas',
+                EmpresaConfiguracion.get_default_atajos_ventas(),
+            ),
+        )
+        if atajos_activos:
+            for key in EmpresaConfiguracion.ATAJOS_VENTAS_KEYS:
+                if not str(atajos_ventas.get(key, '')).strip():
+                    raise serializers.ValidationError({
+                        'atajos_ventas': (
+                            'Todos los atajos deben tener valor cuando '
+                            'estan activos.'
+                        ),
+                    })
+        return attrs
+
+
 class EmpresaSerializer(serializers.ModelSerializer):
     rol_usuario = serializers.SerializerMethodField()
+    configuracion_operativa = serializers.SerializerMethodField()
 
     class Meta:
         model = Empresa
@@ -23,14 +141,19 @@ class EmpresaSerializer(serializers.ModelSerializer):
             'ambiente_facturacion',
             'activo',
             'rol_usuario',
+            'configuracion_operativa',
         ]
-        read_only_fields = ['id', 'rol_usuario']
+        read_only_fields = ['id', 'rol_usuario', 'configuracion_operativa']
 
     def get_rol_usuario(self, obj):
         request = self.context.get('request')
         if not request:
             return None
         return EmpresaService.rol_usuario(request.user, obj)
+
+    def get_configuracion_operativa(self, obj):
+        config = EmpresaConfiguracion.get_or_create_for_empresa(obj)
+        return EmpresaConfiguracionSerializer(config).data
 
     def validate(self, attrs):
         request = self.context.get('request')

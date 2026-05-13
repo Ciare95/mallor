@@ -151,6 +151,7 @@ export default function EmpresaUsuariosPage() {
                 className="app-select min-h-11"
               >
                 <option value="EMPLEADO">Empleado</option>
+                <option value="CONTADOR">Contador</option>
                 <option value="ADMIN">Administrador</option>
                 <option value="PROPIETARIO">Propietario</option>
               </select>
@@ -211,6 +212,7 @@ export default function EmpresaUsuariosPage() {
                     className="app-select min-h-10"
                   >
                     <option value="EMPLEADO">Empleado</option>
+                    <option value="CONTADOR">Contador</option>
                     <option value="ADMIN">Administrador</option>
                     <option value="PROPIETARIO">Propietario</option>
                   </select>

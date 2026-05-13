@@ -1,5 +1,22 @@
 import { create } from 'zustand';
 
+const THEME_STORAGE_KEY = 'mallor_theme';
+const EMPRESA_STORAGE_KEY = 'mallor_empresa_activa_id';
+
+export const DEFAULT_ATAJOS_VENTAS = {
+  registrar_venta: 'Ctrl+V',
+  configurar_cobro: 'Ctrl+C',
+  nueva_precuenta: 'Ctrl+N',
+  quitar_ultimo_producto: 'Delete',
+};
+
+export const DEFAULT_CONFIGURACION_OPERATIVA = {
+  tema: 'LIGHT',
+  permitir_stock_negativo_ventas: false,
+  atajos_ventas_activos: true,
+  atajos_ventas: DEFAULT_ATAJOS_VENTAS,
+};
+
 const storedUser = sessionStorage.getItem('mallor_user');
 const initialUser = (() => {
   if (!storedUser) {
@@ -12,8 +29,34 @@ const initialUser = (() => {
   }
 })();
 
+const getStoredTheme = () => {
+  const theme = localStorage.getItem(THEME_STORAGE_KEY);
+  return theme === 'DARK' ? 'DARK' : 'LIGHT';
+};
+
+const applyTheme = (theme) => {
+  if (typeof document === 'undefined') {
+    return;
+  }
+  document.documentElement.setAttribute(
+    'data-theme',
+    theme === 'DARK' ? 'dark' : 'light',
+  );
+};
+
+const normalizeConfiguracionOperativa = (config = {}) => ({
+  ...DEFAULT_CONFIGURACION_OPERATIVA,
+  ...config,
+  atajos_ventas: {
+    ...DEFAULT_ATAJOS_VENTAS,
+    ...(config?.atajos_ventas || {}),
+  },
+});
+
+const initialTheme = getStoredTheme();
+applyTheme(initialTheme);
+
 export const useAppStore = create((set) => ({
-  // ─── Autenticación ──────────────────────────────────────────────────────────
   user: initialUser,
   token: null,
   authReady: false,
@@ -22,40 +65,98 @@ export const useAppStore = create((set) => ({
   setToken: (token) => set({ token }),
   setAuthReady: (authReady) => set({ authReady }),
 
-  // ─── UI Global ──────────────────────────────────────────────────────────────
   sidebarOpen: true,
   loading: false,
-  empresaActivaId: localStorage.getItem('mallor_empresa_activa_id') || null,
+  empresaActivaId: localStorage.getItem(EMPRESA_STORAGE_KEY) || null,
   empresaActiva: null,
+  configuracionOperativa: normalizeConfiguracionOperativa({
+    tema: initialTheme,
+  }),
+  temaActual: initialTheme,
   iaSesionActivaId: null,
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
   setLoading: (loading) => set({ loading }),
+  setTemaActual: (temaActual) => {
+    const nextTheme = temaActual === 'DARK' ? 'DARK' : 'LIGHT';
+    localStorage.setItem(THEME_STORAGE_KEY, nextTheme);
+    applyTheme(nextTheme);
+    set((state) => ({
+      temaActual: nextTheme,
+      configuracionOperativa: {
+        ...state.configuracionOperativa,
+        tema: nextTheme,
+      },
+      empresaActiva: state.empresaActiva
+        ? {
+            ...state.empresaActiva,
+            configuracion_operativa: {
+              ...state.empresaActiva.configuracion_operativa,
+              tema: nextTheme,
+            },
+          }
+        : state.empresaActiva,
+    }));
+  },
+  setConfiguracionOperativa: (configuracionOperativa) => {
+    const nextConfig = normalizeConfiguracionOperativa(configuracionOperativa);
+    localStorage.setItem(THEME_STORAGE_KEY, nextConfig.tema);
+    applyTheme(nextConfig.tema);
+    set((state) => ({
+      configuracionOperativa: nextConfig,
+      temaActual: nextConfig.tema,
+      empresaActiva: state.empresaActiva
+        ? {
+            ...state.empresaActiva,
+            configuracion_operativa: nextConfig,
+          }
+        : state.empresaActiva,
+    }));
+  },
+  updateEmpresaConfiguracion: (configuracionOperativa) =>
+    set((state) => {
+      const nextConfig = normalizeConfiguracionOperativa(configuracionOperativa);
+      localStorage.setItem(THEME_STORAGE_KEY, nextConfig.tema);
+      applyTheme(nextConfig.tema);
+      return {
+        configuracionOperativa: nextConfig,
+        temaActual: nextConfig.tema,
+        empresaActiva: state.empresaActiva
+          ? {
+              ...state.empresaActiva,
+              configuracion_operativa: nextConfig,
+            }
+          : state.empresaActiva,
+      };
+    }),
   setEmpresaActiva: (empresa) => {
     if (empresa?.id) {
-      localStorage.setItem('mallor_empresa_activa_id', String(empresa.id));
+      localStorage.setItem(EMPRESA_STORAGE_KEY, String(empresa.id));
     } else {
-      localStorage.removeItem('mallor_empresa_activa_id');
+      localStorage.removeItem(EMPRESA_STORAGE_KEY);
     }
+
+    const nextConfig = empresa?.configuracion_operativa
+      ? normalizeConfiguracionOperativa(empresa.configuracion_operativa)
+      : normalizeConfiguracionOperativa({ tema: getStoredTheme() });
+    localStorage.setItem(THEME_STORAGE_KEY, nextConfig.tema);
+    applyTheme(nextConfig.tema);
+
     set({
       empresaActiva: empresa || null,
       empresaActivaId: empresa?.id ? String(empresa.id) : null,
+      configuracionOperativa: nextConfig,
+      temaActual: nextConfig.tema,
       iaSesionActivaId: null,
     });
   },
   setIaSesionActivaId: (sesionId) => set({ iaSesionActivaId: sesionId || null }),
   resetIaSession: () => set({ iaSesionActivaId: null }),
 
-  // ─── Usuarios (estado de selección para pasar entre vistas) ────────────────
-  /**
-   * Usuario actualmente seleccionado en la interfaz de gestión.
-   * Se usa para compartir el contexto entre componentes sin prop drilling.
-   */
   usuarioActivo: null,
   setUsuarioActivo: (usuario) => set({ usuarioActivo: usuario }),
   clearUsuarioActivo: () => set({ usuarioActivo: null }),
 
-  // ─── Reset global ───────────────────────────────────────────────────────────
   reset: () =>
     set({
       user: null,
@@ -66,6 +167,10 @@ export const useAppStore = create((set) => ({
       usuarioActivo: null,
       empresaActiva: null,
       empresaActivaId: null,
+      configuracionOperativa: normalizeConfiguracionOperativa({
+        tema: getStoredTheme(),
+      }),
+      temaActual: getStoredTheme(),
       iaSesionActivaId: null,
     }),
 }));

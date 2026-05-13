@@ -99,6 +99,29 @@ describe('Layout', () => {
       .not.toHaveLength(0);
   });
 
+  it('muestra modulo contadores y oculta administracion para CONTADOR', async () => {
+    listarEmpresas.mockResolvedValueOnce({
+      empresa_activa: 1,
+      results: [
+        {
+          id: 1,
+          razon_social: 'Empresa A',
+          nombre_comercial: 'Empresa A',
+          rol_usuario: 'CONTADOR',
+        },
+      ],
+    });
+
+    renderWithProviders(<Layout />);
+
+    expect(await screen.findAllByRole('link', { name: /contadores/i }))
+      .not.toHaveLength(0);
+    expect(screen.queryAllByRole('link', { name: /facturacion/i }))
+      .toHaveLength(0);
+    expect(screen.queryAllByRole('link', { name: /usuarios/i }))
+      .toHaveLength(0);
+  });
+
   it('permite cambiar la empresa activa desde el selector', async () => {
     const user = userEvent.setup();
 

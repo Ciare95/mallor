@@ -170,16 +170,24 @@ class IAService:
                 try:
                     metadatos = execute_tool(herramienta_usada, parametros, contexto)
                     try:
-                        respuesta_llm = IAService._generar_respuesta(
-                            consulta,
-                            contexto,
+                        if IAService._debe_responder_desde_backend(
                             herramienta_usada,
-                            metadatos,
-                            llm,
-                        )
-                        respuesta = respuesta_llm.content
-                        tokens_entrada += respuesta_llm.tokens_entrada
-                        tokens_salida += respuesta_llm.tokens_salida
+                        ):
+                            respuesta = IAService._fallback_answer(
+                                herramienta_usada,
+                                metadatos,
+                            )
+                        else:
+                            respuesta_llm = IAService._generar_respuesta(
+                                consulta,
+                                contexto,
+                                herramienta_usada,
+                                metadatos,
+                                llm,
+                            )
+                            respuesta = respuesta_llm.content
+                            tokens_entrada += respuesta_llm.tokens_entrada
+                            tokens_salida += respuesta_llm.tokens_salida
                     except LLMConfigurationError:
                         logger.exception(
                             'No fue posible usar DeepSeek para redactar la respuesta; aplicando fallback local.',
@@ -232,6 +240,12 @@ class IAService:
     def _es_consulta_restringida(texto: str) -> bool:
         normalized = texto.lower()
         return any(re.search(pattern, normalized) for pattern in SENSITIVE_PATTERNS)
+
+    @staticmethod
+    def _debe_responder_desde_backend(herramienta: str) -> bool:
+        return herramienta in {
+            'resumen_ventas_periodo',
+        }
 
     @staticmethod
     def _infer_period_params(texto: str) -> Dict[str, Any]:
@@ -426,11 +440,19 @@ class IAService:
             total_ventas = resumen.get('total_ventas', 0)
             cantidad = resumen.get('cantidad_ventas', 0)
             ticket = resumen.get('ticket_promedio', 0)
+            periodo = resultado.get('periodo_consultado')
             variacion = (
                 comparacion.get('total_ventas', {}) or {}
             ).get('variacion_porcentual')
+            marco = {
+                'hoy': 'Hoy',
+                'semana': 'Esta semana',
+                'mes': 'Este mes',
+                'todo': 'En todo el tiempo registrado',
+                'rango': 'En el rango consultado',
+            }.get(periodo, 'En el periodo consultado')
             respuesta = (
-                f"En el periodo consultado se registraron {cantidad} ventas por "
+                f"{marco} se registraron {cantidad} ventas por "
                 f"{IAService._format_currency(total_ventas)}. "
                 f"El ticket promedio fue {IAService._format_currency(ticket)}."
             )

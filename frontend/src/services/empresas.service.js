@@ -37,6 +37,19 @@ export const actualizarEmpresa = async (empresaId, payload) => {
   return response.data;
 };
 
+export const obtenerConfiguracionEmpresa = async (empresaId) => {
+  const response = await api.get(`/empresas/${empresaId}/configuracion/`);
+  return response.data;
+};
+
+export const actualizarConfiguracionEmpresa = async (empresaId, payload) => {
+  const response = await api.patch(
+    `/empresas/${empresaId}/configuracion/`,
+    payload,
+  );
+  return response.data;
+};
+
 export const listarUsuariosEmpresa = async (empresaId) => {
   const response = await api.get(`/empresas/${empresaId}/usuarios/`);
   return response.data;
@@ -67,6 +80,8 @@ export default {
   obtenerEmpresa,
   seleccionarEmpresa,
   actualizarEmpresa,
+  obtenerConfiguracionEmpresa,
+  actualizarConfiguracionEmpresa,
   listarUsuariosEmpresa,
   crearUsuarioEmpresa,
   actualizarUsuarioEmpresa,

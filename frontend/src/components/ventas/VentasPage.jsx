@@ -2,6 +2,7 @@ import { startTransition, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { BarChart3, CreditCard, ListOrdered, Plus, Wallet } from 'lucide-react';
 import useToast from '../../hooks/useToast';
+import { useVentasKeyboardShortcuts } from '../../hooks/useVentasKeyboardShortcuts';
 import {
   crearNotaCreditoVenta,
   descargarFacturaVentaPdf,
@@ -64,7 +65,28 @@ export default function VentasPage() {
   } = useVentasStore();
   const [abonoError, setAbonoError] = useState(null);
   const [posFocusSignal, setPosFocusSignal] = useState(0);
+  const [cobroShortcutSignal, setCobroShortcutSignal] = useState(0);
+  const [submitShortcutSignal, setSubmitShortcutSignal] = useState(0);
   const empresaActiva = useAppStore((state) => state.empresaActiva);
+  const configuracionOperativa = useAppStore(
+    (state) => state.configuracionOperativa,
+  );
+
+  useVentasKeyboardShortcuts({
+    enabled:
+      vistaActual === VENTAS_VISTAS.POS
+      && configuracionOperativa.atajos_ventas_activos,
+    shortcuts: configuracionOperativa.atajos_ventas,
+    onRegistrarVenta: () => setSubmitShortcutSignal((current) => current + 1),
+    onConfigurarCobro: () => setCobroShortcutSignal((current) => current + 1),
+    onNuevaPrecuenta: agregarPrecuenta,
+    onQuitarUltimoProducto: () => {
+      const lastItem = draft.items[draft.items.length - 1];
+      if (lastItem) {
+        eliminarItemDraft(lastItem.id);
+      }
+    },
+  });
 
   const invalidateVentas = () => {
     queryClient.invalidateQueries({ queryKey: ['ventas'] });
@@ -449,6 +471,8 @@ export default function VentasPage() {
               })
             }
             focusSignal={posFocusSignal}
+            openCobroSignal={cobroShortcutSignal}
+            submitSignal={submitShortcutSignal}
           />
         </>
       )}

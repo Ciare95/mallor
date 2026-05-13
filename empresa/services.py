@@ -4,7 +4,7 @@ from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 
-from empresa.models import Empresa, EmpresaUsuario
+from empresa.models import Empresa, EmpresaConfiguracion, EmpresaUsuario
 from usuario.models import Usuario
 from usuario.services import UsuarioService
 
@@ -35,6 +35,23 @@ class EmpresaService:
         'crear_factura',
         'ver_factura',
         'listar_facturas',
+    }
+    CONTADOR_ALLOWED_ACTIONS = {
+        'ver_cliente',
+        'listar_clientes',
+        'ver_proveedor',
+        'listar_proveedores',
+        'ver_producto',
+        'listar_productos',
+        'ver_venta',
+        'listar_ventas',
+        'ver_abono',
+        'listar_abonos',
+        'ver_factura',
+        'listar_facturas',
+        'ver_informe_ventas',
+        'ver_contador',
+        'exportar_contador',
     }
 
     @staticmethod
@@ -151,6 +168,20 @@ class EmpresaService:
             )
 
     @staticmethod
+    def get_configuracion_operativa(
+        empresa: Empresa,
+    ) -> EmpresaConfiguracion:
+        return EmpresaConfiguracion.get_or_create_for_empresa(empresa)
+
+    @staticmethod
+    def permite_stock_negativo_ventas(empresa: Empresa) -> bool:
+        if empresa is None:
+            return False
+        return EmpresaService.get_configuracion_operativa(
+            empresa,
+        ).permitir_stock_negativo_ventas
+
+    @staticmethod
     def validar_permiso_operacion(usuario, empresa: Empresa, accion: str) -> bool:
         if not getattr(usuario, 'is_authenticated', False):
             return False
@@ -167,6 +198,9 @@ class EmpresaService:
 
         if rol == EmpresaUsuario.Rol.EMPLEADO:
             return accion in EmpresaService.EMPLEADO_ALLOWED_ACTIONS
+
+        if rol == EmpresaUsuario.Rol.CONTADOR:
+            return accion in EmpresaService.CONTADOR_ALLOWED_ACTIONS
 
         if accion in (
             'ver_usuario',

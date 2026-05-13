@@ -22,7 +22,7 @@ export default function ChatMessage({ message, onFeedback }) {
       className={`flex gap-3 ${isAssistant ? 'justify-start' : 'justify-end'}`}
     >
       {isAssistant && (
-        <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]">
+        <div className="ia-chat-avatar mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]">
           <Icon className="h-4 w-4" />
         </div>
       )}
@@ -30,8 +30,8 @@ export default function ChatMessage({ message, onFeedback }) {
       <div
         className={`max-w-[min(760px,100%)] rounded-xl border px-4 py-3 ${
           isAssistant
-            ? 'border-app bg-white/80 text-main'
-            : 'border-[var(--text-main)] bg-[var(--text-main)] text-white'
+            ? 'ia-message-assistant text-main'
+            : 'ia-message-user'
         }`}
       >
         <div className="whitespace-pre-wrap text-[13px] leading-6">
@@ -44,7 +44,7 @@ export default function ChatMessage({ message, onFeedback }) {
           }`}
         >
           {message.herramienta_usada && (
-            <span className="rounded-full border border-app bg-white/60 px-2 py-1 font-mono-ui">
+            <span className="ia-tool-pill rounded-full border px-2 py-1 font-mono-ui">
               {message.herramienta_usada}
             </span>
           )}
@@ -57,7 +57,7 @@ export default function ChatMessage({ message, onFeedback }) {
               <button
                 type="button"
                 onClick={copyMessage}
-                className="flex h-8 w-8 items-center justify-center rounded-md text-soft transition hover:bg-[rgba(24,23,22,0.05)] hover:text-main"
+                className="ia-message-action flex h-8 w-8 items-center justify-center rounded-md text-soft transition hover:text-main"
                 title="Copiar respuesta"
                 aria-label="Copiar respuesta"
               >
@@ -75,7 +75,7 @@ export default function ChatMessage({ message, onFeedback }) {
                     className={`flex h-8 w-8 items-center justify-center rounded-md transition ${
                       active
                         ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
-                        : 'text-soft hover:bg-[rgba(24,23,22,0.05)] hover:text-main'
+                        : 'ia-message-action text-soft hover:text-main'
                     }`}
                     title={option.label}
                     aria-label={option.label}
@@ -91,7 +91,7 @@ export default function ChatMessage({ message, onFeedback }) {
       </div>
 
       {!isAssistant && (
-        <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-app bg-white/80 text-soft">
+        <div className="ia-chat-avatar mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-app text-soft">
           <Icon className="h-4 w-4" />
         </div>
       )}

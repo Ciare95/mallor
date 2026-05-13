@@ -67,6 +67,18 @@ def _validate_cliente(venta: Venta) -> None:
             code='factus_cliente_requerido',
         )
 
+    if not cliente.numero_documento:
+        raise FacturacionValidacionError(
+            'El adquirente debe tener numero de documento para facturar.',
+            code='factus_cliente_documento',
+        )
+
+    if not cliente.get_nombre_completo():
+        raise FacturacionValidacionError(
+            'El adquirente debe tener nombre o razon social para facturar.',
+            code='factus_cliente_nombre',
+        )
+
     if not cliente.municipio_codigo:
         raise FacturacionValidacionError(
             'El cliente debe tener codigo de municipio para facturar.',
@@ -84,6 +96,58 @@ def _validate_cliente(venta: Venta) -> None:
             'El cliente debe tener telefono para facturar.',
             code='factus_cliente_telefono',
         )
+
+
+def _validate_empresa(venta: Venta) -> None:
+    empresa = venta.empresa
+    if empresa is None:
+        raise FacturacionValidacionError(
+            'La venta no tiene empresa facturadora asociada.',
+            code='factus_empresa_requerida',
+        )
+
+    required_fields = {
+        'nit': 'NIT del vendedor',
+        'razon_social': 'razon social del vendedor',
+        'direccion': 'direccion fiscal del vendedor',
+        'municipio_codigo': 'codigo de municipio del vendedor',
+    }
+    for field, label in required_fields.items():
+        if not getattr(empresa, field):
+            raise FacturacionValidacionError(
+                f'Falta {label} para cumplir requisitos minimos de factura.',
+                code=f'factus_empresa_{field}',
+            )
+
+
+def _validate_detalles_articulo_617(venta: Venta) -> None:
+    for detalle in venta.detalles.select_related('producto').all():
+        producto = detalle.producto
+        if not producto.nombre:
+            raise FacturacionValidacionError(
+                'Cada item debe tener descripcion para facturar.',
+                code='factus_item_descripcion',
+            )
+        if not producto.unidad_medida_codigo:
+            raise FacturacionValidacionError(
+                'Cada item debe tener unidad de medida DIAN/Factus.',
+                code='factus_item_unidad_medida',
+            )
+        if not producto.estandar_codigo:
+            raise FacturacionValidacionError(
+                'Cada item debe tener codigo estandar DIAN/Factus.',
+                code='factus_item_estandar',
+            )
+        if detalle.precio_unitario <= Decimal('0.00'):
+            raise FacturacionValidacionError(
+                'Cada item debe tener valor unitario mayor que cero.',
+                code='factus_item_valor_unitario',
+            )
+        if producto.iva is None:
+            raise FacturacionValidacionError(
+                'Cada item debe tener IVA definido, incluso si es 0%.',
+                code='factus_item_iva',
+            )
 
 
 def validar_venta_facturable(venta: Venta) -> None:
@@ -117,7 +181,9 @@ def validar_venta_facturable(venta: Venta) -> None:
             code='factus_venta_sin_detalles',
         )
 
+    _validate_empresa(venta)
     _validate_cliente(venta)
+    _validate_detalles_articulo_617(venta)
 
 
 def build_factus_bill_payload(

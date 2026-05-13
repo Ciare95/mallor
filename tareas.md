@@ -3040,6 +3040,406 @@ La IA consultara datos del negocio. Si el contexto de empresa y permisos no esta
 
 ---
 
+## EPICA 9.6: Cumplimiento DIAN y Mitigacion Sancionatoria
+
+### Descripcion de la Epica
+Convertir el diagnostico legal y tecnico de facturacion electronica en controles ejecutables para reducir el riesgo de sanciones a clientes de Mallor por no facturar, facturar sin requisitos, no entregar factura electronica, fallas de contingencia y falta de conservacion probatoria.
+
+La epica se fundamenta en:
+- `https://estatuto.co/617`: requisitos de factura de venta.
+- `https://estatuto.co/616-1`: sistema de facturacion, validacion previa, entrega al adquirente, contingencia y responsabilidad del obligado a facturar.
+- `https://estatuto.co/652`: sancion por expedir facturas sin requisitos.
+- `https://estatuto.co/657`: clausura por no facturar, reincidencia, doble facturacion o supresion de ingresos.
+- `https://estatuto.co/632`: conservacion de informaciones y pruebas por minimo 5 anos.
+- Concepto DIAN `011511 int 1037` de `2024-06-13`: diferencia entre facturar sin requisitos y no facturar.
+- Concepto DIAN `002156 int 139` de `2025-02-04` e INCP: sanciones por incumplimientos en el sistema de facturacion electronica.
+- Comunicado DIAN `002` de `2024-01-02`: riesgo por no entregar factura al adquirente.
+
+**Nota de responsabilidad:**
+Mallor implementa controles tecnicos y evidencia operativa para reducir riesgos, pero no garantiza ausencia de sanciones ni reemplaza la asesoria tributaria. El cliente sigue siendo el obligado a facturar, conservar soportes y cumplir las obligaciones formales aplicables.
+
+### Objetivos
+- Trazar cada requisito DIAN contra controles reales de Mallor.
+- Evitar que ventas facturables queden sin factura electronica emitida.
+- Forzar o evidenciar la entrega al adquirente.
+- Cubrir contingencias tecnologicas DIAN/Factus.
+- Conservar XML, PDF, CUFE, respuestas DIAN/Factus e intentos por empresa.
+- Validar requisitos del articulo 617 antes de emitir.
+- Detectar duplicidades, inconsistencias y respuestas Factus no confiables.
+- Entregar un procedimiento operativo para clientes Mallor.
+
+---
+
+#### Tarea 9.6.1: Matriz Legal de Requisitos DIAN vs Mallor
+**Prioridad:** Alta | **Estimacion:** 3 Story Points | **Etiquetas:** Legal, Producto, DIAN, Documentacion
+
+**Descripcion:**
+Crear una matriz de cumplimiento que cruce los articulos 617, 616-1, 652, 657 y 632 del Estatuto Tributario contra controles actuales y faltantes de Mallor.
+
+**Formato minimo de la matriz:**
+- Fuente normativa.
+- Requisito.
+- Riesgo sancionatorio.
+- Control actual en Mallor.
+- Brecha.
+- Evidencia esperada.
+- Estado: `Cumple`, `Parcial`, `No cumple` o `No aplica`.
+- Responsable: Mallor, cliente o proveedor tecnologico.
+
+**Criterios de aceptacion:**
+- [ ] Existe matriz en backlog o documento operativo referenciado.
+- [ ] La matriz identifica explicitamente riesgos por Art. 652 y Art. 657.
+- [ ] Cada requisito tiene control tecnico o brecha asociada.
+- [ ] Se diferencia responsabilidad de Mallor, cliente y proveedor tecnologico.
+- [ ] La matriz incluye evidencia verificable para auditoria.
+
+---
+
+#### Tarea 9.6.2: Entrega Obligatoria de Factura al Adquirente
+**Prioridad:** Alta | **Estimacion:** 5 Story Points | **Etiquetas:** Backend, Frontend, DIAN, Factus
+
+**Descripcion:**
+Implementar flujo obligatorio para entregar la factura electronica validada al adquirente mediante email, descarga inmediata o impresion/representacion grafica, segun el caso operativo.
+
+**Requisitos funcionales:**
+- Registrar medio de entrega: `EMAIL`, `DESCARGA`, `IMPRESION`, `OTRO`.
+- Registrar destino, usuario, fecha, resultado y mensaje de error.
+- No permitir que una factura `EMITIDA` quede sin intento de entrega registrado.
+- Mostrar facturas emitidas sin evidencia de entrega en modulo contadores.
+- Permitir reintentar entrega sin reemitir la factura.
+
+**Criterios de aceptacion:**
+- [ ] Existe modelo o bitacora de entrega por factura.
+- [ ] Toda factura validada registra al menos un intento de entrega.
+- [ ] El contador ve facturas sin entrega como riesgo alto.
+- [ ] Se puede consultar historial de entregas por factura.
+- [ ] Fallos de entrega quedan auditados sin ocultar el documento emitido.
+
+---
+
+#### Tarea 9.6.3: Control de Ventas Facturables Pendientes
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Backend, Frontend, Alertas, DIAN
+
+**Descripcion:**
+Crear monitor/reporte de ventas `TERMINADA` con `factura_electronica=true` que no tengan documento electronico `EMITIDA`.
+
+**Requisitos funcionales:**
+- Alertar por antiguedad de la venta pendiente.
+- Clasificar pendientes por `SIN_DOCUMENTO`, `PENDIENTE_ENVIO`, `ERROR`, `INCONSISTENTE`.
+- Permitir reintento solo a roles autorizados (`PROPIETARIO`, `ADMIN`).
+- Bloquear cierres operativos cuando existan pendientes criticos configurables.
+- Exponer resumen en modulo contadores.
+
+**Criterios de aceptacion:**
+- [ ] Venta facturable terminada sin emision aparece en reporte de pendientes.
+- [ ] Factura en error aparece con codigo y mensaje.
+- [ ] El contador puede ver el riesgo pero no reintentar.
+- [ ] Admin/propietario puede reintentar desde flujo autorizado.
+- [ ] El cierre operativo advierte o bloquea segun configuracion.
+
+---
+
+#### Tarea 9.6.4: Contingencia Tecnologica DIAN/Factus
+**Prioridad:** Alta | **Estimacion:** 6 Story Points | **Etiquetas:** Backend, Frontend, DIAN, Operaciones
+
+**Descripcion:**
+Definir e implementar flujo de contingencia por inconvenientes tecnologicos del facturador, proveedor tecnologico o DIAN/Factus, incluyendo documento de contingencia y transmision posterior.
+
+**Requisitos funcionales:**
+- Registrar inicio, causa, responsable, alcance y evidencia de la contingencia.
+- Permitir documento de talonario/papel o equivalente operativo cuando aplique.
+- Crear cola de transmision posterior a Factus/DIAN.
+- Controlar plazo de `48 horas` desde la solucion del inconveniente.
+- Registrar cierre de contingencia, transmision, resultado y soportes.
+- Alertar contingencias abiertas o vencidas.
+
+**Criterios de aceptacion:**
+- [ ] Existe estado/modelo de contingencia.
+- [ ] Se puede crear venta/documento asociado a contingencia.
+- [ ] Al solucionarse el incidente, los documentos entran a cola de transmision.
+- [ ] Documentos sin transmision dentro de 48 horas quedan como riesgo critico.
+- [ ] La bitacora conserva evidencia de inicio, cierre y responsable.
+
+---
+
+#### Tarea 9.6.5: Archivo Probatorio de XML/PDF y Respuestas DIAN
+**Prioridad:** Alta | **Estimacion:** 5 Story Points | **Etiquetas:** Backend, Storage, Auditoria, Multitenant
+
+**Descripcion:**
+Persistir copia controlada por Mallor de XML, PDF, CUFE, QR/public URL, request, response, eventos e intentos asociados a cada factura electronica.
+
+**Requisitos funcionales:**
+- Guardar soportes por empresa y documento.
+- Definir retencion minima de `5 anos`.
+- Permitir descarga auditable por tenant.
+- Evitar que empresa A acceda soportes de empresa B.
+- Mantener soportes disponibles aunque Factus no responda temporalmente.
+
+**Criterios de aceptacion:**
+- [ ] XML/PDF quedan persistidos tras emision o primera descarga.
+- [ ] Request/response y eventos quedan asociados al documento.
+- [ ] Descarga de soportes valida empresa activa.
+- [ ] Existe politica de retencion documentada.
+- [ ] Prueba: soporte local sigue disponible si Factus no responde.
+
+---
+
+#### Tarea 9.6.6: Validacion Reforzada de Requisitos Art. 617
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Backend, Validacion, DIAN
+
+**Descripcion:**
+Antes de emitir factura electronica, validar que la venta cumpla requisitos minimos de factura de venta y datos exigibles para el sistema de facturacion.
+
+**Validaciones minimas:**
+- Datos del vendedor: razon social/nombre, NIT, DV, direccion, municipio y regimen cuando aplique.
+- Datos del adquirente: identificacion, nombre/razon social, direccion, telefono/email o medio de entrega.
+- Numeracion autorizada/rango activo.
+- Fecha de emision.
+- Descripcion especifica de bienes/servicios.
+- Cantidad, precio unitario, descuentos, base, IVA, total.
+- Calidad tributaria cuando aplique.
+- Forma y medio de pago.
+
+**Criterios de aceptacion:**
+- [ ] La emision se bloquea si faltan datos obligatorios.
+- [ ] El error indica campo faltante y responsable de correccion.
+- [ ] La UI muestra prerequisitos antes de facturar.
+- [ ] Las pruebas cubren cliente incompleto, empresa incompleta y producto incompleto.
+- [ ] Las validaciones no permiten emitir documento con total o IVA incoherente.
+
+---
+
+#### Tarea 9.6.7: Evidencia de Integridad y Anti Doble Facturacion
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Backend, Auditoria, Factus, Seguridad
+
+**Descripcion:**
+Mantener y ampliar la validacion de consistencia entre request enviado a Factus y respuesta recibida, para evitar aceptar documentos de otro cliente, otro total o una referencia previa.
+
+**Controles minimos:**
+- Validar `reference_code` unico por empresa.
+- Validar `bill_number`, `CUFE`, cliente, total e impuestos contra la venta local.
+- Detectar posible doble facturacion por venta, referencia o CUFE.
+- Auditar cambios de estado del documento electronico.
+- Exponer reporte de duplicidades o inconsistencias.
+
+**Criterios de aceptacion:**
+- [ ] Respuesta Factus inconsistente deja documento en `ERROR`, no `EMITIDA`.
+- [ ] Se registra payload de respuesta para diagnostico.
+- [ ] El contador ve inconsistencias como riesgo critico.
+- [ ] No se puede asociar el mismo CUFE a dos ventas de la misma empresa.
+- [ ] Existe prueba de colision de `reference_code`.
+
+---
+
+#### Tarea 9.6.8: Procedimiento Operativo para Clientes Mallor
+**Prioridad:** Media | **Estimacion:** 3 Story Points | **Etiquetas:** Documentacion, Operaciones, Cliente
+
+**Descripcion:**
+Documentar el procedimiento de produccion que debe seguir cada cliente para operar facturacion electronica con menor riesgo sancionatorio.
+
+**Checklist minimo:**
+- Habilitacion DIAN/Factus y ambiente correcto.
+- Sincronizacion y seleccion de rangos.
+- Prueba de emision.
+- Prueba de entrega al adquirente.
+- Prueba de descarga XML/PDF.
+- Protocolo de contingencia.
+- Reintentos y seguimiento diario de pendientes.
+- Conservacion de soportes por minimo 5 anos.
+- Auditoria mensual con contador.
+- Responsabilidad del cliente como obligado a facturar.
+
+**Criterios de aceptacion:**
+- [ ] Existe checklist operativo para produccion.
+- [ ] El checklist diferencia responsabilidades Mallor/cliente/Factus.
+- [ ] Incluye rutina diaria de pendientes y rutina mensual de auditoria.
+- [ ] Incluye que Mallor no reemplaza asesoria tributaria.
+- [ ] El documento queda enlazado desde la epica o modulo de contadores.
+
+---
+
+### Plan de Pruebas Futuro
+- Venta facturable terminada sin emision queda en reporte de pendientes.
+- Factus caido crea pendiente/reintento o flujo de contingencia segun tipo de falla.
+- Factura emitida sin email del cliente exige entrega por descarga/impresion y registra evidencia.
+- Respuesta Factus inconsistente deja documento en `ERROR`, no `EMITIDA`.
+- Empresa A no puede ver soportes, PDF, XML ni auditoria de Empresa B.
+- XML/PDF guardados siguen descargables desde almacenamiento propio aunque Factus no responda.
+
+---
+
+## EPICA 9.7: Modulo Contadores y Cumplimiento DIAN
+
+### Descripcion de la Epica
+Crear un modulo de lectura, auditoria y exportacion para contadores. El modulo debe permitir revisar cumplimiento DIAN, facturacion electronica, impuestos, cartera, inventario valorizado, soportes y riesgos operativos por empresa activa.
+
+El objetivo es reducir al maximo el riesgo operativo de sanciones relacionadas con facturacion electronica, especialmente frente a los articulos 617, 616-1, 652, 657 y 632 del Estatuto Tributario. Mallor ayuda a detectar y documentar riesgos, pero no reemplaza la responsabilidad tributaria del cliente ni la asesoria profesional aplicable.
+
+### Objetivos
+- Crear el rol empresarial `CONTADOR`.
+- Dar visibilidad fiscal y contable sin permitir operacion de ventas ni administracion.
+- Detectar ventas facturables sin factura electronica emitida.
+- Detectar facturas en error, sin entrega, sin soportes o con inconsistencias.
+- Consolidar IVA, bases, cartera, inventario valorizado y soportes.
+- Facilitar exportaciones para revision contable y declaraciones.
+
+---
+
+#### Tarea 9.7.1: Rol CONTADOR y Permisos
+**Prioridad:** Alta | **Estimacion:** 3 Story Points | **Etiquetas:** Backend, Seguridad, SaaS
+
+**Descripcion:**
+Agregar el rol `CONTADOR` a la membresia de empresa y definir sus permisos efectivos.
+
+**Permisos permitidos:**
+- Ver ventas, clientes, proveedores e inventario.
+- Ver informes, cartera, facturas electronicas y soportes.
+- Descargar PDF/XML y exportar reportes.
+
+**Permisos bloqueados:**
+- Crear o editar ventas.
+- Emitir, reintentar o anular facturas.
+- Editar configuracion Factus.
+- Administrar usuarios.
+- Editar datos fiscales de empresa.
+
+**Criterios de aceptacion:**
+- [ ] Existe rol `CONTADOR` en `EmpresaUsuario`.
+- [ ] Un contador puede consultar endpoints contables.
+- [ ] Un contador no puede operar ventas ni facturacion.
+- [ ] Un contador no puede administrar usuarios ni empresa.
+- [ ] El aislamiento multitenant sigue aplicando por `empresa_id`.
+
+---
+
+#### Tarea 9.7.2: Servicio Contable y Fiscal
+**Prioridad:** Alta | **Estimacion:** 5 Story Points | **Etiquetas:** Backend, Reporting, DIAN
+
+**Descripcion:**
+Crear `ContadorService` para calcular resumen contable, riesgos DIAN, impuestos, cartera, inventario valorizado y soportes.
+
+**Criterios de aceptacion:**
+- [ ] Calcula ventas, subtotal, IVA, total y cartera por periodo.
+- [ ] Identifica ventas facturables sin FE emitida.
+- [ ] Identifica facturas en error o pendientes.
+- [ ] Identifica facturas emitidas sin evidencia de entrega.
+- [ ] Identifica soportes faltantes o respuestas inconsistentes.
+
+---
+
+#### Tarea 9.7.3: Endpoints del Modulo Contadores
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Backend, API
+
+**Endpoints:**
+- `GET /api/contador/resumen/`
+- `GET /api/contador/riesgos-dian/`
+- `GET /api/contador/facturas/`
+- `GET /api/contador/impuestos/`
+- `GET /api/contador/cartera/`
+- `GET /api/contador/inventario-valorizado/`
+- `GET /api/contador/soportes/`
+
+**Criterios de aceptacion:**
+- [ ] Todos los endpoints filtran por empresa activa.
+- [ ] Todos los endpoints respetan permisos del rol `CONTADOR`.
+- [ ] Soportan filtros por periodo, cliente, estado y busqueda cuando aplique.
+- [ ] Devuelven datos serializables para el frontend.
+
+---
+
+#### Tarea 9.7.4: Panel Riesgos DIAN
+**Prioridad:** Alta | **Estimacion:** 5 Story Points | **Etiquetas:** Frontend, DIAN, UX
+
+**Descripcion:**
+Crear la vista principal de riesgos para detectar problemas antes de declaraciones o revisiones DIAN.
+
+**Riesgos minimos:**
+- Ventas terminadas con FE requerida sin factura emitida.
+- Facturas en `ERROR`.
+- Facturas emitidas sin evidencia de entrega al adquirente.
+- Documentos sin request/response guardado.
+- Respuestas Factus inconsistentes frente a la venta local.
+- Contingencias vencidas cuando exista el flujo.
+
+**Criterios de aceptacion:**
+- [ ] Riesgos agrupados por severidad.
+- [ ] Estados vacios claros.
+- [ ] Enlaces a factura o venta relacionada.
+- [ ] No aparecen acciones fiscales prohibidas para contador.
+
+---
+
+#### Tarea 9.7.5: Panel Facturacion Electronica y Soportes
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Frontend, Factus, Auditoria
+
+**Descripcion:**
+Listar documentos electronicos con filtros por fecha, cliente, CUFE, numero Factus, estado y entrega.
+
+**Criterios de aceptacion:**
+- [ ] Lista facturas electronicas por periodo.
+- [ ] Muestra CUFE, numero, cliente, total, estado y entrega.
+- [ ] Permite descargar PDF/XML si estan disponibles.
+- [ ] Muestra evidencia de request/response e intentos.
+
+---
+
+#### Tarea 9.7.6: Panel Impuestos y Reportes
+**Prioridad:** Media | **Estimacion:** 4 Story Points | **Etiquetas:** Frontend, Contabilidad, Reportes
+
+**Descripcion:**
+Mostrar bases gravables, IVA generado, ventas, descuentos, notas credito y exportaciones.
+
+**Criterios de aceptacion:**
+- [ ] Resume IVA por periodo.
+- [ ] Agrupa bases por tarifa de IVA.
+- [ ] Incluye notas credito/anulaciones cuando existan.
+- [ ] Exporta CSV/XLSX.
+
+---
+
+#### Tarea 9.7.7: Panel Cartera e Inventario Valorizado
+**Prioridad:** Media | **Estimacion:** 4 Story Points | **Etiquetas:** Frontend, Contabilidad, Inventario
+
+**Descripcion:**
+Mostrar cuentas por cobrar, abonos, vencimientos, existencias y valorizacion del inventario.
+
+**Criterios de aceptacion:**
+- [ ] Lista cartera por cliente y venta.
+- [ ] Muestra saldos, abonos y fechas.
+- [ ] Lista inventario con costo y venta potencial.
+- [ ] Exporta informacion para revision contable.
+
+---
+
+#### Tarea 9.7.8: Cierre/Bloqueo Contable Mensual
+**Prioridad:** Media | **Estimacion:** 5 Story Points | **Etiquetas:** Backend, Frontend, Control Interno
+
+**Descripcion:**
+Permitir bloquear periodos revisados para evitar modificaciones no autorizadas en ventas, abonos y documentos del periodo.
+
+**Criterios de aceptacion:**
+- [ ] Existe modelo o configuracion de periodo cerrado.
+- [ ] Ventas y abonos de periodo cerrado no se modifican sin rol autorizado.
+- [ ] El bloqueo queda auditado con usuario y fecha.
+- [ ] El contador puede ver periodos cerrados.
+
+---
+
+#### Tarea 9.7.9: Pruebas y Documentacion Operativa
+**Prioridad:** Alta | **Estimacion:** 4 Story Points | **Etiquetas:** Testing, Documentacion
+
+**Descripcion:**
+Cubrir permisos, endpoints, aislamiento multitenant y guia operativa para contadores.
+
+**Criterios de aceptacion:**
+- [ ] Tests backend para rol `CONTADOR`.
+- [ ] Tests frontend para ruta `/contadores`.
+- [ ] Tests de aislamiento entre empresas.
+- [ ] Documentacion con checklist de revision mensual.
+- [ ] Nota legal: Mallor reduce riesgo operativo, no garantiza ausencia de sanciones.
+
+---
+
 ## ÉPICA 10: Módulo de IA
 
 ### 📋 Descripción de la Épica
@@ -4620,7 +5020,7 @@ npm install --save-dev vite-plugin-compression
 
 ## Resumen de Épicas
 
-### Total de Story Points: ~226 SP
+### Total de Story Points: ~294 SP
 
 1. **ÉPICA 1: Configuración Inicial** - 16 SP
 2. **ÉPICA 2: Módulo de Usuarios** - 17 SP
@@ -4632,10 +5032,12 @@ npm install --save-dev vite-plugin-compression
 8. **ÉPICA 8: Módulo de Informes** - 41 SP
 9. **ÉPICA 9: Integración Factus** - 29 SP
 10. **EPICA 9.5: Cierre Multitenant SaaS** - 25 SP
-11. **ÉPICA 10: Módulo de IA** - 34 SP
-12. **ÉPICA 11: Testing y Calidad** - 39 SP
-13. **ÉPICA 12: Autenticación JWT** - 23 SP
-14. **ÉPICA 13: Deployment** - 32 SP
+11. **EPICA 9.6: Cumplimiento DIAN y Mitigacion Sancionatoria** - 34 SP
+12. **EPICA 9.7: Modulo Contadores y Cumplimiento DIAN** - 34 SP
+13. **ÉPICA 10: Módulo de IA** - 34 SP
+14. **ÉPICA 11: Testing y Calidad** - 39 SP
+15. **ÉPICA 12: Autenticación JWT** - 23 SP
+16. **ÉPICA 13: Deployment** - 32 SP
 
 ### Estimación de Tiempo
 - Con un equipo de 2-3 desarrolladores

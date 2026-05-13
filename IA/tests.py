@@ -1,13 +1,14 @@
 import json
 from datetime import timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from IA.llm.ports import LLMConfigurationError
+from IA.llm.ports import LLMConfigurationError, LLMResponse
 from IA.models import MensajeIA
 from cliente.models import Cliente
 from empresa.models import Empresa, EmpresaUsuario
@@ -21,6 +22,8 @@ from ventas.models import (
     Venta,
     VentaFacturaElectronica,
 )
+
+BUSINESS_TIMEZONE = ZoneInfo('America/Bogota')
 
 
 class IAAislamientoMultitenantTest(TestCase):
@@ -359,6 +362,36 @@ class IADeepSeekFallbackTest(TestCase):
         self.assertIn('ventas', result['respuesta'].lower())
         self.assertEqual(result['herramienta_usada'], 'resumen_ventas_periodo')
 
+    def test_resumen_ventas_no_usa_texto_llm_si_contradice_backend(self):
+        class WrongSalesLLMClient:
+            def chat(self, messages, *, temperature=None):
+                return LLMResponse(
+                    content='Hoy no registras ventas. Ayer vendiste $72,520.',
+                    tokens_entrada=1,
+                    tokens_salida=1,
+                )
+
+        from IA.services import IAService
+
+        request = type('RequestStub', (), {
+            'user': self.usuario,
+            'empresa': self.empresa,
+        })()
+
+        result = IAService.procesar_consulta(
+            request=request,
+            consulta='Cuanto vendi hoy?',
+            llm_client=WrongSalesLLMClient(),
+        )
+
+        self.assertEqual(result['herramienta_usada'], 'resumen_ventas_periodo')
+        self.assertEqual(
+            result['metadatos']['datos']['resumen']['cantidad_ventas'],
+            1,
+        )
+        self.assertIn('$28,019.98', result['respuesta'])
+        self.assertNotIn('Hoy no registras ventas', result['respuesta'])
+
     def test_consulta_inventario_usa_herramienta_de_inventario(self):
         response = self.client.post(
             '/api/ia/chat/',
@@ -453,7 +486,10 @@ class IADeepSeekFallbackTest(TestCase):
         self.assertEqual(response.data['herramienta_usada'], 'mejores_clientes')
         self.assertEqual(
             response.data['metadatos']['datos']['fecha_inicio'],
-            venta_anterior.fecha_venta.date().isoformat(),
+            timezone.localtime(
+                venta_anterior.fecha_venta,
+                BUSINESS_TIMEZONE,
+            ).date().isoformat(),
         )
         primer_cliente = response.data['metadatos']['datos']['resultados'][0]
         self.assertEqual(primer_cliente['nombre'], 'Cliente Cartera')
@@ -464,7 +500,7 @@ class IADeepSeekFallbackTest(TestCase):
             empresa=self.empresa,
             numero_factura='FC-001',
             proveedor=self.proveedor,
-            fecha_factura=timezone.localdate(),
+            fecha_factura=timezone.localdate(timezone=BUSINESS_TIMEZONE),
             subtotal=Decimal('50000.00'),
             iva=Decimal('0.00'),
             total=Decimal('50000.00'),
@@ -492,7 +528,7 @@ class IADeepSeekFallbackTest(TestCase):
             empresa=self.empresa,
             numero_factura='FC-002',
             proveedor=self.proveedor,
-            fecha_factura=timezone.localdate(),
+            fecha_factura=timezone.localdate(timezone=BUSINESS_TIMEZONE),
             subtotal=Decimal('10000.00'),
             iva=Decimal('0.00'),
             total=Decimal('10000.00'),
@@ -547,5 +583,8 @@ class IADeepSeekFallbackTest(TestCase):
         )
         self.assertEqual(
             response.data['metadatos']['fecha_inicio'],
-            venta_anterior.fecha_venta.date().isoformat(),
+            timezone.localtime(
+                venta_anterior.fecha_venta,
+                BUSINESS_TIMEZONE,
+            ).date().isoformat(),
         )

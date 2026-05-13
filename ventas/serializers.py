@@ -7,13 +7,17 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from cliente.models import Cliente
+from empresa.context import get_empresa_actual_or_default
+from empresa.services import EmpresaService
 from inventario.models import Producto
 from usuario.models import Usuario
 from ventas.models import (
     Abono,
     DetalleVenta,
     FacturacionElectronicaConfig,
+    FacturaElectronicaEntrega,
     FacturaElectronicaIntento,
+    FacturaElectronicaSoporte,
     FactusNumberingRange,
     Venta,
     VentaFacturaElectronica,
@@ -329,6 +333,8 @@ class VentaCreateSerializer(serializers.ModelSerializer):
         descuento_global = attrs.get('descuento', Decimal('0.00'))
         factura_electronica = attrs.get('factura_electronica', False)
         cliente = attrs.get('cliente')
+        empresa = get_empresa_actual_or_default()
+        allow_negative = EmpresaService.permite_stock_negativo_ventas(empresa)
         stock_requerido = defaultdict(lambda: Decimal('0.00'))
         subtotal = Decimal('0.00')
 
@@ -339,7 +345,9 @@ class VentaCreateSerializer(serializers.ModelSerializer):
 
         for producto_id, cantidad_requerida in stock_requerido.items():
             producto = Producto.objects.get(pk=producto_id)
-            if not producto.validar_stock(cantidad_requerida):
+            if not allow_negative and not producto.validar_stock(
+                cantidad_requerida,
+            ):
                 raise serializers.ValidationError({
                     'detalles': _(
                         'Stock insuficiente para %(producto)s.'
@@ -682,9 +690,48 @@ class FacturaElectronicaIntentoSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class FacturaElectronicaEntregaSerializer(serializers.ModelSerializer):
+    usuario_nombre = serializers.CharField(
+        source='usuario.username',
+        read_only=True,
+    )
+
+    class Meta:
+        model = FacturaElectronicaEntrega
+        fields = [
+            'id',
+            'medio',
+            'destino',
+            'resultado',
+            'mensaje',
+            'metadata',
+            'usuario',
+            'usuario_nombre',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class FacturaElectronicaSoporteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FacturaElectronicaSoporte
+        fields = [
+            'id',
+            'tipo',
+            'filename',
+            'content_type',
+            'metadata',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = fields
+
+
 class VentaFacturaElectronicaSerializer(serializers.ModelSerializer):
     numbering_range = FactusNumberingRangeSerializer(read_only=True)
+    entregas = FacturaElectronicaEntregaSerializer(many=True, read_only=True)
     intentos = FacturaElectronicaIntentoSerializer(many=True, read_only=True)
+    soportes = FacturaElectronicaSoporteSerializer(many=True, read_only=True)
 
     class Meta:
         model = VentaFacturaElectronica
@@ -704,7 +751,9 @@ class VentaFacturaElectronicaSerializer(serializers.ModelSerializer):
             'response_payload',
             'credit_note_number',
             'credit_note_payload',
+            'entregas',
             'intentos',
+            'soportes',
             'created_at',
             'updated_at',
         ]

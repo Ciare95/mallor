@@ -72,11 +72,13 @@ class Categoria(models.Model):
         return self.nombre
 
     def save(self, *args, **kwargs):
+        skip_full_clean = kwargs.pop('skip_full_clean', False)
         if self.empresa_id is None:
             from empresa.context import get_empresa_actual_or_default
 
             self.empresa = get_empresa_actual_or_default()
-        self.full_clean()
+        if not skip_full_clean:
+            self.full_clean()
         super().save(*args, **kwargs)
 
 
@@ -290,7 +292,7 @@ class Producto(models.Model):
             return Decimal('0')
         return (self.precio_venta * self.existencias).quantize(Decimal('0.01'))
     
-    def actualizar_stock(self, cantidad):
+    def actualizar_stock(self, cantidad, allow_negative=False):
         """
         Actualiza las existencias del producto.
         
@@ -301,18 +303,21 @@ class Producto(models.Model):
             Decimal: Nuevo valor de existencias
         
         Raises:
-            ValueError: Si la cantidad resultante es negativa
+            ValueError: Si la cantidad resultante es negativa y no se permite
         """
         from decimal import Decimal
         existencias_actuales = self.existencias if self.existencias is not None else Decimal('0')
         nuevas_existencias = existencias_actuales + cantidad
-        if nuevas_existencias < 0:
+        if nuevas_existencias < 0 and not allow_negative:
             raise ValueError(
                 f"No hay suficiente stock. Disponible: {existencias_actuales}, "
                 f"requerido: {-cantidad}"
             )
         self.existencias = nuevas_existencias
-        self.save(update_fields=['existencias', 'updated_at'])
+        self.save(
+            update_fields=['existencias', 'updated_at'],
+            skip_full_clean=allow_negative,
+        )
         return self.existencias
     
     def validar_stock(self, cantidad):
@@ -416,7 +421,9 @@ class Producto(models.Model):
         if self.codigo_interno is None:
             self.codigo_interno = self.get_next_codigo_interno(self.empresa)
         
-        self.full_clean()
+        skip_full_clean = kwargs.pop('skip_full_clean', False)
+        if not skip_full_clean:
+            self.full_clean()
         super().save(*args, **kwargs)
 
 

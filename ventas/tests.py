@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 
 from cliente.models import Cliente
 from empresa.context import reset_empresa_actual, set_empresa_actual
-from empresa.models import Empresa, EmpresaUsuario
+from empresa.models import Empresa, EmpresaConfiguracion, EmpresaUsuario
 from core.exceptions import (
     AbonoNoPermitidoError,
     FacturacionComunicacionError,
@@ -26,6 +26,8 @@ from ventas.models import (
     Abono,
     DetalleVenta,
     FacturacionElectronicaConfig,
+    FacturaElectronicaEntrega,
+    FacturaElectronicaSoporte,
     FactusNumberingRange,
     Venta,
     VentaFacturaElectronica,
@@ -149,6 +151,9 @@ class DetalleVentaModelTest(TestCase):
             estado=Venta.Estado.TERMINADA,
             usuario_registro=self.usuario,
         )
+        self.config = EmpresaConfiguracion.get_or_create_for_empresa(
+            self.venta.empresa,
+        )
 
     def test_crear_detalle_actualiza_stock_y_totales(self):
         detalle = DetalleVenta.objects.create(
@@ -204,6 +209,24 @@ class DetalleVentaModelTest(TestCase):
         self.assertEqual(self.venta.subtotal, Decimal('400.00'))
         self.assertEqual(self.venta.impuestos, Decimal('76.00'))
         self.assertEqual(self.venta.total, Decimal('476.00'))
+
+    def test_crear_detalle_permite_stock_negativo_si_empresa_lo_activa(self):
+        self.config.permitir_stock_negativo_ventas = True
+        self.config.save(update_fields=[
+            'permitir_stock_negativo_ventas',
+            'updated_at',
+        ])
+
+        detalle = DetalleVenta.objects.create(
+            venta=self.venta,
+            producto=self.producto,
+            cantidad=Decimal('12.00'),
+            precio_unitario=Decimal('100.00'),
+        )
+
+        self.producto.refresh_from_db()
+        self.assertEqual(detalle.total, Decimal('1428.00'))
+        self.assertEqual(self.producto.existencias, Decimal('-2.00'))
 
 
 class AbonoModelTest(TestCase):
@@ -312,6 +335,9 @@ class VentaSerializerTest(TestCase):
             precio_venta=Decimal('120.00'),
             iva=Decimal('19.00'),
         )
+        self.config = EmpresaConfiguracion.get_or_create_for_empresa(
+            Empresa.get_default(),
+        )
 
     def test_detalle_venta_serializer_retorna_producto_anidado(self):
         venta = Venta.objects.create(
@@ -385,6 +411,32 @@ class VentaSerializerTest(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn('detalles', serializer.errors)
+
+    def test_venta_create_serializer_permite_stock_negativo_si_empresa_lo_activa(self):
+        self.config.permitir_stock_negativo_ventas = True
+        self.config.save(update_fields=[
+            'permitir_stock_negativo_ventas',
+            'updated_at',
+        ])
+        serializer = VentaCreateSerializer(data={
+            'cliente': self.cliente.id,
+            'estado': Venta.Estado.TERMINADA,
+            'metodo_pago': Venta.MetodoPago.EFECTIVO,
+            'usuario_registro': self.usuario.id,
+            'detalles': [
+                {
+                    'producto': self.producto.id,
+                    'cantidad': '20.00',
+                }
+            ],
+        })
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        venta = serializer.save()
+
+        self.producto.refresh_from_db()
+        self.assertEqual(venta.total, Decimal('2856.00'))
+        self.assertEqual(self.producto.existencias, Decimal('-5.00'))
 
     def test_venta_serializer_retorna_detalles_anidados(self):
         venta = Venta.objects.create(
@@ -478,6 +530,9 @@ class VentaServiceTest(TestCase):
             precio_venta=Decimal('100.00'),
             iva=Decimal('19.00'),
         )
+        self.config = EmpresaConfiguracion.get_or_create_for_empresa(
+            Empresa.get_default(),
+        )
 
     def test_crear_venta_service_registra_historial_y_descuenta_stock(self):
         venta = VentaService.crear_venta(
@@ -507,6 +562,32 @@ class VentaServiceTest(TestCase):
             HistorialInventario.TIPO_SALIDA,
         )
         self.assertEqual(historial.cantidad, Decimal('-3.00'))
+
+    def test_crear_venta_service_permite_stock_negativo_si_empresa_lo_activa(self):
+        self.config.permitir_stock_negativo_ventas = True
+        self.config.save(update_fields=[
+            'permitir_stock_negativo_ventas',
+            'updated_at',
+        ])
+
+        venta = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('12.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        self.producto.refresh_from_db()
+        self.assertEqual(venta.total, Decimal('1428.00'))
+        self.assertEqual(self.producto.existencias, Decimal('-2.00'))
 
     def test_actualizar_venta_service_reemplaza_detalles_y_recalcula_stock(self):
         venta = VentaService.crear_venta(
@@ -742,6 +823,20 @@ class FacturacionElectronicaTest(TestCase):
             precio_venta=Decimal('100.00'),
             iva=Decimal('19.00'),
         )
+        self.empresa = Empresa.get_default()
+        self.empresa.direccion = 'CRA 10 # 20-30'
+        self.empresa.municipio_codigo = '11001'
+        self.empresa.email = 'facturacion@mallor.test'
+        self.empresa.telefono = '3005550000'
+        self.empresa.save(
+            update_fields=[
+                'direccion',
+                'municipio_codigo',
+                'email',
+                'telefono',
+                'updated_at',
+            ],
+        )
         self.rango = FactusNumberingRange.objects.create(
             factus_id=101,
             document_code='01',
@@ -855,6 +950,16 @@ class FacturacionElectronicaTest(TestCase):
         with self.assertRaises(FacturacionValidacionError):
             build_factus_bill_payload(venta, self.rango.factus_id)
 
+    def test_build_factus_bill_payload_valida_datos_fiscales_vendedor(self):
+        self.empresa.direccion = ''
+        self.empresa.save(update_fields=['direccion', 'updated_at'])
+        venta = self._crear_venta_facturable()
+
+        with self.assertRaises(FacturacionValidacionError) as exc:
+            build_factus_bill_payload(venta, self.rango.factus_id)
+
+        self.assertEqual(exc.exception.code, 'factus_empresa_direccion')
+
     def test_emitir_factura_persiste_documento_y_sincroniza_venta(self):
         venta = self._crear_venta_facturable()
         service = FacturacionElectronicaService(adapter=self._build_adapter())
@@ -879,6 +984,133 @@ class FacturacionElectronicaTest(TestCase):
         self.assertEqual(venta.numero_factura_electronica, 'SETP-11')
         self.assertTrue(
             VentaFacturaElectronica.objects.filter(venta=venta).exists(),
+        )
+        self.assertTrue(
+            documento.entregas.filter(
+                medio=FacturaElectronicaEntrega.Medio.SIN_MEDIO,
+                resultado=FacturaElectronicaEntrega.Resultado.PENDIENTE,
+            ).exists(),
+        )
+
+    def test_enviar_email_registra_evidencia_de_entrega(self):
+        venta = self._crear_venta_facturable()
+        documento = VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-11',
+            cufe='CUFE-123',
+        )
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        with patch.object(
+            service.adapter,
+            'enviar_email',
+            return_value={'data': {'sent': True}},
+            create=True,
+        ):
+            documento = service.enviar_email(venta.id, email='cliente@mallor.test')
+
+        self.assertIsNotNone(documento.email_last_sent_at)
+        self.assertTrue(
+            documento.entregas.filter(
+                medio=FacturaElectronicaEntrega.Medio.EMAIL,
+                resultado=FacturaElectronicaEntrega.Resultado.EXITOSO,
+                destino='cliente@mallor.test',
+            ).exists(),
+        )
+
+    def test_descargar_pdf_y_xml_archiva_soportes_probatorios(self):
+        venta = self._crear_venta_facturable()
+        documento = VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-11',
+            cufe='CUFE-123',
+        )
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        with patch.object(
+            service.adapter,
+            'descargar_pdf',
+            return_value={
+                'content': b'%PDF-1.4',
+                'content_type': 'application/pdf',
+                'filename': 'SETP-11.pdf',
+            },
+            create=True,
+        ), patch.object(
+            service.adapter,
+            'descargar_xml',
+            return_value={
+                'content': b'<Invoice />',
+                'content_type': 'application/xml',
+                'filename': 'SETP-11.xml',
+            },
+            create=True,
+        ):
+            pdf = service.descargar_pdf(venta.id, usuario=self.usuario)
+            xml = service.descargar_xml(venta.id, usuario=self.usuario)
+
+        self.assertEqual(pdf['filename'], 'SETP-11.pdf')
+        self.assertEqual(xml['filename'], 'SETP-11.xml')
+        self.assertTrue(
+            FacturaElectronicaSoporte.objects.filter(
+                factura=documento,
+                tipo=FacturaElectronicaSoporte.Tipo.PDF,
+                filename='SETP-11.pdf',
+            ).exists(),
+        )
+        self.assertTrue(
+            FacturaElectronicaSoporte.objects.filter(
+                factura=documento,
+                tipo=FacturaElectronicaSoporte.Tipo.XML,
+                filename='SETP-11.xml',
+            ).exists(),
+        )
+        self.assertTrue(
+            FacturaElectronicaEntrega.objects.filter(
+                factura=documento,
+                medio=FacturaElectronicaEntrega.Medio.DESCARGA,
+                resultado=FacturaElectronicaEntrega.Resultado.EXITOSO,
+            ).exists(),
+        )
+
+    def test_descargar_pdf_usa_archivo_local_si_factus_no_responde(self):
+        venta = self._crear_venta_facturable()
+        documento = VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-11',
+            cufe='CUFE-123',
+        )
+        FacturaElectronicaSoporte.objects.create(
+            factura=documento,
+            tipo=FacturaElectronicaSoporte.Tipo.PDF,
+            filename='SETP-11.pdf',
+            content_type='application/pdf',
+            content=b'%PDF-ARCHIVO',
+        )
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        with patch.object(
+            service.adapter,
+            'descargar_pdf',
+            side_effect=FacturacionComunicacionError('Factus no responde'),
+            create=True,
+        ):
+            payload = service.descargar_pdf(venta.id, usuario=self.usuario)
+
+        self.assertTrue(payload['from_archive'])
+        self.assertEqual(payload['content'], b'%PDF-ARCHIVO')
+        self.assertTrue(
+            FacturaElectronicaEntrega.objects.filter(
+                factura=documento,
+                medio=FacturaElectronicaEntrega.Medio.DESCARGA,
+                resultado=FacturaElectronicaEntrega.Resultado.EXITOSO,
+            ).exists(),
         )
 
     def test_sincronizar_rangos_acepta_payload_dian_sin_id(self):
@@ -1075,3 +1307,108 @@ class VentaTenantApiTest(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+
+class ContadorApiTest(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.empresa = Empresa.get_default()
+        self.otra_empresa = Empresa.objects.create(
+            nit='901000304',
+            razon_social='Otra Empresa Contador SAS',
+        )
+        self.password = 'Secret123'
+        self.usuario = Usuario.objects.create_user(
+            username='contador_empresa',
+            email='contador@mallor.test',
+            password=self.password,
+            role=Usuario.Rol.EMPLEADO,
+        )
+        EmpresaUsuario.objects.get_or_create(
+            empresa=self.empresa,
+            usuario=self.usuario,
+            defaults={'rol': EmpresaUsuario.Rol.CONTADOR, 'activo': True},
+        )
+        self.client.login(username=self.usuario.username, password=self.password)
+        self.cliente = Cliente.objects.create(
+            nombre='Cliente Contable',
+            numero_documento='100200300',
+            telefono='3001112233',
+            direccion='Calle Contable 1',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            municipio_codigo='11001',
+        )
+        self.producto = Producto.objects.create(
+            nombre='Producto Contable',
+            existencias=Decimal('10.00'),
+            precio_compra=Decimal('1000.00'),
+            precio_venta=Decimal('2000.00'),
+            iva=Decimal('19.00'),
+        )
+        self.venta = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'factura_electronica': True,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('1.00'),
+                    },
+                ],
+            },
+            usuario=self.usuario,
+        )
+        self.documento = VentaFacturaElectronica.objects.create(
+            venta=self.venta,
+            status=VentaFacturaElectronica.Status.ERROR,
+            reference_code='CONTADOR-1',
+            last_error_code='factus_http_422',
+            last_error_message='Validacion DIAN fallida',
+        )
+
+    def test_contador_consulta_resumen_y_riesgos_dian(self):
+        resumen = self.client.get(
+            '/api/contador/resumen/',
+            HTTP_X_EMPRESA_ID=str(self.empresa.id),
+        )
+        riesgos = self.client.get(
+            '/api/contador/riesgos-dian/',
+            HTTP_X_EMPRESA_ID=str(self.empresa.id),
+        )
+
+        self.assertEqual(resumen.status_code, 200)
+        self.assertEqual(riesgos.status_code, 200)
+        self.assertEqual(resumen.data['facturas_error'], 1)
+        self.assertEqual(resumen.data['ventas_facturables_sin_fe'], 1)
+        self.assertEqual(len(riesgos.data['facturas_error']), 1)
+
+    def test_contador_no_puede_operar_facturacion_ni_ventas(self):
+        emitir = self.client.post(
+            f'/api/ventas/{self.venta.id}/factura/emitir/',
+            HTTP_X_EMPRESA_ID=str(self.empresa.id),
+        )
+        crear_venta = self.client.post(
+            '/api/ventas/',
+            data={},
+            format='json',
+            HTTP_X_EMPRESA_ID=str(self.empresa.id),
+        )
+        config = self.client.get(
+            '/api/facturacion/configuracion/',
+            HTTP_X_EMPRESA_ID=str(self.empresa.id),
+        )
+
+        self.assertEqual(emitir.status_code, 403)
+        self.assertEqual(crear_venta.status_code, 403)
+        self.assertEqual(config.status_code, 403)
+
+    def test_contador_no_consulta_empresa_ajena(self):
+        response = self.client.get(
+            '/api/contador/resumen/',
+            HTTP_X_EMPRESA_ID=str(self.otra_empresa.id),
+        )
+
+        self.assertEqual(response.status_code, 403)
