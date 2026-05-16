@@ -267,8 +267,8 @@ const ProductosList = ({
                 <SlidersHorizontal className="h-4 w-4" />
                 Stock bajo
               </button>
-              <button type="button" onClick={() => setModoVista('tabla')} className={`min-h-10 rounded-md border p-3 transition ${modoVista === 'tabla' ? 'border-[var(--text-main)] bg-[var(--text-main)] text-white' : 'border-app bg-white/70 text-soft hover:bg-white'}`} aria-label="Vista tabla"><List className="h-4 w-4" /></button>
-              <button type="button" onClick={() => setModoVista('tarjetas')} className={`min-h-10 rounded-md border p-3 transition ${modoVista === 'tarjetas' ? 'border-[var(--text-main)] bg-[var(--text-main)] text-white' : 'border-app bg-white/70 text-soft hover:bg-white'}`} aria-label="Vista tarjetas"><Grid3X3 className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setModoVista('tabla')} className={`min-h-10 rounded-md border p-3 transition ${modoVista === 'tabla' ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-sm' : 'border-app bg-white/70 text-soft hover:bg-white hover:text-main'}`} aria-label="Vista tabla"><List className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setModoVista('tarjetas')} className={`min-h-10 rounded-md border p-3 transition ${modoVista === 'tarjetas' ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-sm' : 'border-app bg-white/70 text-soft hover:bg-white hover:text-main'}`} aria-label="Vista tarjetas"><Grid3X3 className="h-4 w-4" /></button>
               <ExportarInventario onSuccess={onToast?.success} onError={onToast?.error} />
             </div>
           </div>

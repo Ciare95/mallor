@@ -33,6 +33,9 @@ const baseProps = {
     metodoAbonoInicial: 'EFECTIVO',
     referenciaAbonoInicial: '',
     observaciones: '',
+    ticketPaperWidth: '80',
+    ticketShowLogo: true,
+    ticketCopies: 1,
   },
   localClients: [],
   isLoading: false,
@@ -78,7 +81,7 @@ describe('VentaForm keyboard search', () => {
 
     renderWithProviders(<VentaForm {...baseProps} />);
 
-    const input = screen.getByRole('combobox');
+    const input = screen.getByRole('combobox', { name: /buscar producto/i });
     fireEvent.change(input, { target: { value: 'cafe' } });
 
     await waitFor(() =>
@@ -107,7 +110,7 @@ describe('VentaForm keyboard search', () => {
 
     renderWithProviders(<VentaForm {...baseProps} />);
 
-    const input = screen.getByRole('combobox');
+    const input = screen.getByRole('combobox', { name: /buscar producto/i });
     fireEvent.change(input, { target: { value: 'pan' } });
 
     await waitFor(() =>

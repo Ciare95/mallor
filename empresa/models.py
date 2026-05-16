@@ -38,6 +38,12 @@ class Empresa(models.Model):
         max_length=200,
         blank=True,
     )
+    logo = models.ImageField(
+        _('logo'),
+        upload_to='empresas/',
+        blank=True,
+        null=True,
+    )
     email = models.EmailField(_('correo electronico'), blank=True)
     telefono = models.CharField(_('telefono'), max_length=30, blank=True)
     direccion = models.TextField(_('direccion'), blank=True)
@@ -92,6 +98,10 @@ class EmpresaConfiguracion(models.Model):
         LIGHT = 'LIGHT', _('Claro')
         DARK = 'DARK', _('Oscuro')
 
+    class TicketPaperWidth(models.TextChoices):
+        MM58 = '58', _('58 mm')
+        MM80 = '80', _('80 mm')
+
     ATAJOS_VENTAS_KEYS = (
         'registrar_venta',
         'configurar_cobro',
@@ -122,6 +132,20 @@ class EmpresaConfiguracion(models.Model):
     atajos_ventas = models.JSONField(
         _('atajos de ventas'),
         default=get_default_atajos_ventas,
+    )
+    ticket_paper_width = models.CharField(
+        _('ancho de papel para tirilla'),
+        max_length=2,
+        choices=TicketPaperWidth.choices,
+        default=TicketPaperWidth.MM80,
+    )
+    ticket_show_logo = models.BooleanField(
+        _('mostrar logo en tirilla'),
+        default=True,
+    )
+    ticket_copies = models.PositiveSmallIntegerField(
+        _('copias de tirilla'),
+        default=1,
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

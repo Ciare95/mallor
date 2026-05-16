@@ -2,6 +2,7 @@ import { create } from 'zustand';
 
 const THEME_STORAGE_KEY = 'mallor_theme';
 const EMPRESA_STORAGE_KEY = 'mallor_empresa_activa_id';
+const BACKEND_ORIGIN = 'http://localhost:8000';
 
 export const DEFAULT_ATAJOS_VENTAS = {
   registrar_venta: 'Ctrl+V',
@@ -10,11 +11,20 @@ export const DEFAULT_ATAJOS_VENTAS = {
   quitar_ultimo_producto: 'Delete',
 };
 
+export const DEFAULT_TICKET_PREFERENCES = {
+  paperWidth: '80',
+  showLogo: true,
+  copies: 1,
+};
+
 export const DEFAULT_CONFIGURACION_OPERATIVA = {
   tema: 'LIGHT',
   permitir_stock_negativo_ventas: false,
   atajos_ventas_activos: true,
   atajos_ventas: DEFAULT_ATAJOS_VENTAS,
+  ticket_paper_width: DEFAULT_TICKET_PREFERENCES.paperWidth,
+  ticket_show_logo: DEFAULT_TICKET_PREFERENCES.showLogo,
+  ticket_copies: DEFAULT_TICKET_PREFERENCES.copies,
 };
 
 const storedUser = sessionStorage.getItem('mallor_user');
@@ -44,6 +54,71 @@ const applyTheme = (theme) => {
   );
 };
 
+export const getTicketPreferencesStorageKey = (empresaId, userId) =>
+  `mallor_ticket_settings_${empresaId || 'sin-empresa'}_${userId || 'anon'}`;
+
+export const normalizeTicketPreferences = (settings = {}) => ({
+  paperWidth:
+    settings.paperWidth === '58' || settings.ticket_paper_width === '58'
+      ? '58'
+      : '80',
+  showLogo: settings.showLogo ?? settings.ticket_show_logo ?? true,
+  copies: Math.min(
+    Math.max(
+      Number(settings.copies ?? settings.ticket_copies ?? 1) || 1,
+      1,
+    ),
+    5,
+  ),
+});
+
+export const loadLastTicketPreferences = (empresaId, userId) => {
+  if (typeof localStorage === 'undefined') {
+    return null;
+  }
+
+  const raw = localStorage.getItem(
+    getTicketPreferencesStorageKey(empresaId, userId),
+  );
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return normalizeTicketPreferences(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+};
+
+export const persistLastTicketPreferences = (empresaId, userId, settings) => {
+  if (typeof localStorage === 'undefined') {
+    return;
+  }
+
+  localStorage.setItem(
+    getTicketPreferencesStorageKey(empresaId, userId),
+    JSON.stringify(normalizeTicketPreferences(settings)),
+  );
+};
+
+export const resolveTicketPreferences = ({
+  empresaId,
+  userId,
+  config = {},
+  fallback = {},
+} = {}) => {
+  const lastUsed = loadLastTicketPreferences(empresaId, userId);
+  if (lastUsed) {
+    return lastUsed;
+  }
+
+  return normalizeTicketPreferences({
+    ...config,
+    ...fallback,
+  });
+};
+
 const normalizeConfiguracionOperativa = (config = {}) => ({
   ...DEFAULT_CONFIGURACION_OPERATIVA,
   ...config,
@@ -51,7 +126,32 @@ const normalizeConfiguracionOperativa = (config = {}) => ({
     ...DEFAULT_ATAJOS_VENTAS,
     ...(config?.atajos_ventas || {}),
   },
+  ticket_paper_width: normalizeTicketPreferences(config).paperWidth,
+  ticket_show_logo: normalizeTicketPreferences(config).showLogo,
+  ticket_copies: normalizeTicketPreferences(config).copies,
 });
+
+const normalizeEmpresaMedia = (empresa) => {
+  if (!empresa || typeof empresa !== 'object') {
+    return empresa || null;
+  }
+
+  const logo = empresa.logo;
+  if (!logo || typeof logo !== 'string') {
+    return empresa;
+  }
+
+  if (/^https?:\/\//i.test(logo)) {
+    return empresa;
+  }
+
+  return {
+    ...empresa,
+    logo: logo.startsWith('/')
+      ? `${BACKEND_ORIGIN}${logo}`
+      : `${BACKEND_ORIGIN}/${logo}`,
+  };
+};
 
 const initialTheme = getStoredTheme();
 applyTheme(initialTheme);
@@ -130,6 +230,7 @@ export const useAppStore = create((set) => ({
       };
     }),
   setEmpresaActiva: (empresa) => {
+    const normalizedEmpresa = normalizeEmpresaMedia(empresa);
     if (empresa?.id) {
       localStorage.setItem(EMPRESA_STORAGE_KEY, String(empresa.id));
     } else {
@@ -137,8 +238,8 @@ export const useAppStore = create((set) => ({
     }
 
     const storedTheme = getStoredTheme();
-    const nextConfig = empresa?.configuracion_operativa
-      ? normalizeConfiguracionOperativa(empresa.configuracion_operativa)
+    const nextConfig = normalizedEmpresa?.configuracion_operativa
+      ? normalizeConfiguracionOperativa(normalizedEmpresa.configuracion_operativa)
       : normalizeConfiguracionOperativa({ tema: storedTheme });
     const configWithUserTheme = {
       ...nextConfig,
@@ -147,8 +248,8 @@ export const useAppStore = create((set) => ({
     applyTheme(storedTheme);
 
     set({
-      empresaActiva: empresa || null,
-      empresaActivaId: empresa?.id ? String(empresa.id) : null,
+      empresaActiva: normalizedEmpresa || null,
+      empresaActivaId: normalizedEmpresa?.id ? String(normalizedEmpresa.id) : null,
       configuracionOperativa: configWithUserTheme,
       temaActual: storedTheme,
       iaSesionActivaId: null,

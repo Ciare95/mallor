@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   CreditCard,
   Download,
+  Eye,
   FilePenLine,
   Loader2,
   Mail,
@@ -37,6 +38,7 @@ export default function VentaDetail({
   onDescargarFacturaXml,
   onEnviarFacturaEmail,
   onCrearNotaCredito,
+  onOpenTicketPreview,
   abonoSubmitting,
   abonoError,
 }) {
@@ -153,6 +155,14 @@ export default function VentaDetail({
             >
               <ReceiptText className="h-4 w-4" />
               {factura?.status === 'ERROR' ? 'Reintentar factura' : 'Facturar'}
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenTicketPreview(venta)}
+              className="app-button-secondary min-h-10"
+            >
+              <Eye className="h-4 w-4" />
+              Tirilla
             </button>
             {factura?.status === 'ERROR' && (
               <button

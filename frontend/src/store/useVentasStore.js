@@ -1,5 +1,9 @@
 import { create } from 'zustand';
 import {
+  resolveTicketPreferences,
+  useAppStore,
+} from './useStore';
+import {
   CONSUMIDOR_FINAL,
   createLineItem,
   createTemporaryClient,
@@ -20,7 +24,18 @@ export const VENTA_DETALLE_TABS = {
   HISTORIAL: 'historial',
 };
 
-const getDraftInicial = () => ({
+const getTicketDefaults = () => {
+  const appState = useAppStore.getState();
+  return resolveTicketPreferences({
+    empresaId: appState.empresaActivaId,
+    userId: appState.user?.id,
+    config: appState.configuracionOperativa,
+  });
+};
+
+const getDraftInicial = () => {
+  const ticketDefaults = getTicketDefaults();
+  return {
   ventaId: null,
   clienteSeleccionado: CONSUMIDOR_FINAL,
   items: [],
@@ -34,7 +49,11 @@ const getDraftInicial = () => ({
   metodoAbonoInicial: 'EFECTIVO',
   referenciaAbonoInicial: '',
   observaciones: '',
-});
+  ticketPaperWidth: ticketDefaults.paperWidth,
+  ticketShowLogo: ticketDefaults.showLogo,
+  ticketCopies: ticketDefaults.copies,
+  };
+};
 
 const createPrecuenta = (number = 1, draft = getDraftInicial()) => ({
   id: `precuenta-${Date.now()}-${number}`,
@@ -186,6 +205,7 @@ export const useVentasStore = create((set) => ({
     set((state) => updateActivePrecuentaDraft(state, getDraftInicial())),
   cargarVentaEnDraft: (venta) =>
     set((state) => {
+      const ticketDefaults = getTicketDefaults();
       const nextDraft = {
         ventaId: venta.id,
         clienteSeleccionado: venta.cliente || CONSUMIDOR_FINAL,
@@ -206,6 +226,9 @@ export const useVentasStore = create((set) => ({
         metodoAbonoInicial: 'EFECTIVO',
         referenciaAbonoInicial: '',
         observaciones: venta.observaciones || '',
+        ticketPaperWidth: ticketDefaults.paperWidth,
+        ticketShowLogo: ticketDefaults.showLogo,
+        ticketCopies: ticketDefaults.copies,
       };
 
       return {

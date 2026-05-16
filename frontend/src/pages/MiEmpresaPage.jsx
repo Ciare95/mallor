@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Building2,
+  ImagePlus,
   Keyboard,
   MoonStar,
   RotateCcw,
@@ -33,6 +34,7 @@ const EMPTY_FORM = {
   digito_verificacion: '',
   razon_social: '',
   nombre_comercial: '',
+  logo: '',
   email: '',
   telefono: '',
   direccion: '',
@@ -54,6 +56,9 @@ const buildConfigPayload = (config) => ({
   permitir_stock_negativo_ventas: config.permitir_stock_negativo_ventas,
   atajos_ventas_activos: config.atajos_ventas_activos,
   atajos_ventas: config.atajos_ventas,
+  ticket_paper_width: config.ticket_paper_width,
+  ticket_show_logo: config.ticket_show_logo,
+  ticket_copies: config.ticket_copies,
 });
 
 export default function MiEmpresaPage() {
@@ -75,6 +80,7 @@ export default function MiEmpresaPage() {
   const { toasts, toast, closeToast } = useToast();
   const [empresaForm, setEmpresaForm] = useState(EMPTY_FORM);
   const [configForm, setConfigForm] = useState(DEFAULT_CONFIGURACION_OPERATIVA);
+  const [logoPreview, setLogoPreview] = useState('');
 
   const rol = empresaActiva?.rol_usuario;
   const puedeEditar = ['PROPIETARIO', 'ADMIN'].includes(rol);
@@ -90,11 +96,22 @@ export default function MiEmpresaPage() {
       ...empresaActiva,
       digito_verificacion: calculateNitVerificationDigit(empresaActiva.nit),
     });
+    setLogoPreview(empresaActiva.logo || '');
     setConfigForm({
       ...normalizeConfig(configuracionOperativa),
       tema: temaActual,
     });
   }, [empresaActiva, configuracionOperativa, temaActual]);
+
+  useEffect(() => {
+    if (!(empresaForm.logo instanceof File)) {
+      return undefined;
+    }
+
+    const objectUrl = URL.createObjectURL(empresaForm.logo);
+    setLogoPreview(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [empresaForm.logo]);
 
   const guardarEmpresaMutation = useMutation({
     mutationFn: (payload) => actualizarEmpresa(empresaActiva.id, payload),
@@ -348,6 +365,46 @@ export default function MiEmpresaPage() {
                   setEmpresaField('nombre_comercial', value)
                 }
               />
+              <div className="rounded-2xl border border-app bg-white/70 p-4 lg:row-span-2">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="app-field-label">Logo de la empresa</div>
+                    <div className="mt-1 text-[12px] text-soft">
+                      Se usa en impresiones y documentos comerciales.
+                    </div>
+                  </div>
+                  <label className={`app-button-secondary min-h-10 ${!puedeEditar ? 'pointer-events-none opacity-50' : 'cursor-pointer'}`}>
+                    <ImagePlus className="h-4 w-4" />
+                    Subir logo
+                    <input
+                      type="file"
+                      accept="image/*"
+                      disabled={!puedeEditar}
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) {
+                          return;
+                        }
+                        setEmpresaField('logo', file);
+                      }}
+                    />
+                  </label>
+                </div>
+                <div className="mt-4 flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-app bg-[rgba(248,250,252,0.85)] p-4">
+                  {logoPreview ? (
+                    <img
+                      src={logoPreview}
+                      alt="Logo de la empresa"
+                      className="max-h-[150px] w-auto max-w-full object-contain"
+                    />
+                  ) : (
+                    <div className="text-center text-[12px] text-soft">
+                      Sin logo cargado
+                    </div>
+                  )}
+                </div>
+              </div>
               <Field
                 label="Email"
                 type="email"
@@ -432,6 +489,58 @@ export default function MiEmpresaPage() {
                 })
               }
             />
+          </div>
+
+          <div className="surface-elevated p-5 sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-app pb-4">
+              <div>
+                <div className="eyebrow">Tirilla termica</div>
+                <h3 className="mt-2 font-display text-2xl text-main">
+                  Preferencias por sucursal
+                </h3>
+                <p className="mt-2 body-copy">
+                  Define el formato base que tomara la tirilla antes de aplicar
+                  la ultima eleccion del cajero.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-3">
+              <SelectField
+                label="Papel por defecto"
+                value={configForm.ticket_paper_width}
+                disabled={!puedeEditar}
+                onChange={(value) => setConfigField('ticket_paper_width', value)}
+                options={[
+                  ['58 mm', '58'],
+                  ['80 mm', '80'],
+                ]}
+              />
+              <Field
+                label="Copias por defecto"
+                type="number"
+                value={configForm.ticket_copies}
+                disabled={!puedeEditar}
+                onChange={(value) =>
+                  setConfigField(
+                    'ticket_copies',
+                    Math.min(
+                      Math.max(Number.parseInt(value, 10) || 1, 1),
+                      5,
+                    ),
+                  )
+                }
+                helper="Rango permitido: 1 a 5 copias."
+              />
+              <TogglePanel
+                icon={ImagePlus}
+                title="Mostrar logo en tirilla"
+                description="Usa el logo cargado en Mi empresa como valor inicial de impresion."
+                checked={configForm.ticket_show_logo}
+                disabled={!puedeEditar}
+                onChange={(checked) => setConfigField('ticket_show_logo', checked)}
+              />
+            </div>
           </div>
 
           <div className="surface-elevated p-5 sm:p-6">

@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useAppStore } from './useStore';
+import {
+  persistLastTicketPreferences,
+  resolveTicketPreferences,
+  useAppStore,
+} from './useStore';
 
 const resetStore = () => {
   localStorage.removeItem('mallor_theme');
@@ -20,6 +24,9 @@ const resetStore = () => {
         nueva_precuenta: 'Ctrl+N',
         quitar_ultimo_producto: 'Delete',
       },
+      ticket_paper_width: '80',
+      ticket_show_logo: true,
+      ticket_copies: 1,
     },
     temaActual: 'LIGHT',
     iaSesionActivaId: null,
@@ -49,6 +56,9 @@ describe('useAppStore', () => {
           nueva_precuenta: 'Ctrl+N',
           quitar_ultimo_producto: 'Delete',
         },
+        ticket_paper_width: '58',
+        ticket_show_logo: false,
+        ticket_copies: 2,
       },
     });
 
@@ -82,6 +92,9 @@ describe('useAppStore', () => {
         nueva_precuenta: 'Ctrl+Shift+N',
         quitar_ultimo_producto: 'Delete',
       },
+      ticket_paper_width: '58',
+      ticket_show_logo: false,
+      ticket_copies: 3,
     });
 
     expect(useAppStore.getState().temaActual).toBe('DARK');
@@ -89,7 +102,38 @@ describe('useAppStore', () => {
       useAppStore.getState().configuracionOperativa
         .permitir_stock_negativo_ventas,
     ).toBe(true);
+    expect(useAppStore.getState().configuracionOperativa.ticket_paper_width).toBe(
+      '58',
+    );
+    expect(useAppStore.getState().configuracionOperativa.ticket_show_logo).toBe(
+      false,
+    );
+    expect(useAppStore.getState().configuracionOperativa.ticket_copies).toBe(3);
     expect(localStorage.getItem('mallor_theme')).toBe('DARK');
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+  });
+
+  it('prioriza la ultima preferencia de tirilla guardada por cajero', () => {
+    persistLastTicketPreferences(12, 99, {
+      paperWidth: '58',
+      showLogo: false,
+      copies: 4,
+    });
+
+    const resolved = resolveTicketPreferences({
+      empresaId: 12,
+      userId: 99,
+      config: {
+        ticket_paper_width: '80',
+        ticket_show_logo: true,
+        ticket_copies: 1,
+      },
+    });
+
+    expect(resolved).toEqual({
+      paperWidth: '58',
+      showLogo: false,
+      copies: 4,
+    });
   });
 });

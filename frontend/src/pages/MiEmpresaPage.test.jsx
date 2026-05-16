@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '../tests/test-utils';
@@ -42,6 +42,9 @@ describe('MiEmpresaPage', () => {
             nueva_precuenta: 'Ctrl+N',
             quitar_ultimo_producto: 'Delete',
           },
+          ticket_paper_width: '80',
+          ticket_show_logo: true,
+          ticket_copies: 1,
         },
       },
       empresaActivaId: '12',
@@ -55,6 +58,9 @@ describe('MiEmpresaPage', () => {
           nueva_precuenta: 'Ctrl+N',
           quitar_ultimo_producto: 'Delete',
         },
+        ticket_paper_width: '80',
+        ticket_show_logo: true,
+        ticket_copies: 1,
       },
       temaActual: 'LIGHT',
     });
@@ -72,12 +78,26 @@ describe('MiEmpresaPage', () => {
         nueva_precuenta: 'Ctrl+N',
         quitar_ultimo_producto: 'Delete',
       },
+      ticket_paper_width: '58',
+      ticket_show_logo: false,
+      ticket_copies: 2,
     });
 
     renderWithProviders(<MiEmpresaPage />, { router: false });
 
     await user.click(screen.getByRole('button', { name: /Modo oscuro/i }));
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /Papel por defecto/i }),
+      '58',
+    );
+    const copiesInput = screen.getByRole('spinbutton', {
+      name: /Copias por defecto/i,
+    });
+    fireEvent.change(copiesInput, { target: { value: '2' } });
+    await user.click(
+      screen.getByRole('button', { name: /Mostrar logo en tirilla/i }),
+    );
 
     const shortcutInput = screen.getByDisplayValue('Ctrl+V');
     shortcutInput.focus();
@@ -92,6 +112,9 @@ describe('MiEmpresaPage', () => {
         expect.objectContaining({
           tema: 'DARK',
           permitir_stock_negativo_ventas: false,
+          ticket_paper_width: '58',
+          ticket_show_logo: false,
+          ticket_copies: 2,
           atajos_ventas: expect.objectContaining({
             registrar_venta: 'Ctrl+Shift+R',
           }),
@@ -113,6 +136,9 @@ describe('MiEmpresaPage', () => {
           nueva_precuenta: 'Ctrl+N',
           quitar_ultimo_producto: 'Delete',
         },
+        ticket_paper_width: '80',
+        ticket_show_logo: true,
+        ticket_copies: 1,
       },
     });
     document.documentElement.setAttribute('data-theme', 'dark');
@@ -137,6 +163,9 @@ describe('MiEmpresaPage', () => {
         nueva_precuenta: 'Ctrl+N',
         quitar_ultimo_producto: 'Delete',
       },
+      ticket_paper_width: '80',
+      ticket_show_logo: true,
+      ticket_copies: 1,
     });
     const { unmount } = renderWithProviders(<MiEmpresaPage />, {
       router: false,

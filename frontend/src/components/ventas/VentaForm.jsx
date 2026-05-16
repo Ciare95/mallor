@@ -529,6 +529,12 @@ export default function VentaForm({
                   checked={draft.imprimirTicket}
                   onChange={(checked) => onChangeField('imprimirTicket', checked)}
                 />
+                {draft.imprimirTicket && (
+                  <div className="rounded-xl border border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] px-4 py-3 text-[12px] text-[var(--info-text)]">
+                    Al terminar la venta se abrira el modal del formato de la
+                    tirilla para revisar la vista previa antes de imprimir.
+                  </div>
+                )}
               </div>
             </div>
           </div>

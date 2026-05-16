@@ -1,8 +1,73 @@
 import api from './api';
 
+const BACKEND_ORIGIN = new URL(api.defaults.baseURL).origin;
+
+const normalizeImageUrl = (value) => {
+  if (!value || typeof value !== 'string') {
+    return value || '';
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  if (value.startsWith('/')) {
+    return `${BACKEND_ORIGIN}${value}`;
+  }
+
+  return `${BACKEND_ORIGIN}/${value}`;
+};
+
+const normalizeEmpresaResponse = (empresa) => {
+  if (!empresa || typeof empresa !== 'object') {
+    return empresa;
+  }
+
+  return {
+    ...empresa,
+    logo: normalizeImageUrl(empresa.logo),
+  };
+};
+
+const toEmpresaRequestBody = (datos = {}) => {
+  const payload = { ...datos };
+  const hasLogoFile = payload.logo instanceof File;
+
+  if (!hasLogoFile) {
+    if (typeof payload.logo === 'string' || payload.logo === null) {
+      delete payload.logo;
+    }
+    return payload;
+  }
+
+  const formData = new FormData();
+  Object.entries(payload).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      formData.append(key, value);
+    }
+  });
+  return formData;
+};
+
+const requestConfigForBody = (body) => {
+  if (body instanceof FormData) {
+    return {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    };
+  }
+  return undefined;
+};
+
 export const listarEmpresas = async () => {
   const response = await api.get('/empresas/');
-  return response.data;
+  return {
+    ...response.data,
+    results: Array.isArray(response.data?.results)
+      ? response.data.results.map(normalizeEmpresaResponse)
+      : response.data?.results,
+  };
 };
 
 export const listarEmpresasAdmin = async () => {
@@ -12,29 +77,34 @@ export const listarEmpresasAdmin = async () => {
 
 export const crearEmpresaAdmin = async (payload) => {
   const response = await api.post('/empresas/admin/', payload);
-  return response.data;
+  return normalizeEmpresaResponse(response.data);
 };
 
 export const actualizarEmpresaAdmin = async (empresaId, payload) => {
   const response = await api.patch(`/empresas/admin/${empresaId}/`, payload);
-  return response.data;
+  return normalizeEmpresaResponse(response.data);
 };
 
 export const obtenerEmpresa = async (empresaId) => {
   const response = await api.get(`/empresas/${empresaId}/`);
-  return response.data;
+  return normalizeEmpresaResponse(response.data);
 };
 
 export const seleccionarEmpresa = async (empresaId) => {
   const response = await api.post('/empresas/seleccionar/', {
     empresa_id: empresaId,
   });
-  return response.data;
+  return normalizeEmpresaResponse(response.data);
 };
 
 export const actualizarEmpresa = async (empresaId, payload) => {
-  const response = await api.patch(`/empresas/${empresaId}/`, payload);
-  return response.data;
+  const body = toEmpresaRequestBody(payload);
+  const response = await api.patch(
+    `/empresas/${empresaId}/`,
+    body,
+    requestConfigForBody(body),
+  );
+  return normalizeEmpresaResponse(response.data);
 };
 
 export const obtenerConfiguracionEmpresa = async (empresaId) => {

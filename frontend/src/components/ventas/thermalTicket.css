@@ -1,0 +1,465 @@
+.thermal-ticket-preview-shell {
+  background:
+    radial-gradient(circle at top, rgba(15, 23, 42, 0.06), transparent 38%),
+    linear-gradient(180deg, #f5f5f4 0%, #e7e5e4 100%);
+}
+
+.thermal-ticket-modal {
+  width: min(1220px, 100%);
+  max-height: min(92vh, 920px);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98));
+  color: #e5eefc;
+  box-shadow: 0 28px 80px rgba(2, 6, 23, 0.48);
+}
+
+.thermal-ticket-modal__header {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 24px 24px 18px;
+}
+
+.thermal-ticket-modal__eyebrow {
+  color: #7dd3fc;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.thermal-ticket-modal__title {
+  margin-top: 10px;
+  color: #f8fafc;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.thermal-ticket-modal__description {
+  margin-top: 10px;
+  max-width: 760px;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.thermal-ticket-modal__header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.thermal-ticket-modal__body {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+}
+
+.thermal-ticket-modal__sidebar {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 22px;
+  border-right: 1px solid rgba(148, 163, 184, 0.16);
+  background:
+    linear-gradient(180deg, rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0.6));
+}
+
+.thermal-ticket-modal__panel {
+  border: 1px solid rgba(125, 211, 252, 0.14);
+  border-radius: 20px;
+  background: rgba(15, 23, 42, 0.78);
+  padding: 18px;
+}
+
+.thermal-ticket-modal__panel-title {
+  color: #f8fafc;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.thermal-ticket-modal__panel-copy {
+  margin-top: 6px;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.thermal-ticket-modal__hint {
+  border: 1px solid rgba(125, 211, 252, 0.16);
+  border-radius: 16px;
+  background: rgba(14, 116, 144, 0.12);
+  padding: 14px;
+  color: #dbeafe;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.thermal-ticket-modal__preview {
+  display: grid;
+  min-height: 0;
+  grid-template-rows: auto 1fr;
+  background:
+    linear-gradient(180deg, #e7e5e4 0%, #d6d3d1 100%);
+}
+
+.thermal-ticket-modal__preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.thermal-ticket-modal__preview-title {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.thermal-ticket-modal__preview-copy {
+  margin-top: 4px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.thermal-ticket-modal__preview-size {
+  border-radius: 999px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  background: rgba(255, 255, 255, 0.82);
+  padding: 6px 10px;
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.thermal-ticket-modal__preview-scroll {
+  min-height: 0;
+  overflow: auto;
+  padding: 26px;
+}
+
+.thermal-ticket-document {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+}
+
+.thermal-ticket-sheet {
+  --ticket-width: 80mm;
+  --ticket-font-size: 11px;
+  --ticket-line-height: 1.35;
+  --ticket-qr-size: 132px;
+  width: var(--ticket-width);
+  max-width: 100%;
+  background: #fff;
+  color: #111;
+  font-family: "IBM Plex Mono", "Courier New", ui-monospace, monospace;
+  font-size: var(--ticket-font-size);
+  line-height: var(--ticket-line-height);
+  padding: 4mm 3mm 4mm;
+  box-sizing: border-box;
+}
+
+.thermal-ticket-sheet.paper-58 {
+  --ticket-width: 58mm;
+  --ticket-font-size: 9.5px;
+  --ticket-qr-size: 88px;
+}
+
+.thermal-ticket-sheet.paper-80 {
+  --ticket-width: 80mm;
+  --ticket-font-size: 11px;
+  --ticket-qr-size: 132px;
+}
+
+.thermal-ticket-sheet.preview {
+  box-shadow: 0 22px 50px rgba(15, 23, 42, 0.18);
+}
+
+.thermal-ticket-copy-tag {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 4px;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.thermal-ticket__center {
+  text-align: center;
+}
+
+.thermal-ticket__logo-wrap {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.thermal-ticket__logo {
+  max-width: min(34mm, 72%);
+  max-height: 18mm;
+  object-fit: contain;
+  filter: grayscale(1) contrast(1.15);
+}
+
+.thermal-ticket__brand {
+  font-size: 1.12em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #111;
+}
+
+.thermal-ticket__meta,
+.thermal-ticket__text-block {
+  display: grid;
+  gap: 2px;
+}
+
+.thermal-ticket__section {
+  border-top: 1px dashed #111;
+  padding-top: 8px;
+  margin-top: 8px;
+}
+
+.thermal-ticket__section-title {
+  margin-bottom: 6px;
+  font-size: 0.96em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #111;
+}
+
+.thermal-ticket__info-grid,
+.thermal-ticket__tax-row,
+.thermal-ticket__total-row,
+.thermal-ticket__payment-row {
+  display: grid;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.thermal-ticket__info-grid,
+.thermal-ticket__payment-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.thermal-ticket__tax-header,
+.thermal-ticket__tax-row {
+  grid-template-columns: 44px 34px 1fr 1fr;
+  column-gap: 6px;
+}
+
+.thermal-ticket__products-header,
+.thermal-ticket__product-line {
+  display: grid;
+  column-gap: 6px;
+  align-items: end;
+}
+
+.thermal-ticket__products-header,
+.thermal-ticket__product-values {
+  grid-template-columns: minmax(0, 1fr) 36px 64px 72px;
+}
+
+.paper-58 .thermal-ticket__products-header,
+.paper-58 .thermal-ticket__product-values {
+  grid-template-columns: minmax(0, 1fr) 28px 50px 56px;
+}
+
+.paper-58 .thermal-ticket__tax-header,
+.paper-58 .thermal-ticket__tax-row {
+  grid-template-columns: 28px 22px 1fr 1fr;
+  column-gap: 4px;
+}
+
+.thermal-ticket__products-header,
+.thermal-ticket__tax-header {
+  padding-bottom: 4px;
+  border-bottom: 1px solid #111;
+  font-size: 0.88em;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.thermal-ticket__product-line {
+  padding: 5px 0;
+  border-bottom: 1px dashed rgba(17, 17, 17, 0.35);
+}
+
+.thermal-ticket__product-name {
+  font-weight: 700;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.thermal-ticket__product-meta {
+  margin-top: 1px;
+  color: rgba(17, 17, 17, 0.72);
+  font-size: 0.92em;
+}
+
+.thermal-ticket__product-values,
+.thermal-ticket__numbers {
+  display: grid;
+  align-items: end;
+  column-gap: 6px;
+}
+
+.thermal-ticket__numbers,
+.thermal-ticket__amount {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.thermal-ticket__label {
+  color: rgba(17, 17, 17, 0.82);
+}
+
+.thermal-ticket__total-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.thermal-ticket__total-row.featured {
+  margin-top: 6px;
+  padding: 7px 0;
+  border-top: 1px solid #111;
+  border-bottom: 1px solid #111;
+  font-size: 1.26em;
+  font-weight: 800;
+}
+
+.thermal-ticket__legal {
+  font-size: 0.87em;
+  line-height: 1.42;
+  color: rgba(17, 17, 17, 0.9);
+}
+
+.thermal-ticket__qr {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--ticket-qr-size);
+  height: var(--ticket-qr-size);
+  margin: 8px auto 0;
+  border: 1px solid #111;
+  padding: 6px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.thermal-ticket__qr img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.thermal-ticket__qr-fallback {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  text-align: center;
+  font-size: 0.85em;
+  line-height: 1.25;
+  border: 1px dashed rgba(17, 17, 17, 0.45);
+  padding: 6px;
+}
+
+.thermal-ticket__muted-center {
+  margin-top: 4px;
+  text-align: center;
+  color: rgba(17, 17, 17, 0.82);
+}
+
+.thermal-ticket__footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #111;
+  text-align: center;
+  font-size: 0.88em;
+  color: #111;
+}
+
+@media (max-width: 1024px) {
+  .thermal-ticket-modal__body {
+    grid-template-columns: 1fr;
+  }
+
+  .thermal-ticket-modal__sidebar {
+    border-right: 0;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  }
+}
+
+@media (max-width: 640px) {
+  .thermal-ticket-modal__header,
+  .thermal-ticket-modal__sidebar,
+  .thermal-ticket-modal__preview-bar,
+  .thermal-ticket-modal__preview-scroll {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .thermal-ticket-modal__title {
+    font-size: 24px;
+  }
+
+  .thermal-ticket-modal__preview-scroll {
+    padding-top: 18px;
+    padding-bottom: 18px;
+  }
+}
+
+@media print {
+  @page {
+    margin: 0;
+    size: auto;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: #fff;
+  }
+
+  .thermal-ticket-preview-shell {
+    background: #fff;
+  }
+
+  .thermal-ticket-modal__preview-scroll {
+    overflow: visible;
+    padding: 0;
+  }
+
+  .thermal-ticket-sheet {
+    box-shadow: none;
+    margin: 0 auto;
+  }
+
+  .thermal-ticket-sheet.preview {
+    box-shadow: none;
+  }
+
+  .thermal-ticket-page-break {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .thermal-ticket-page-break:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+}

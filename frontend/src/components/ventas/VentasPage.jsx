@@ -25,12 +25,16 @@ import {
   VENTA_DETALLE_TABS,
   useVentasStore,
 } from '../../store/useVentasStore';
-import { useAppStore } from '../../store/useStore';
 import {
-  buildVentaPayload,
+  persistLastTicketPreferences,
+  resolveTicketPreferences,
+  useAppStore,
+} from '../../store/useStore';
+import {
   calculateVentaTotals,
-  printVentaTicket,
+  buildVentaPayload,
 } from '../../utils/ventas';
+import { ThermalTicketPreviewModal } from './ThermalTicket';
 import CuentasPorCobrar from './CuentasPorCobrar';
 import ReportesVentas from './ReportesVentas';
 import VentaDetail from './VentaDetail';
@@ -64,6 +68,12 @@ export default function VentasPage() {
     registrarClienteTemporal,
   } = useVentasStore();
   const [abonoError, setAbonoError] = useState(null);
+  const [ticketPreviewState, setTicketPreviewState] = useState({
+    open: false,
+    venta: null,
+    draft: null,
+    settings: resolveTicketPreferences(),
+  });
   const [posFocusSignal, setPosFocusSignal] = useState(0);
   const [cobroShortcutSignal, setCobroShortcutSignal] = useState(0);
   const [submitShortcutSignal, setSubmitShortcutSignal] = useState(0);
@@ -71,6 +81,7 @@ export default function VentasPage() {
   const configuracionOperativa = useAppStore(
     (state) => state.configuracionOperativa,
   );
+  const user = useAppStore((state) => state.user);
 
   useVentasKeyboardShortcuts({
     enabled:
@@ -95,6 +106,45 @@ export default function VentasPage() {
     queryClient.invalidateQueries({ queryKey: ['facturacion'] });
   };
 
+  const getPreferredTicketSettings = () =>
+    resolveTicketPreferences({
+      empresaId: empresaActiva?.id || empresaActiva?.empresa_id,
+      userId: user?.id,
+      config: configuracionOperativa,
+    });
+
+  const rememberTicketSettings = (settings) => {
+    persistLastTicketPreferences(
+      empresaActiva?.id || empresaActiva?.empresa_id,
+      user?.id,
+      settings,
+    );
+  };
+
+  const buildDraftTicketSettings = (draftSource) =>
+    resolveTicketPreferences({
+      empresaId: empresaActiva?.id || empresaActiva?.empresa_id,
+      userId: user?.id,
+      config: configuracionOperativa,
+      fallback: {
+        paperWidth: draftSource?.ticketPaperWidth,
+        showLogo: draftSource?.ticketShowLogo,
+        copies: draftSource?.ticketCopies,
+      },
+    });
+
+  const openTicketPreview = ({ venta = null, draft: previewDraft = null, settings }) => {
+    setTicketPreviewState({
+      open: true,
+      venta,
+      draft: previewDraft,
+      settings:
+        settings
+        || buildDraftTicketSettings(previewDraft || draft)
+        || getPreferredTicketSettings(),
+    });
+  };
+
   const refreshVentaDetail = async (ventaId, tab = detalleTab) => {
     const refreshed = await obtenerVenta(ventaId);
     startTransition(() => {
@@ -109,7 +159,11 @@ export default function VentasPage() {
       invalidateVentas();
       toast.success(`Venta ${venta.numero_venta} registrada`);
       if (draft.imprimirTicket) {
-        printVentaTicket(venta, empresaActiva);
+        openTicketPreview({
+          venta,
+          draft: variables,
+          settings: buildDraftTicketSettings(variables),
+        });
       }
       cerrarPrecuenta(variables.precuentaId);
       setVentaSeleccionada(null);
@@ -503,6 +557,12 @@ export default function VentasPage() {
           onDescargarFacturaXml={handleDescargarFacturaXml}
           onEnviarFacturaEmail={handleEnviarFacturaEmail}
           onCrearNotaCredito={handleCrearNotaCredito}
+          onOpenTicketPreview={(venta) =>
+            openTicketPreview({
+              venta,
+              settings: getPreferredTicketSettings(),
+            })
+          }
           abonoSubmitting={registrarAbonoMutation.isPending}
           abonoError={abonoError}
         />
@@ -522,6 +582,33 @@ export default function VentasPage() {
       {vistaActual === VENTAS_VISTAS.REPORTES && <ReportesVentas />}
 
       <ToastContainer toasts={toasts} onClose={closeToast} />
+
+      <ThermalTicketPreviewModal
+        open={ticketPreviewState.open}
+        onClose={() =>
+          setTicketPreviewState((current) => ({
+            ...current,
+            open: false,
+          }))
+        }
+        venta={ticketPreviewState.venta}
+        draft={ticketPreviewState.draft}
+        empresa={empresaActiva}
+        initialSettings={ticketPreviewState.settings}
+        onSettingsChange={(nextSettings) =>
+          setTicketPreviewState((current) => ({
+            ...current,
+            settings: nextSettings,
+          }))
+        }
+        onPrint={(nextSettings) => {
+          rememberTicketSettings(nextSettings);
+          setTicketPreviewState((current) => ({
+            ...current,
+            settings: nextSettings,
+          }));
+        }}
+      />
     </div>
   );
 }

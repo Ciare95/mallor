@@ -13,7 +13,27 @@ class EmpresaConfiguracionSerializer(serializers.ModelSerializer):
             'permitir_stock_negativo_ventas',
             'atajos_ventas_activos',
             'atajos_ventas',
+            'ticket_paper_width',
+            'ticket_show_logo',
+            'ticket_copies',
         ]
+
+    def validate_ticket_paper_width(self, value):
+        if value not in {
+            EmpresaConfiguracion.TicketPaperWidth.MM58,
+            EmpresaConfiguracion.TicketPaperWidth.MM80,
+        }:
+            raise serializers.ValidationError(
+                'El papel solo puede ser 58 o 80 mm.',
+            )
+        return value
+
+    def validate_ticket_copies(self, value):
+        if value < 1 or value > 5:
+            raise serializers.ValidationError(
+                'Las copias deben estar entre 1 y 5.',
+            )
+        return value
 
     @staticmethod
     def _normalizar_atajo(value: str) -> str:
@@ -134,6 +154,7 @@ class EmpresaSerializer(serializers.ModelSerializer):
             'digito_verificacion',
             'razon_social',
             'nombre_comercial',
+            'logo',
             'email',
             'telefono',
             'direccion',
@@ -250,6 +271,7 @@ class EmpresaAdminCreateSerializer(serializers.ModelSerializer):
             'digito_verificacion',
             'razon_social',
             'nombre_comercial',
+            'logo',
             'email',
             'telefono',
             'direccion',
