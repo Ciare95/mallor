@@ -160,16 +160,16 @@ class ProductoCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_precio_compra(self, value):
-        if value <= 0:
+        if value < 0:
             raise serializers.ValidationError(
-                'El precio de compra debe ser mayor que cero'
+                'El precio de compra no puede ser negativo'
             )
         return value
 
     def validate_precio_venta(self, value):
-        if value <= 0:
+        if value < 0:
             raise serializers.ValidationError(
-                'El precio de venta debe ser mayor que cero'
+                'El precio de venta no puede ser negativo'
             )
         return value
 
@@ -233,16 +233,16 @@ class ProductoUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate_precio_compra(self, value):
-        if value is not None and value <= 0:
+        if value is not None and value < 0:
             raise serializers.ValidationError(
-                'El precio de compra debe ser mayor que cero'
+                'El precio de compra no puede ser negativo'
             )
         return value
 
     def validate_precio_venta(self, value):
-        if value is not None and value <= 0:
+        if value is not None and value < 0:
             raise serializers.ValidationError(
-                'El precio de venta debe ser mayor que cero'
+                'El precio de venta no puede ser negativo'
             )
         return value
 
@@ -478,3 +478,7 @@ class InventarioExportSerializer(serializers.ModelSerializer):
 
     def get_valor_inventario(self, obj):
         return obj.calcular_valor_inventario()
+
+
+class ImportarProductosExcelSerializer(serializers.Serializer):
+    archivo = serializers.FileField()

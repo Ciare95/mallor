@@ -136,17 +136,21 @@ export const useAppStore = create((set) => ({
       localStorage.removeItem(EMPRESA_STORAGE_KEY);
     }
 
+    const storedTheme = getStoredTheme();
     const nextConfig = empresa?.configuracion_operativa
       ? normalizeConfiguracionOperativa(empresa.configuracion_operativa)
-      : normalizeConfiguracionOperativa({ tema: getStoredTheme() });
-    localStorage.setItem(THEME_STORAGE_KEY, nextConfig.tema);
-    applyTheme(nextConfig.tema);
+      : normalizeConfiguracionOperativa({ tema: storedTheme });
+    const configWithUserTheme = {
+      ...nextConfig,
+      tema: storedTheme,
+    };
+    applyTheme(storedTheme);
 
     set({
       empresaActiva: empresa || null,
       empresaActivaId: empresa?.id ? String(empresa.id) : null,
-      configuracionOperativa: nextConfig,
-      temaActual: nextConfig.tema,
+      configuracionOperativa: configWithUserTheme,
+      temaActual: storedTheme,
       iaSesionActivaId: null,
     });
   },

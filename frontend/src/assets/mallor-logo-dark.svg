@@ -1,0 +1,55 @@
+<svg width="300" height="220" viewBox="0 0 300 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="mallor-logo-dark-title">
+  <title id="mallor-logo-dark-title">Mallor</title>
+
+  <path
+    d="M39 130L96 46L137 125L198 48L262 130"
+    stroke="#E8F1F7"
+    stroke-width="8"
+    stroke-linecap="square"
+    stroke-linejoin="miter"
+  />
+
+  <path
+    d="M72 128L96 92L137 169L198 92L238 128"
+    stroke="#0B0F11"
+    stroke-width="8"
+    stroke-linecap="square"
+    stroke-linejoin="miter"
+  />
+
+  <path
+    d="M95 72L137 133L218 16"
+    stroke="#2F8FE8"
+    stroke-width="6"
+    stroke-linecap="square"
+    stroke-linejoin="miter"
+  />
+
+  <path
+    d="M218 16L211 38"
+    stroke="#2F8FE8"
+    stroke-width="6"
+    stroke-linecap="square"
+    stroke-linejoin="miter"
+  />
+
+  <path
+    d="M218 16L197 22"
+    stroke="#2F8FE8"
+    stroke-width="6"
+    stroke-linecap="square"
+    stroke-linejoin="miter"
+  />
+
+  <text
+    x="150"
+    y="190"
+    text-anchor="middle"
+    fill="#E8F1F7"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="54"
+    letter-spacing="-2"
+  >
+    Mallor
+  </text>
+</svg>

@@ -99,4 +99,71 @@ describe('MiEmpresaPage', () => {
       ),
     );
   });
+
+  it('mantiene activo el toggle cuando el tema local es oscuro', () => {
+    useAppStore.setState({
+      temaActual: 'DARK',
+      configuracionOperativa: {
+        tema: 'DARK',
+        permitir_stock_negativo_ventas: false,
+        atajos_ventas_activos: true,
+        atajos_ventas: {
+          registrar_venta: 'Ctrl+V',
+          configurar_cobro: 'Ctrl+C',
+          nueva_precuenta: 'Ctrl+N',
+          quitar_ultimo_producto: 'Delete',
+        },
+      },
+    });
+    document.documentElement.setAttribute('data-theme', 'dark');
+
+    renderWithProviders(<MiEmpresaPage />, { router: false });
+
+    expect(screen.getByRole('button', { name: /Modo oscuro/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+  });
+
+  it('mantiene el toggle de stock negativo al volver a renderizar la pagina', async () => {
+    const user = userEvent.setup();
+    serviceMocks.actualizarConfiguracionEmpresa.mockResolvedValue({
+      tema: 'LIGHT',
+      permitir_stock_negativo_ventas: true,
+      atajos_ventas_activos: true,
+      atajos_ventas: {
+        registrar_venta: 'Ctrl+V',
+        configurar_cobro: 'Ctrl+C',
+        nueva_precuenta: 'Ctrl+N',
+        quitar_ultimo_producto: 'Delete',
+      },
+    });
+    const { unmount } = renderWithProviders(<MiEmpresaPage />, {
+      router: false,
+    });
+
+    await user.click(
+      screen.getByRole('button', { name: /Stock negativo en ventas/i }),
+    );
+
+    expect(
+      useAppStore.getState().configuracionOperativa
+        .permitir_stock_negativo_ventas,
+    ).toBe(true);
+    await waitFor(() =>
+      expect(serviceMocks.actualizarConfiguracionEmpresa).toHaveBeenCalledWith(
+        12,
+        expect.objectContaining({
+          permitir_stock_negativo_ventas: true,
+        }),
+      ),
+    );
+
+    unmount();
+    renderWithProviders(<MiEmpresaPage />, { router: false });
+
+    expect(
+      screen.getByRole('button', { name: /Stock negativo en ventas/i }),
+    ).toHaveAttribute('aria-pressed', 'true');
+  });
 });

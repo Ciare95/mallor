@@ -13,6 +13,7 @@ from core.exceptions import (
     FacturacionComunicacionError,
     FacturacionOperacionError,
     FacturacionValidacionError,
+    StockInsuficienteError,
     VentaNoCancelableError,
 )
 from inventario.models import HistorialInventario, Producto
@@ -633,6 +634,77 @@ class VentaServiceTest(TestCase):
             ).count(),
             3,
         )
+
+    def test_actualizar_venta_service_rechaza_stock_negativo_si_esta_apagado(self):
+        venta = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('2.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        with self.assertRaises(StockInsuficienteError):
+            VentaService.actualizar_venta(
+                venta_id=venta.id,
+                data={
+                    'detalles': [
+                        {
+                            'producto': self.producto,
+                            'cantidad': Decimal('12.00'),
+                        }
+                    ],
+                },
+                usuario=self.usuario,
+            )
+
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.existencias, Decimal('8.00'))
+
+    def test_actualizar_venta_service_permite_stock_negativo_si_empresa_lo_activa(self):
+        venta = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('2.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+        self.config.permitir_stock_negativo_ventas = True
+        self.config.save(update_fields=[
+            'permitir_stock_negativo_ventas',
+            'updated_at',
+        ])
+
+        venta = VentaService.actualizar_venta(
+            venta_id=venta.id,
+            data={
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('12.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        self.producto.refresh_from_db()
+        self.assertEqual(self.producto.existencias, Decimal('-2.00'))
+        self.assertEqual(venta.total, Decimal('1428.00'))
 
     def test_cancelar_venta_service_restaura_stock_y_marca_estado(self):
         venta = VentaService.crear_venta(
@@ -1299,6 +1371,13 @@ class VentaTenantApiTest(TestCase):
             estado=Venta.Estado.TERMINADA,
             usuario_registro=self.usuario,
         )
+        self.producto = Producto.objects.create(
+            nombre='Producto API Ventas',
+            existencias=Decimal('1.00'),
+            precio_compra=Decimal('40.00'),
+            precio_venta=Decimal('80.00'),
+            iva=Decimal('19.00'),
+        )
 
     def test_no_expone_venta_de_otra_empresa(self):
         response = self.client.get(
@@ -1307,6 +1386,24 @@ class VentaTenantApiTest(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+    def test_actualizar_venta_con_stock_insuficiente_responde_400(self):
+        response = self.client.patch(
+            f'/api/ventas/{self.venta.id}/',
+            data={
+                'detalles': [
+                    {
+                        'producto': self.producto.id,
+                        'cantidad': '2.00',
+                    },
+                ],
+            },
+            format='json',
+            HTTP_X_EMPRESA_ID=str(self.empresa.id),
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Stock insuficiente', response.data['error'])
 
 
 class ContadorApiTest(TestCase):

@@ -21,6 +21,7 @@ import {
 import { useAppStore } from '../store/useStore';
 import { useAuth } from '../hooks/useAuth';
 import mallorLogo from '../assets/mallor-logo.png';
+import mallorLogoDark from '../assets/mallor-logo-dark.png';
 import {
   listarEmpresas,
   seleccionarEmpresa,
@@ -169,11 +170,19 @@ export default function Layout() {
                   ? 'w-full max-w-[104px]'
                   : 'w-9'
               }`}>
-                <img
-                  src={mallorLogo}
-                  alt="Mallor"
-                  className="h-auto w-full object-contain"
-                />
+                <span className="theme-logo-stack">
+                  <img
+                    src={mallorLogo}
+                    alt="Mallor"
+                    className="theme-logo theme-logo-light h-auto w-full object-contain"
+                  />
+                  <img
+                    src={mallorLogoDark}
+                    alt=""
+                    aria-hidden="true"
+                    className="theme-logo theme-logo-dark h-auto w-full object-contain"
+                  />
+                </span>
               </div>
             </div>
           </div>
@@ -253,7 +262,7 @@ export default function Layout() {
                       onChange={(event) =>
                         seleccionarEmpresaMutation.mutate(event.target.value)
                       }
-                      className="bg-transparent text-[12px] font-semibold text-main outline-none"
+                      className="company-switcher-select bg-transparent text-[12px] font-semibold text-main outline-none"
                       disabled={empresasQuery.isLoading}
                     >
                       {empresas.map((empresa) => (

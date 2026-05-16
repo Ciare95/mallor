@@ -348,15 +348,19 @@ class Producto(models.Model):
             })
         
         # Validar que precio_compra sea positivo (solo si tiene valor)
-        if self.precio_compra is not None and self.precio_compra <= 0:
+        if self.precio_compra is not None and self.precio_compra < 0:
             raise ValidationError({
-                'precio_compra': _('El precio de compra debe ser mayor que cero')
+                'precio_compra': _(
+                    'El precio de compra no puede ser negativo'
+                )
             })
-        
+
         # Validar que precio_venta sea positivo (solo si tiene valor)
-        if self.precio_venta is not None and self.precio_venta <= 0:
+        if self.precio_venta is not None and self.precio_venta < 0:
             raise ValidationError({
-                'precio_venta': _('El precio de venta debe ser mayor que cero')
+                'precio_venta': _(
+                    'El precio de venta no puede ser negativo'
+                )
             })
         
         # Advertencia: precio_venta menor que precio_compra (solo si ambos tienen valor)

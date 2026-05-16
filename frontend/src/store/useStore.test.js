@@ -32,8 +32,9 @@ describe('useAppStore', () => {
     resetStore();
   });
 
-  it('persiste empresa activa y limpia la sesion IA al cambiar de empresa', () => {
+  it('persiste empresa activa sin sobrescribir el tema elegido localmente', () => {
     useAppStore.setState({ iaSesionActivaId: 'sesion-previa' });
+    localStorage.setItem('mallor_theme', 'LIGHT');
 
     useAppStore.getState().setEmpresaActiva({
       id: 15,
@@ -52,9 +53,10 @@ describe('useAppStore', () => {
     });
 
     expect(localStorage.getItem('mallor_empresa_activa_id')).toBe('15');
-    expect(localStorage.getItem('mallor_theme')).toBe('DARK');
+    expect(localStorage.getItem('mallor_theme')).toBe('LIGHT');
     expect(useAppStore.getState().empresaActivaId).toBe('15');
-    expect(useAppStore.getState().temaActual).toBe('DARK');
+    expect(useAppStore.getState().temaActual).toBe('LIGHT');
+    expect(useAppStore.getState().configuracionOperativa.tema).toBe('LIGHT');
     expect(useAppStore.getState().iaSesionActivaId).toBeNull();
   });
 

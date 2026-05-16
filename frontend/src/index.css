@@ -287,6 +287,55 @@
     box-shadow: 0 0 0 4px rgba(47, 106, 82, 0.08);
   }
 
+  .company-switcher-select {
+    min-height: 24px;
+    color: var(--text-main);
+    background-color: transparent;
+  }
+
+  .company-switcher-select option {
+    background-color: var(--panel-strong);
+    color: var(--text-main);
+  }
+
+  [data-theme='dark'] .company-switcher-select {
+    color-scheme: dark;
+  }
+
+  [data-theme='dark'] .company-switcher-select option {
+    background-color: #0d1113;
+    color: #f3f7fa;
+  }
+
+  [data-theme='dark'] .company-switcher-select option:checked {
+    background-color: #2f8fe8;
+    color: #00111f;
+  }
+
+  .theme-logo-stack {
+    position: relative;
+    display: inline-grid;
+    place-items: center;
+  }
+
+  .theme-logo {
+    grid-area: 1 / 1;
+    transition: opacity 180ms ease, filter 180ms ease;
+  }
+
+  .theme-logo-dark {
+    opacity: 0;
+    filter: none;
+  }
+
+  [data-theme='dark'] .theme-logo-light {
+    opacity: 0;
+  }
+
+  [data-theme='dark'] .theme-logo-dark {
+    opacity: 1;
+  }
+
   .app-input-no-spin::-webkit-outer-spin-button,
   .app-input-no-spin::-webkit-inner-spin-button {
     -webkit-appearance: none;
@@ -494,15 +543,40 @@
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-main) 8%, transparent);
   }
 
+  .toggle-control {
+    position: absolute;
+    top: 18px;
+    right: 18px;
+    display: inline-flex;
+    height: 28px;
+    width: 56px;
+    align-items: center;
+    border-radius: 999px;
+    padding: 4px;
+    transition:
+      background 180ms ease,
+      box-shadow 180ms ease,
+      transform 180ms ease;
+  }
+
+  .toggle-control:hover {
+    transform: translateY(-1px);
+  }
+
   .toggle-track-active {
     background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 62%, white));
     box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 22%, transparent);
   }
 
   .toggle-thumb {
+    background: var(--panel);
     box-shadow:
       0 3px 10px rgba(0, 0, 0, 0.14),
       inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+
+  .toggle-track-active .toggle-thumb {
+    background: color-mix(in srgb, white 92%, var(--accent));
   }
 
   .shortcut-card {

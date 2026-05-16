@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, LockKeyhole, LogIn } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import mallorLogo from '../assets/mallor-logo.png';
+import mallorLogoDark from '../assets/mallor-logo-dark.png';
 import { getDefaultAuthenticatedPath } from '../utils/roleAccess';
 
 export default function LoginPage() {
@@ -64,11 +65,19 @@ export default function LoginPage() {
             <div className="relative flex w-full items-center justify-center">
               <div className="pointer-events-none absolute inset-x-[10%] inset-y-[14%] rounded-[56px] bg-[radial-gradient(circle,rgba(47,106,82,0.09)_0%,rgba(47,106,82,0.03)_42%,transparent_74%)] blur-3xl" />
               <div className="relative flex w-full max-w-[520px] items-center justify-center px-6 lg:max-w-[560px]">
-                <img
-                  src={mallorLogo}
-                  alt="Mallor"
-                  className="h-auto w-full max-w-[460px] object-contain lg:max-w-[500px]"
-                />
+                <span className="theme-logo-stack w-full max-w-[460px] lg:max-w-[500px]">
+                  <img
+                    src={mallorLogo}
+                    alt="Mallor"
+                    className="theme-logo theme-logo-light h-auto w-full object-contain"
+                  />
+                  <img
+                    src={mallorLogoDark}
+                    alt=""
+                    aria-hidden="true"
+                    className="theme-logo theme-logo-dark h-auto w-full object-contain"
+                  />
+                </span>
               </div>
             </div>
           </div>

@@ -16,6 +16,7 @@ from core.exceptions import (
     FacturacionDocumentoNoEncontradoError,
     FacturacionError,
     ProductoNoEncontradoError,
+    StockInsuficienteError,
     VentaError,
     VentaNoEncontradaError,
 )
@@ -334,7 +335,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
             )
         except DRFValidationError as exc:
             return _validation_error_response(exc)
-        except VentaError as exc:
+        except (StockInsuficienteError, VentaError) as exc:
             return Response(
                 {'error': _error_message(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -402,7 +403,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
                 {'error': exc.message},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        except VentaError as exc:
+        except (StockInsuficienteError, VentaError) as exc:
             return Response(
                 {'error': _error_message(exc)},
                 status=status.HTTP_400_BAD_REQUEST,

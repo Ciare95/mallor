@@ -11,10 +11,22 @@ import {
 import { useInventarioStore } from '../../store/useInventarioStore';
 import { formatCurrency } from '../../utils/formatters';
 import ExportarInventario from './ExportarInventario';
+import ImportarProductosExcel from './ImportarProductosExcel';
 
 const getResults = (data) => data?.results || data || [];
 
-const ProductosList = ({ onCreate, onView, onEdit, onDelete, onAdjustStock, onManageCategories, onCreateInvoice, onProcessInvoice, onToast }) => {
+const ProductosList = ({
+  onCreate,
+  onView,
+  onEdit,
+  onDelete,
+  onAdjustStock,
+  onManageCategories,
+  onCreateInvoice,
+  onProcessInvoice,
+  onImportSuccess,
+  onToast,
+}) => {
   const {
     filtrosProductos,
     setFiltrosProductos,
@@ -223,6 +235,11 @@ const ProductosList = ({ onCreate, onView, onEdit, onDelete, onAdjustStock, onMa
           </div>
         </section>
       )}
+
+      <ImportarProductosExcel
+        onImportSuccess={onImportSuccess}
+        onToast={onToast}
+      />
 
       <section className="surface">
         <div className="border-b border-app p-5 md:p-6">

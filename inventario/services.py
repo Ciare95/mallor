@@ -2,8 +2,10 @@ from typing import List, Dict, Optional, Any
 from decimal import Decimal
 from datetime import date, datetime
 from django.db import transaction
-from django.db.models import Q, Sum, F, DecimalField
+from django.db.models import Q, Sum, DecimalField
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
+from openpyxl import load_workbook
 
 from core.exceptions import (
     InventarioError,
@@ -16,6 +18,7 @@ from core.exceptions import (
     FacturaSinDetallesError,
     CategoriaNoEncontradaError,
     CategoriaConProductosError,
+    ImportacionInventarioError,
 )
 from empresa.context import get_empresa_actual_or_default
 
@@ -26,6 +29,7 @@ from .models import (
     DetalleFacturaCompra,
     HistorialInventario,
 )
+from .utils import COLUMNAS_IMPORTACION_EXCEL, HOJA_INVENTARIO
 from proveedor.models import Proveedor
 from usuario.models import Usuario
 
@@ -408,6 +412,665 @@ class ProductoService:
             .filter(q_objects, empresa=get_empresa_actual_or_default())
             .order_by('nombre')[:50]
         )
+
+
+class ProductoImportService:
+    MAX_FILE_SIZE = 5 * 1024 * 1024
+    OPTIONAL_HEADERS = {
+        'Código Interno',
+        'N°',
+    }
+    REQUIRED_HEADERS = {
+        'Nombre',
+        'Categoría',
+        'Existencias',
+        'Precio Compra',
+        'Precio Venta',
+    }
+    EXPECTED_HEADERS = [header for header, _ in COLUMNAS_IMPORTACION_EXCEL]
+
+    @classmethod
+    def importar_desde_excel(
+        cls,
+        archivo,
+        usuario: Optional[Usuario] = None,
+    ) -> int:
+        cls._validar_archivo(archivo)
+        archivo.seek(0)
+
+        try:
+            workbook = load_workbook(
+                filename=archivo,
+                data_only=True,
+            )
+        except Exception as exc:
+            raise ImportacionInventarioError([
+                cls._build_error(
+                    row=1,
+                    column='Archivo',
+                    value=getattr(archivo, 'name', ''),
+                    error='No fue posible leer el archivo Excel.',
+                ),
+            ]) from exc
+
+        worksheet = cls._obtener_hoja_trabajo(workbook)
+        rows = list(worksheet.iter_rows(values_only=True))
+        errors, rows_data = cls._validar_contenido(rows)
+        if errors:
+            raise ImportacionInventarioError(errors)
+
+        with transaction.atomic():
+            cls._crear_productos(rows_data, usuario=usuario)
+
+        return len(rows_data)
+
+    @classmethod
+    def _validar_archivo(cls, archivo) -> None:
+        nombre = (getattr(archivo, 'name', '') or '').lower()
+        if not nombre.endswith('.xlsx'):
+            raise ImportacionInventarioError([
+                cls._build_error(
+                    row=1,
+                    column='Archivo',
+                    value=getattr(archivo, 'name', ''),
+                    error='El archivo debe estar en formato .xlsx.',
+                ),
+            ])
+
+        size = getattr(archivo, 'size', 0) or 0
+        if size > cls.MAX_FILE_SIZE:
+            raise ImportacionInventarioError([
+                cls._build_error(
+                    row=1,
+                    column='Archivo',
+                    value=getattr(archivo, 'name', ''),
+                    error=(
+                        'El archivo supera el tamaño máximo permitido '
+                        'de 5 MB.'
+                    ),
+                ),
+            ])
+
+    @classmethod
+    def _obtener_hoja_trabajo(cls, workbook):
+        if HOJA_INVENTARIO in workbook.sheetnames:
+            return workbook[HOJA_INVENTARIO]
+        return workbook[workbook.sheetnames[0]]
+
+    @classmethod
+    def _validar_contenido(cls, rows):
+        if not rows:
+            return [
+                cls._build_error(
+                    row=1,
+                    column='Archivo',
+                    value='',
+                    error='El archivo está vacío.',
+                ),
+            ], []
+
+        headers = cls._normalize_headers(rows[0])
+        header_errors = cls._validar_headers(headers)
+        if header_errors:
+            return header_errors, []
+
+        company = get_empresa_actual_or_default()
+        existing_products_by_internal_code = {
+            producto.codigo_interno: producto
+            for producto in Producto.objects.filter(empresa=company)
+            if producto.codigo_interno is not None
+        }
+        seen_barcodes = set()
+        seen_internal_codes = set()
+        rows_data = []
+        errors = []
+
+        for excel_row, row_values in enumerate(rows[1:], start=2):
+            if cls._row_is_empty(row_values):
+                continue
+
+            row_map = {
+                header: row_values[index]
+                if index < len(row_values) else None
+                for index, header in enumerate(headers)
+            }
+            row_errors, normalized = cls._validar_fila(
+                excel_row=excel_row,
+                row_data=row_map,
+                existing_products_by_internal_code=(
+                    existing_products_by_internal_code
+                ),
+                seen_barcodes=seen_barcodes,
+                seen_internal_codes=seen_internal_codes,
+            )
+            errors.extend(row_errors)
+            if normalized:
+                rows_data.append(normalized)
+
+        if not rows_data and not errors:
+            errors.append(
+                cls._build_error(
+                    row=2,
+                    column='Archivo',
+                    value='',
+                    error='El archivo no contiene registros para importar.',
+                ),
+            )
+
+        return errors, rows_data
+
+    @classmethod
+    def _normalize_headers(cls, raw_headers):
+        headers = []
+        for header in raw_headers:
+            if header is None:
+                headers.append('')
+            else:
+                headers.append(str(header).strip())
+        return headers
+
+    @classmethod
+    def _validar_headers(cls, headers):
+        expected = set(cls.EXPECTED_HEADERS)
+        present = {header for header in headers if header}
+        missing = expected - present
+        unexpected = present - expected - cls.OPTIONAL_HEADERS
+        errors = []
+
+        for header in sorted(missing):
+            errors.append(
+                cls._build_error(
+                    row=1,
+                    column=header,
+                    value='',
+                    error='Falta esta columna obligatoria en la plantilla.',
+                ),
+            )
+
+        for header in sorted(unexpected):
+            errors.append(
+                cls._build_error(
+                    row=1,
+                    column=header,
+                    value=header,
+                    error='El encabezado no es válido para esta importación.',
+                ),
+            )
+
+        if len(headers) < len(cls.EXPECTED_HEADERS):
+            errors.append(
+                cls._build_error(
+                    row=1,
+                    column='Archivo',
+                    value='',
+                    error=(
+                        'La plantilla no contiene todas las columnas '
+                        'esperadas.'
+                    ),
+                ),
+            )
+
+        return errors
+
+    @classmethod
+    def _validar_fila(
+        cls,
+        excel_row: int,
+        row_data: Dict[str, Any],
+        existing_products_by_internal_code,
+        seen_barcodes,
+        seen_internal_codes,
+    ):
+        errors = []
+        normalized = {}
+        codigo_interno = cls._parse_internal_code(
+            row_data.get('Código Interno'),
+            excel_row=excel_row,
+            errors=errors,
+        )
+        existing_product = None
+        if codigo_interno is not None:
+            if codigo_interno in seen_internal_codes:
+                errors.append(
+                    cls._build_error(
+                        row=excel_row,
+                        column='Código Interno',
+                        value=row_data.get('Código Interno'),
+                        error='Este código interno está repetido en el archivo.',
+                    ),
+                )
+            else:
+                seen_internal_codes.add(codigo_interno)
+                existing_product = existing_products_by_internal_code.get(
+                    codigo_interno,
+                )
+
+        nombre = cls._parse_required_text(
+            row_data.get('Nombre'),
+            column='Nombre',
+            excel_row=excel_row,
+            errors=errors,
+        )
+        categoria_nombre = cls._parse_required_text(
+            row_data.get('Categoría'),
+            column='Categoría',
+            excel_row=excel_row,
+            errors=errors,
+        )
+        existencias = cls._parse_non_negative_integer(
+            row_data.get('Existencias'),
+            column='Existencias',
+            excel_row=excel_row,
+            errors=errors,
+        )
+        precio_compra = cls._parse_non_negative_decimal(
+            row_data.get('Precio Compra'),
+            column='Precio Compra',
+            excel_row=excel_row,
+            errors=errors,
+        )
+        precio_venta = cls._parse_non_negative_decimal(
+            row_data.get('Precio Venta'),
+            column='Precio Venta',
+            excel_row=excel_row,
+            errors=errors,
+        )
+        iva = cls._parse_iva(
+            row_data.get('IVA (%)'),
+            excel_row=excel_row,
+            errors=errors,
+        )
+        fecha_ingreso = cls._parse_fecha(
+            row_data.get('Fecha Ingreso'),
+            column='Fecha Ingreso',
+            excel_row=excel_row,
+            errors=errors,
+            default=timezone.now(),
+            as_datetime=True,
+        )
+        fecha_caducidad = cls._parse_fecha(
+            row_data.get('Fecha Caducidad'),
+            column='Fecha Caducidad',
+            excel_row=excel_row,
+            errors=errors,
+            default=None,
+            as_datetime=False,
+        )
+
+        codigo_barras = cls._parse_optional_text(
+            row_data.get('Código de Barras'),
+        )
+        marca = cls._parse_optional_text(row_data.get('Marca'))
+        descripcion = cls._parse_optional_text(row_data.get('Descripción'))
+        invima = cls._parse_optional_text(row_data.get('Invima'))
+
+        if (
+            precio_compra is not None
+            and precio_venta is not None
+            and precio_venta < precio_compra
+        ):
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column='Precio Venta',
+                    value=row_data.get('Precio Venta'),
+                    error='No puede ser menor que Precio Compra.',
+                ),
+            )
+
+        if codigo_barras:
+            existing_barcode_owner = Producto.objects.filter(
+                empresa=get_empresa_actual_or_default(),
+                codigo_barras=codigo_barras,
+            ).first()
+            if (
+                existing_barcode_owner is not None
+                and (
+                    existing_product is None
+                    or existing_barcode_owner.id != existing_product.id
+                )
+            ):
+                errors.append(
+                    cls._build_error(
+                        row=excel_row,
+                        column='Código de Barras',
+                        value=codigo_barras,
+                        error='Ya existe un producto con este código de barras.',
+                    ),
+                )
+            elif codigo_barras in seen_barcodes:
+                errors.append(
+                    cls._build_error(
+                        row=excel_row,
+                        column='Código de Barras',
+                        value=codigo_barras,
+                        error='Este código de barras está repetido en el archivo.',
+                    ),
+                )
+            else:
+                seen_barcodes.add(codigo_barras)
+
+        if errors:
+            return errors, None
+
+        normalized.update({
+            'codigo_interno': codigo_interno,
+            'existing_product_id': (
+                existing_product.id if existing_product is not None else None
+            ),
+            'nombre': nombre,
+            'categoria_nombre': categoria_nombre,
+            'existencias': Decimal(existencias),
+            'precio_compra': precio_compra,
+            'precio_venta': precio_venta,
+            'iva': iva,
+            'fecha_ingreso': fecha_ingreso,
+            'fecha_caducidad': fecha_caducidad,
+            'codigo_barras': codigo_barras,
+            'marca': marca,
+            'descripcion': descripcion,
+            'invima': invima,
+            'unidad_medida_codigo': '94',
+            'estandar_codigo': '999',
+        })
+        return errors, normalized
+
+    @classmethod
+    def _crear_productos(cls, rows_data, usuario=None):
+        del usuario
+        company = get_empresa_actual_or_default()
+        categorias_cache = {
+            categoria.nombre.upper(): categoria
+            for categoria in Categoria.objects.filter(empresa=company)
+        }
+
+        for row_data in rows_data:
+            categoria_key = row_data.pop('categoria_nombre').upper()
+            existing_product_id = row_data.pop('existing_product_id', None)
+            categoria = categorias_cache.get(categoria_key)
+            if categoria is None:
+                categoria = Categoria.objects.create(
+                    empresa=company,
+                    nombre=categoria_key,
+                    descripcion='',
+                )
+                categorias_cache[categoria_key] = categoria
+
+            if existing_product_id is not None:
+                producto = Producto.objects.get(
+                    id=existing_product_id,
+                    empresa=company,
+                )
+                for campo, valor in row_data.items():
+                    setattr(producto, campo, valor)
+                producto.categoria = categoria
+                producto.save(skip_full_clean=True)
+            else:
+                producto = Producto(
+                    empresa=company,
+                    categoria=categoria,
+                    **row_data,
+                )
+                producto.save(skip_full_clean=True)
+            producto.fecha_ingreso = row_data['fecha_ingreso']
+            producto.save(update_fields=['fecha_ingreso', 'updated_at'])
+
+    @staticmethod
+    def _row_is_empty(row_values) -> bool:
+        return all(
+            value is None or str(value).strip() == ''
+            for value in row_values
+        )
+
+    @classmethod
+    def _parse_required_text(
+        cls,
+        value,
+        column,
+        excel_row,
+        errors,
+    ):
+        text = cls._parse_optional_text(value)
+        if not text:
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column=column,
+                    value=value,
+                    error='Este campo es obligatorio.',
+                ),
+            )
+            return None
+        return text
+
+    @staticmethod
+    def _parse_optional_text(value) -> str:
+        if value is None:
+            return ''
+        return str(value).strip()
+
+    @classmethod
+    def _parse_internal_code(
+        cls,
+        value,
+        excel_row,
+        errors,
+    ):
+        text = cls._parse_optional_text(value)
+        if not text:
+            return None
+
+        try:
+            decimal_value = Decimal(text)
+        except Exception:
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column='Código Interno',
+                    value=value,
+                    error='Debe ser un número entero válido.',
+                ),
+            )
+            return None
+
+        if decimal_value <= 0 or decimal_value != decimal_value.to_integral():
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column='Código Interno',
+                    value=value,
+                    error='Debe ser un número entero válido.',
+                ),
+            )
+            return None
+
+        return int(decimal_value)
+
+    @classmethod
+    def _parse_non_negative_integer(
+        cls,
+        value,
+        column,
+        excel_row,
+        errors,
+    ):
+        if value in (None, ''):
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column=column,
+                    value=value,
+                    error='Este campo es obligatorio.',
+                ),
+            )
+            return None
+
+        try:
+            decimal_value = Decimal(str(value))
+        except Exception:
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column=column,
+                    value=value,
+                    error='Debe ser un número entero mayor o igual a 0.',
+                ),
+            )
+            return None
+
+        if decimal_value < 0 or decimal_value != decimal_value.to_integral():
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column=column,
+                    value=value,
+                    error='Debe ser un número entero mayor o igual a 0.',
+                ),
+            )
+            return None
+
+        return int(decimal_value)
+
+    @classmethod
+    def _parse_non_negative_decimal(
+        cls,
+        value,
+        column,
+        excel_row,
+        errors,
+    ):
+        if value in (None, ''):
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column=column,
+                    value=value,
+                    error='Este campo es obligatorio.',
+                ),
+            )
+            return None
+
+        try:
+            decimal_value = Decimal(str(value))
+        except Exception:
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column=column,
+                    value=value,
+                    error='Debe ser un número mayor o igual a 0.',
+                ),
+            )
+            return None
+
+        if decimal_value < 0:
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column=column,
+                    value=value,
+                    error='Debe ser un número mayor o igual a 0.',
+                ),
+            )
+            return None
+
+        return decimal_value.quantize(Decimal('0.01'))
+
+    @classmethod
+    def _parse_iva(
+        cls,
+        value,
+        excel_row,
+        errors,
+    ):
+        if value in (None, ''):
+            return Decimal('0.00')
+
+        try:
+            iva = Decimal(str(value))
+        except Exception:
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column='IVA (%)',
+                    value=value,
+                    error='Debe ser un número entre 0 y 100.',
+                ),
+            )
+            return None
+
+        if iva < 0 or iva > 100:
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column='IVA (%)',
+                    value=value,
+                    error='Debe ser un número entre 0 y 100.',
+                ),
+            )
+            return None
+
+        return iva.quantize(Decimal('0.01'))
+
+    @classmethod
+    def _parse_fecha(
+        cls,
+        value,
+        column,
+        excel_row,
+        errors,
+        default,
+        as_datetime,
+    ):
+        if value in (None, ''):
+            return default
+
+        parsed = None
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, date):
+            parsed = datetime.combine(value, datetime.min.time())
+        else:
+            value_str = str(value).strip()
+            formatos = (
+                '%Y-%m-%d',
+                '%d/%m/%Y',
+                '%d-%m-%Y',
+                '%Y/%m/%d',
+            )
+            for formato in formatos:
+                try:
+                    parsed = datetime.strptime(value_str, formato)
+                    break
+                except ValueError:
+                    continue
+
+        if parsed is None:
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column=column,
+                    value=value,
+                    error='Debe ser una fecha válida.',
+                ),
+            )
+            return None
+
+        if as_datetime:
+            return timezone.make_aware(
+                parsed,
+                timezone.get_current_timezone(),
+            ) if timezone.is_naive(parsed) else parsed
+        return parsed.date()
+
+    @staticmethod
+    def _build_error(row, column, value, error):
+        return {
+            'row': row,
+            'column': column,
+            'value': '' if value is None else str(value),
+            'error': error,
+        }
 
 
 class StockService:

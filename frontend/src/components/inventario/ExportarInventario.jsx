@@ -1,25 +1,13 @@
 import { useMutation } from '@tanstack/react-query';
 import { Download, Loader2 } from 'lucide-react';
 import { exportarInventarioExcel } from '../../services/inventario.service';
-
-const getFilename = (headers) => {
-  const disposition = headers?.['content-disposition'];
-  const match = disposition?.match(/filename="?([^";]+)"?/i);
-  return match?.[1] || `inventario_${new Date().toISOString().slice(0, 10)}.xlsx`;
-};
+import { triggerExcelDownload } from './excelDownload';
 
 const ExportarInventario = ({ onSuccess, onError }) => {
   const exportMutation = useMutation({
     mutationFn: exportarInventarioExcel,
     onSuccess: (response) => {
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = getFilename(response.headers);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.URL.revokeObjectURL(url);
+      triggerExcelDownload(response, 'inventario');
       onSuccess?.('Inventario exportado correctamente');
     },
     onError: () => onError?.('No fue posible exportar el inventario'),

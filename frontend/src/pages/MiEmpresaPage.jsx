@@ -49,11 +49,25 @@ const normalizeConfig = (config = {}) => ({
   },
 });
 
+const buildConfigPayload = (config) => ({
+  tema: config.tema,
+  permitir_stock_negativo_ventas: config.permitir_stock_negativo_ventas,
+  atajos_ventas_activos: config.atajos_ventas_activos,
+  atajos_ventas: config.atajos_ventas,
+});
+
 export default function MiEmpresaPage() {
   const queryClient = useQueryClient();
   const empresaActiva = useAppStore((state) => state.empresaActiva);
   const setEmpresaActiva = useAppStore((state) => state.setEmpresaActiva);
   const setTemaActual = useAppStore((state) => state.setTemaActual);
+  const temaActual = useAppStore((state) => state.temaActual);
+  const configuracionOperativa = useAppStore(
+    (state) => state.configuracionOperativa,
+  );
+  const setConfiguracionOperativa = useAppStore(
+    (state) => state.setConfiguracionOperativa,
+  );
   const updateEmpresaConfiguracion = useAppStore(
     (state) => state.updateEmpresaConfiguracion,
   );
@@ -76,8 +90,11 @@ export default function MiEmpresaPage() {
       ...empresaActiva,
       digito_verificacion: calculateNitVerificationDigit(empresaActiva.nit),
     });
-    setConfigForm(normalizeConfig(empresaActiva.configuracion_operativa));
-  }, [empresaActiva]);
+    setConfigForm({
+      ...normalizeConfig(configuracionOperativa),
+      tema: temaActual,
+    });
+  }, [empresaActiva, configuracionOperativa, temaActual]);
 
   const guardarEmpresaMutation = useMutation({
     mutationFn: (payload) => actualizarEmpresa(empresaActiva.id, payload),
@@ -101,7 +118,10 @@ export default function MiEmpresaPage() {
     onSuccess: (configuracion) => {
       updateEmpresaConfiguracion(configuracion);
       queryClient.invalidateQueries({ queryKey: ['empresas'] });
-      setConfigForm(normalizeConfig(configuracion));
+      setConfigForm({
+        ...normalizeConfig(configuracion),
+        tema: configuracion.tema,
+      });
       toast.success('Configuracion operativa actualizada');
     },
     onError: (error) => {
@@ -122,11 +142,16 @@ export default function MiEmpresaPage() {
     });
   };
 
-  const setConfigField = (field, value) => {
-    setConfigForm((current) => ({
-      ...current,
+  const setConfigField = (field, value, options = {}) => {
+    const nextConfig = normalizeConfig({
+      ...configForm,
       [field]: value,
-    }));
+    });
+    setConfigForm(nextConfig);
+    setConfiguracionOperativa(nextConfig);
+    if (options.persist && empresaActiva && puedeEditar) {
+      guardarConfiguracionMutation.mutate(buildConfigPayload(nextConfig));
+    }
   };
 
   const setTemaField = (checked) => {
@@ -136,13 +161,15 @@ export default function MiEmpresaPage() {
   };
 
   const setShortcut = (field, value) => {
-    setConfigForm((current) => ({
-      ...current,
+    const nextConfig = normalizeConfig({
+      ...configForm,
       atajos_ventas: {
-        ...current.atajos_ventas,
+        ...configForm.atajos_ventas,
         [field]: value,
       },
-    }));
+    });
+    setConfigForm(nextConfig);
+    setConfiguracionOperativa(nextConfig);
   };
 
   const handleEmpresaSubmit = (event) => {
@@ -169,13 +196,7 @@ export default function MiEmpresaPage() {
       return;
     }
 
-    guardarConfiguracionMutation.mutate({
-      tema: configForm.tema,
-      permitir_stock_negativo_ventas:
-        configForm.permitir_stock_negativo_ventas,
-      atajos_ventas_activos: configForm.atajos_ventas_activos,
-      atajos_ventas: configForm.atajos_ventas,
-    });
+    guardarConfiguracionMutation.mutate(buildConfigPayload(configForm));
   };
 
   if (!empresaActiva) {
@@ -394,7 +415,9 @@ export default function MiEmpresaPage() {
               checked={configForm.permitir_stock_negativo_ventas}
               disabled={!puedeEditar}
               onChange={(checked) =>
-                setConfigField('permitir_stock_negativo_ventas', checked)
+                setConfigField('permitir_stock_negativo_ventas', checked, {
+                  persist: true,
+                })
               }
             />
             <TogglePanel
@@ -404,7 +427,9 @@ export default function MiEmpresaPage() {
               checked={configForm.atajos_ventas_activos}
               disabled={!puedeEditar}
               onChange={(checked) =>
-                setConfigField('atajos_ventas_activos', checked)
+                setConfigField('atajos_ventas_activos', checked, {
+                  persist: true,
+                })
               }
             />
           </div>
@@ -521,33 +546,31 @@ function TogglePanel({
     <button
       type="button"
       disabled={disabled}
+      aria-pressed={checked}
       onClick={() => onChange(!checked)}
-      className={`toggle-panel p-5 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
+      className={`toggle-panel min-h-[156px] p-5 pr-20 text-left disabled:cursor-not-allowed disabled:opacity-60 ${
         checked ? 'toggle-panel-active' : ''
       }`}
     >
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]">
-            <Icon className="h-4 w-4" />
-          </div>
-          <div className="mt-4 text-[15px] font-semibold text-main">
-            {title}
-          </div>
-          <p className="mt-2 text-[12px] leading-6 text-soft">{description}</p>
-        </div>
+      <span
+        aria-hidden="true"
+        className={`toggle-control toggle-track ${
+          checked ? 'toggle-track-active' : ''
+        }`}
+      >
         <span
-          className={`inline-flex h-7 w-14 items-center rounded-full p-1 transition ${
-            checked ? 'toggle-track toggle-track-active' : 'toggle-track'
+          className={`toggle-thumb h-5 w-5 rounded-full transition ${
+            checked ? 'translate-x-7' : 'translate-x-0'
           }`}
-        >
-          <span
-            className={`toggle-thumb h-5 w-5 rounded-full bg-white transition ${
-              checked ? 'translate-x-7' : 'translate-x-0'
-            }`}
-          />
-        </span>
+        />
+      </span>
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]">
+        <Icon className="h-4 w-4" />
       </div>
+      <div className="mt-4 text-[15px] font-semibold text-main">{title}</div>
+      <p className="mt-2 max-w-[22rem] text-[12px] leading-6 text-soft">
+        {description}
+      </p>
     </button>
   );
 }
