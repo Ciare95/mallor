@@ -2,7 +2,6 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   BadgePercent,
-  Barcode,
   CreditCard,
   Loader2,
   Plus,
@@ -37,12 +36,21 @@ export default function VentaForm({
   onReset,
   onSubmit,
   focusSignal = 0,
+  openCobroSignal = 0,
+  submitSignal = 0,
 }) {
   const [productQuery, setProductQuery] = useState('');
   const [clientQuery, setClientQuery] = useState('');
   const [showClientModal, setShowClientModal] = useState(false);
+  const [showCobroModal, setShowCobroModal] = useState(false);
   const [cashManualOverride, setCashManualOverride] = useState(false);
+  const [activeProductIndex, setActiveProductIndex] = useState(-1);
   const productSearchRef = useRef(null);
+  const lastCobroSignalRef = useRef(0);
+  const lastSubmitSignalRef = useRef(0);
+  const productResultsId = useRef(
+    `ventas-product-results-${Math.random().toString(36).slice(2, 8)}`,
+  );
   const deferredProductQuery = useDeferredValue(productQuery.trim());
   const deferredClientQuery = useDeferredValue(clientQuery.trim());
   const showClientResults = deferredClientQuery.length >= 2;
@@ -61,23 +69,6 @@ export default function VentaForm({
       draft.efectivoRecibido === undefined)
       ? String(resumen.efectivoRecibido)
       : draft.efectivoRecibido;
-
-  useEffect(() => {
-    productSearchRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    requestAnimationFrame(() => {
-      productSearchRef.current?.focus();
-    });
-  }, [focusSignal]);
-
-  useEffect(() => {
-    if (!autoCashEnabled) {
-      setCashManualOverride(false);
-    }
-  }, [autoCashEnabled]);
-
   const productosQuery = useQuery({
     queryKey: ['ventas', 'pos', 'productos', deferredProductQuery],
     queryFn: () => buscarProductos(deferredProductQuery),
@@ -97,6 +88,10 @@ export default function VentaForm({
   });
 
   const selectedClient = draft.clienteSeleccionado || CONSUMIDOR_FINAL;
+  const productResults = useMemo(
+    () => (productosQuery.data || []).slice(0, 6),
+    [productosQuery.data],
+  );
   const canSubmit =
     draft.items.length > 0 &&
     (
@@ -105,12 +100,68 @@ export default function VentaForm({
       resumen.efectivoRecibido >= resumen.total
     );
 
+  useEffect(() => {
+    productSearchRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    requestAnimationFrame(() => {
+      productSearchRef.current?.focus();
+    });
+  }, [focusSignal]);
+
+  useEffect(() => {
+    if (!autoCashEnabled) {
+      setCashManualOverride(false);
+    }
+  }, [autoCashEnabled]);
+
+  useEffect(() => {
+    setActiveProductIndex(-1);
+  }, [deferredProductQuery]);
+
+  useEffect(() => {
+    if (!productResults.length) {
+      setActiveProductIndex(-1);
+      return;
+    }
+    if (activeProductIndex >= productResults.length) {
+      setActiveProductIndex(productResults.length - 1);
+    }
+  }, [activeProductIndex, productResults]);
+
+  useEffect(() => {
+    if (!openCobroSignal || openCobroSignal === lastCobroSignalRef.current) {
+      return;
+    }
+    lastCobroSignalRef.current = openCobroSignal;
+    setShowCobroModal(true);
+  }, [openCobroSignal]);
+
+  useEffect(() => {
+    if (
+      !submitSignal ||
+      submitSignal === lastSubmitSignalRef.current
+    ) {
+      return;
+    }
+    lastSubmitSignalRef.current = submitSignal;
+    if (showCobroModal || !canSubmit) {
+      return;
+    }
+    onSubmit({
+      ...draft,
+      estado: draft.estado,
+    });
+  }, [canSubmit, draft, onSubmit, showCobroModal, submitSignal]);
+
   const submitLabel =
     draft.estado === 'PENDIENTE' ? 'Guardar como pendiente' : 'Registrar venta';
 
   const addProductAndClear = (producto) => {
     onAddProduct(producto);
     setProductQuery('');
+    setActiveProductIndex(-1);
     requestAnimationFrame(() => {
       productSearchRef.current?.focus();
     });
@@ -160,15 +211,52 @@ export default function VentaForm({
     onChangeField('efectivoRecibido', String(amount));
   };
 
+  const handleProductSearchKeyDown = (event) => {
+    if (!productResults.length) {
+      return;
+    }
+
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setActiveProductIndex((current) =>
+        current < productResults.length - 1 ? current + 1 : 0,
+      );
+      return;
+    }
+
+    if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setActiveProductIndex((current) =>
+        current > 0 ? current - 1 : productResults.length - 1,
+      );
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      const activeProduct =
+        activeProductIndex >= 0
+          ? productResults[activeProductIndex]
+          : productResults.length === 1
+            ? productResults[0]
+            : null;
+      if (!activeProduct) {
+        return;
+      }
+
+      event.preventDefault();
+      addProductAndClear(activeProduct);
+    }
+  };
+
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.45fr_0.92fr]">
+    <div className="grid gap-4 xl:grid-cols-[1.45fr_0.92fr]">
       <SectionShell
         eyebrow={draft.ventaId ? 'Edicion' : null}
         title={draft.ventaId ? `Editar ${draft.ventaId}` : null}
       >
-        <div className="space-y-6">
-          <div className="rounded-xl border border-app bg-white/76 p-5">
-            <div className="grid gap-4 lg:grid-cols-[1.08fr_0.92fr]">
+        <div className="space-y-4">
+          <div className="rounded-xl border border-app bg-white/76 p-4">
+            <div className="grid gap-3">
               <label className="app-field">
                 <span className="app-field-label">Buscar producto</span>
                 <div className="relative">
@@ -178,21 +266,24 @@ export default function VentaForm({
                     type="text"
                     value={productQuery}
                     onChange={(event) => setProductQuery(event.target.value)}
+                    onKeyDown={handleProductSearchKeyDown}
                     placeholder="Nombre, codigo interno o codigo de barras"
                     className="app-input min-h-11 px-11"
+                    aria-controls={productResultsId.current}
+                    aria-activedescendant={
+                      activeProductIndex >= 0
+                        ? `${productResultsId.current}-${productResults[activeProductIndex]?.id}`
+                        : undefined
+                    }
+                    aria-autocomplete="list"
+                    aria-expanded={productResults.length > 0}
+                    role="combobox"
                   />
                 </div>
               </label>
-              <div className="rounded-xl border border-app bg-[var(--panel-soft)] px-4 py-3">
-                <div className="eyebrow">Captura rapida</div>
-                <div className="mt-2 flex items-center gap-2 text-[12px] text-soft">
-                  <Barcode className="h-4 w-4 text-[var(--accent)]" />
-                  Empieza por el producto y completa cliente o pago al final.
-                </div>
-              </div>
             </div>
 
-            <div className="mt-4">
+            <div className="mt-3">
               {productosQuery.isFetching && (
                 <div className="mb-3 inline-flex items-center gap-2 text-[13px] text-soft">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -202,14 +293,25 @@ export default function VentaForm({
 
               {deferredProductQuery.length >= 2 &&
                 !productosQuery.isFetching &&
-                (productosQuery.data || []).length > 0 && (
-                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                    {productosQuery.data.slice(0, 6).map((producto) => (
+                productResults.length > 0 && (
+                  <div
+                    id={productResultsId.current}
+                    role="listbox"
+                    className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+                  >
+                    {productResults.map((producto, index) => (
                       <button
                         key={producto.id}
+                        id={`${productResultsId.current}-${producto.id}`}
                         type="button"
                         onClick={() => addProductAndClear(producto)}
-                        className="rounded-xl border border-app bg-white/72 p-4 text-left transition hover:border-[var(--accent-line)] hover:bg-white"
+                        role="option"
+                        aria-selected={activeProductIndex === index}
+                        className={`rounded-xl border p-4 text-left transition ${
+                          activeProductIndex === index
+                            ? 'border-[var(--accent-line)] bg-[var(--accent-soft)]'
+                            : 'border-app bg-white/72 hover:border-[var(--accent-line)] hover:bg-white'
+                        }`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
@@ -427,6 +529,12 @@ export default function VentaForm({
                   checked={draft.imprimirTicket}
                   onChange={(checked) => onChangeField('imprimirTicket', checked)}
                 />
+                {draft.imprimirTicket && (
+                  <div className="rounded-xl border border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] px-4 py-3 text-[12px] text-[var(--info-text)]">
+                    Al terminar la venta se abrira el modal del formato de la
+                    tirilla para revisar la vista previa antes de imprimir.
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -474,6 +582,14 @@ export default function VentaForm({
           <div className="mt-6 grid gap-3">
             <button
               type="button"
+              onClick={() => setShowCobroModal(true)}
+              className="app-button-secondary min-h-10"
+            >
+              <CreditCard className="h-4 w-4" />
+              Configurar cobro
+            </button>
+            <button
+              type="button"
               onClick={() => submitWithState(draft.estado)}
               disabled={isLoading || !canSubmit}
               className="app-button-primary min-h-11 disabled:opacity-50"
@@ -508,134 +624,6 @@ export default function VentaForm({
         </SectionShell>
       </div>
 
-      <SectionShell
-        eyebrow="Cobro"
-        title="Calculadora"
-        description="Controla descuentos, forma de pago, efectivo recibido y abono inicial."
-        className="xl:col-span-2"
-      >
-        <div className="grid gap-5 xl:grid-cols-2">
-          <label className="space-y-2">
-            <span className="app-field-label">Descuento global (%)</span>
-            <div className="relative">
-              <BadgePercent className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.01"
-                value={draft.descuentoGlobal}
-                onFocus={clearZeroFieldOnFocus('descuentoGlobal')}
-                onChange={(event) =>
-                  onChangeField('descuentoGlobal', event.target.value)
-                }
-                className="app-input min-h-10 px-11"
-              />
-            </div>
-            <span className="text-[12px] text-soft">
-              Porcentaje aplicado sobre el total actual de la venta.
-            </span>
-          </label>
-
-          <label className="space-y-2">
-            <span className="app-field-label">Metodo de pago</span>
-            <select
-              value={draft.metodoPago}
-              onChange={(event) =>
-                onChangeField('metodoPago', event.target.value)
-              }
-              className="app-select min-h-10"
-            >
-              <option value="EFECTIVO">Efectivo</option>
-              <option value="TARJETA">Tarjeta</option>
-              <option value="TRANSFERENCIA">Transferencia</option>
-              <option value="CREDITO">Credito</option>
-            </select>
-          </label>
-
-          {draft.metodoPago === 'EFECTIVO' && draft.estado === 'TERMINADA' && (
-            <div className="grid gap-4 xl:col-span-2 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
-              <label className="space-y-2">
-                <span className="app-field-label">Efectivo recibido</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={efectivoRecibidoValue}
-                  onFocus={handleCashReceivedFocus}
-                  onChange={(event) => {
-                    setCashManualOverride(true);
-                    onChangeField('efectivoRecibido', event.target.value);
-                  }}
-                  className="app-input min-h-10"
-                />
-                {cashSuggestions.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {cashSuggestions.map((amount) => (
-                      <button
-                        key={amount}
-                        type="button"
-                        onClick={() => applyCashSuggestion(amount)}
-                        className="inline-flex min-h-9 items-center rounded-full border border-app bg-white/72 px-3 py-2 text-[12px] font-semibold text-main transition hover:border-[var(--accent-line)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
-                      >
-                        {formatCurrency(amount)}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </label>
-              <div className="self-start">
-                <CashChangeCard value={resumen.cambio} />
-              </div>
-            </div>
-          )}
-
-          {draft.metodoPago === 'CREDITO' && (
-            <>
-              <label className="space-y-2">
-                <span className="app-field-label">Abono inicial</span>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={draft.abonoInicial}
-                  onChange={(event) =>
-                    onChangeField('abonoInicial', event.target.value)
-                  }
-                  className="app-input min-h-10"
-                />
-              </label>
-              <label className="space-y-2">
-                <span className="app-field-label">Metodo del abono inicial</span>
-                <select
-                  value={draft.metodoAbonoInicial}
-                  onChange={(event) =>
-                    onChangeField('metodoAbonoInicial', event.target.value)
-                  }
-                  className="app-select min-h-10"
-                >
-                  <option value="EFECTIVO">Efectivo</option>
-                  <option value="TARJETA">Tarjeta</option>
-                  <option value="TRANSFERENCIA">Transferencia</option>
-                </select>
-              </label>
-            </>
-          )}
-
-          <label className="space-y-2 xl:col-span-2">
-            <span className="app-field-label">Observaciones</span>
-            <textarea
-              rows="4"
-              value={draft.observaciones}
-              onChange={(event) =>
-                onChangeField('observaciones', event.target.value)
-              }
-              className="app-textarea"
-            />
-          </label>
-        </div>
-      </SectionShell>
-
       <QuickClientModal
         open={showClientModal}
         onClose={() => setShowClientModal(false)}
@@ -644,6 +632,20 @@ export default function VentaForm({
           onCreateQuickClient(cliente);
           setShowClientModal(false);
         }}
+      />
+
+      <CobroModal
+        open={showCobroModal}
+        onClose={() => setShowCobroModal(false)}
+        draft={draft}
+        resumen={resumen}
+        onChangeField={onChangeField}
+        cashSuggestions={cashSuggestions}
+        efectivoRecibidoValue={efectivoRecibidoValue}
+        clearZeroFieldOnFocus={clearZeroFieldOnFocus}
+        handleCashReceivedFocus={handleCashReceivedFocus}
+        applyCashSuggestion={applyCashSuggestion}
+        setCashManualOverride={setCashManualOverride}
       />
     </div>
   );
@@ -743,6 +745,237 @@ function CashChangeCard({ value }) {
       </div>
       <div className="mt-2 text-[12px] text-[var(--info-text)]">
         Devuelta sugerida
+      </div>
+    </div>
+  );
+}
+
+function preventStepperKeys(event) {
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    event.preventDefault();
+  }
+}
+
+function CobroFields({
+  draft,
+  resumen,
+  onChangeField,
+  cashSuggestions,
+  efectivoRecibidoValue,
+  clearZeroFieldOnFocus,
+  handleCashReceivedFocus,
+  applyCashSuggestion,
+  setCashManualOverride,
+  firstFieldRef,
+}) {
+  return (
+    <div className="grid gap-5 xl:grid-cols-2">
+      <label className="space-y-2">
+        <span className="app-field-label">Descuento global (%)</span>
+        <div className="relative">
+          <BadgePercent className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <input
+            ref={firstFieldRef}
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            value={draft.descuentoGlobal}
+            onFocus={clearZeroFieldOnFocus('descuentoGlobal')}
+            onKeyDown={preventStepperKeys}
+            onChange={(event) =>
+              onChangeField('descuentoGlobal', event.target.value)
+            }
+            className="app-input app-input-no-spin min-h-10 px-11"
+          />
+        </div>
+        <span className="text-[12px] text-soft">
+          Porcentaje aplicado sobre el total actual de la venta.
+        </span>
+      </label>
+
+      <label className="space-y-2">
+        <span className="app-field-label">Metodo de pago</span>
+        <select
+          value={draft.metodoPago}
+          onChange={(event) =>
+            onChangeField('metodoPago', event.target.value)
+          }
+          className="app-select min-h-10"
+        >
+          <option value="EFECTIVO">Efectivo</option>
+          <option value="TARJETA">Tarjeta</option>
+          <option value="TRANSFERENCIA">Transferencia</option>
+          <option value="CREDITO">Credito</option>
+        </select>
+      </label>
+
+      {draft.metodoPago === 'EFECTIVO' && draft.estado === 'TERMINADA' && (
+        <div className="grid gap-4 xl:col-span-2 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start">
+          <label className="space-y-2">
+            <span className="app-field-label">Efectivo recibido</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={efectivoRecibidoValue}
+              onFocus={handleCashReceivedFocus}
+              onKeyDown={preventStepperKeys}
+              onChange={(event) => {
+                setCashManualOverride(true);
+                onChangeField('efectivoRecibido', event.target.value);
+              }}
+              className="app-input app-input-no-spin min-h-10"
+            />
+            {cashSuggestions.length > 0 && (
+              <div className="flex flex-wrap gap-2 pt-2">
+                {cashSuggestions.map((amount) => (
+                  <button
+                    key={amount}
+                    type="button"
+                    onClick={() => applyCashSuggestion(amount)}
+                    className="inline-flex min-h-9 items-center rounded-full border border-app bg-white/72 px-3 py-2 text-[12px] font-semibold text-main transition hover:border-[var(--accent-line)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
+                  >
+                    {formatCurrency(amount)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </label>
+          <div className="self-start">
+            <CashChangeCard value={resumen.cambio} />
+          </div>
+        </div>
+      )}
+
+      {draft.metodoPago === 'CREDITO' && (
+        <>
+          <label className="space-y-2">
+            <span className="app-field-label">Abono inicial</span>
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={draft.abonoInicial}
+              onKeyDown={preventStepperKeys}
+              onChange={(event) =>
+                onChangeField('abonoInicial', event.target.value)
+              }
+              className="app-input app-input-no-spin min-h-10"
+            />
+          </label>
+          <label className="space-y-2">
+            <span className="app-field-label">Metodo del abono inicial</span>
+            <select
+              value={draft.metodoAbonoInicial}
+              onChange={(event) =>
+                onChangeField('metodoAbonoInicial', event.target.value)
+              }
+              className="app-select min-h-10"
+            >
+              <option value="EFECTIVO">Efectivo</option>
+              <option value="TARJETA">Tarjeta</option>
+              <option value="TRANSFERENCIA">Transferencia</option>
+            </select>
+          </label>
+        </>
+      )}
+
+      <label className="space-y-2 xl:col-span-2">
+        <span className="app-field-label">Observaciones</span>
+        <textarea
+          rows="4"
+          value={draft.observaciones}
+          onChange={(event) =>
+            onChangeField('observaciones', event.target.value)
+          }
+          className="app-textarea"
+        />
+      </label>
+    </div>
+  );
+}
+
+function CobroModal({
+  open,
+  onClose,
+  draft,
+  resumen,
+  onChangeField,
+  cashSuggestions,
+  efectivoRecibidoValue,
+  clearZeroFieldOnFocus,
+  handleCashReceivedFocus,
+  applyCashSuggestion,
+  setCashManualOverride,
+}) {
+  const firstFieldRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      firstFieldRef.current?.focus();
+    });
+  }, [open]);
+
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/40 px-4 py-8 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Configurar cobro"
+    >
+      <div className="surface w-full max-w-4xl p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="eyebrow">Cobro</div>
+            <h3 className="mt-2 font-display text-2xl text-main">
+              Configuracion de pago
+            </h3>
+            <p className="mt-2 text-[13px] leading-6 text-soft">
+              Controla descuentos, forma de pago, efectivo recibido y abono
+              inicial antes de registrar la venta.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="app-button-secondary min-h-10"
+          >
+            Cerrar
+          </button>
+        </div>
+
+        <div className="mt-6">
+          <CobroFields
+            draft={draft}
+            resumen={resumen}
+            onChangeField={onChangeField}
+            cashSuggestions={cashSuggestions}
+            efectivoRecibidoValue={efectivoRecibidoValue}
+            clearZeroFieldOnFocus={clearZeroFieldOnFocus}
+            handleCashReceivedFocus={handleCashReceivedFocus}
+            applyCashSuggestion={applyCashSuggestion}
+            setCashManualOverride={setCashManualOverride}
+            firstFieldRef={firstFieldRef}
+          />
+        </div>
+
+        <div className="mt-6 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            className="app-button-primary min-h-10"
+          >
+            Aplicar y cerrar
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -4,10 +4,11 @@ from rest_framework.decorators import action
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from empresa.models import Empresa
+from empresa.models import Empresa, EmpresaConfiguracion
 from empresa.serializers import (
     EmpresaAdminCreateSerializer,
     EmpresaAdminSerializer,
+    EmpresaConfiguracionSerializer,
     EmpresaSeleccionSerializer,
     EmpresaSerializer,
     EmpresaUsuarioCreateSerializer,
@@ -285,6 +286,34 @@ class EmpresaViewSet(viewsets.ViewSet):
             return Response(FacturacionElectronicaConfigSerializer(config).data)
 
         serializer = FacturacionElectronicaConfigSerializer(
+            config,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get', 'patch'], url_path='configuracion')
+    def configuracion(self, request: Request, pk: int = None) -> Response:
+        empresa = self._get_empresa_permitida(request, pk)
+        if empresa is None:
+            return Response(
+                {'error': 'Empresa no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if not self._can_admin_empresa(request, empresa):
+            return Response(
+                {'error': 'No tiene permisos para configurar la empresa.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        config = EmpresaConfiguracion.get_or_create_for_empresa(empresa)
+
+        if request.method == 'GET':
+            return Response(EmpresaConfiguracionSerializer(config).data)
+
+        serializer = EmpresaConfiguracionSerializer(
             config,
             data=request.data,
             partial=True,

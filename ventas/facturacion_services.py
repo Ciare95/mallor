@@ -3,12 +3,13 @@ import zlib
 from typing import Any, Dict, Optional
 
 from django.db import transaction
-from django.utils.dateparse import parse_date
+from django.utils.dateparse import parse_date, parse_datetime
 from django.utils import timezone
 
 from core.exceptions import (
     FacturacionConfiguracionError,
     FacturacionDocumentoNoEncontradoError,
+    FacturacionError,
     FacturacionOperacionError,
     FacturacionValidacionError,
 )
@@ -20,11 +21,14 @@ from ventas.factus_transformers import (
     build_factus_bill_payload,
     build_reference_code,
     extract_bill_result,
+    validate_bill_response,
     validar_venta_facturable,
 )
 from ventas.models import (
     FacturacionElectronicaConfig,
+    FacturaElectronicaEntrega,
     FacturaElectronicaIntento,
+    FacturaElectronicaSoporte,
     FactusNumberingRange,
     Venta,
     VentaFacturaElectronica,
@@ -40,6 +44,17 @@ def _parse_optional_date(value: Any):
     if hasattr(value, 'year'):
         return value
     return parse_date(str(value))
+
+
+def _parse_optional_datetime(value: Any):
+    if not value:
+        return None
+    if hasattr(value, 'hour'):
+        return value
+    parsed = parse_datetime(str(value))
+    if parsed is not None:
+        return parsed
+    return None
 
 
 def _extract_rows(payload: Dict[str, Any]) -> list[Dict[str, Any]]:
@@ -180,6 +195,108 @@ class FacturacionElectronicaService:
         )
 
     @staticmethod
+    def _registrar_entrega(
+        documento: VentaFacturaElectronica,
+        *,
+        medio: str,
+        destino: str = '',
+        resultado: str = FacturaElectronicaEntrega.Resultado.PENDIENTE,
+        mensaje: str = '',
+        usuario=None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> FacturaElectronicaEntrega:
+        entrega = FacturaElectronicaEntrega.objects.create(
+            factura=documento,
+            empresa=documento.empresa,
+            medio=medio,
+            destino=destino or '',
+            resultado=resultado,
+            mensaje=mensaje or '',
+            usuario=usuario if getattr(usuario, 'is_authenticated', True) else None,
+            metadata=metadata or {},
+        )
+        if hasattr(documento, '_prefetched_objects_cache'):
+            documento._prefetched_objects_cache.pop('entregas', None)
+        return entrega
+
+    @staticmethod
+    def _registrar_entrega_post_emision(
+        documento: VentaFacturaElectronica,
+        *,
+        send_email: bool,
+    ) -> None:
+        cliente_email = documento.venta.cliente.email if documento.venta.cliente else ''
+        if send_email and cliente_email:
+            documento.email_last_sent_at = documento.email_last_sent_at or timezone.now()
+            documento.save(update_fields=['email_last_sent_at', 'updated_at'])
+            FacturacionElectronicaService._registrar_entrega(
+                documento,
+                medio=FacturaElectronicaEntrega.Medio.EMAIL,
+                destino=cliente_email,
+                resultado=FacturaElectronicaEntrega.Resultado.EXITOSO,
+                mensaje='Factura enviada por Factus durante la emision.',
+            )
+            return
+
+        FacturacionElectronicaService._registrar_entrega(
+            documento,
+            medio=FacturaElectronicaEntrega.Medio.SIN_MEDIO,
+            resultado=FacturaElectronicaEntrega.Resultado.PENDIENTE,
+            mensaje=(
+                'Factura emitida sin entrega confirmada. Debe registrarse '
+                'email, descarga o impresion al adquirente.'
+            ),
+        )
+
+    @staticmethod
+    def _registrar_soporte(
+        documento: VentaFacturaElectronica,
+        *,
+        tipo: str,
+        payload: Dict[str, Any],
+    ) -> FacturaElectronicaSoporte:
+        content = payload.get('content') or b''
+        if isinstance(content, str):
+            content = content.encode('utf-8')
+        soporte, _ = FacturaElectronicaSoporte.objects.update_or_create(
+            factura=documento,
+            tipo=tipo,
+            defaults={
+                'empresa': documento.empresa,
+                'filename': payload.get('filename') or f'{documento.bill_number}.{tipo.lower()}',
+                'content_type': payload.get('content_type') or '',
+                'content': content,
+                'metadata': {
+                    'bill_number': documento.bill_number,
+                    'cufe': documento.cufe,
+                    'retencion_minima_anos': 5,
+                },
+            },
+        )
+        if hasattr(documento, '_prefetched_objects_cache'):
+            documento._prefetched_objects_cache.pop('soportes', None)
+        return soporte
+
+    @staticmethod
+    def _payload_desde_soporte(
+        documento: VentaFacturaElectronica,
+        *,
+        tipo: str,
+    ) -> Optional[Dict[str, Any]]:
+        soporte = documento.soportes.filter(tipo=tipo).first()
+        if soporte is None:
+            return None
+        content = soporte.content
+        if isinstance(content, memoryview):
+            content = content.tobytes()
+        return {
+            'content': bytes(content or b''),
+            'content_type': soporte.content_type,
+            'filename': soporte.filename,
+            'from_archive': True,
+        }
+
+    @staticmethod
     def _is_pending_dian_conflict(code: str, message: str) -> bool:
         return (
             code == 'factus_http_409'
@@ -190,7 +307,9 @@ class FacturacionElectronicaService:
     def _next_retry_reference_code(
         documento: VentaFacturaElectronica,
     ) -> str:
-        base_reference = f'VENTA-{documento.venta_id}'
+        base_reference = documento.reference_code
+        if '-R' in base_reference:
+            base_reference = base_reference.rsplit('-R', 1)[0]
         retry_prefix = f'{base_reference}-R'
         next_retry = 1
 
@@ -358,13 +477,17 @@ class FacturacionElectronicaService:
 
         try:
             response = self._adapter_for_empresa(empresa).emitir_factura(payload)
+            validate_bill_response(payload, response)
             parsed = extract_bill_result(response)
             documento.status = VentaFacturaElectronica.Status.EMITIDA
             documento.bill_number = parsed['bill_number']
             documento.cufe = parsed['cufe']
             documento.resolution_number = parsed['resolution_number']
             documento.response_payload = response
-            documento.validated_at = timezone.now()
+            documento.validated_at = (
+                _parse_optional_datetime(parsed['validated_at'])
+                or timezone.now()
+            )
             documento.save()
             documento.sync_venta_fields()
             self._registrar_intento(
@@ -374,11 +497,17 @@ class FacturacionElectronicaService:
                 request_payload=payload,
                 response_payload=response,
             )
+            self._registrar_entrega_post_emision(
+                documento,
+                send_email=payload.get('send_email', False),
+            )
             return documento
         except Exception as exc:
             documento.status = VentaFacturaElectronica.Status.ERROR
             documento.last_error_code = getattr(exc, 'code', 'factus_error')
             documento.last_error_message = getattr(exc, 'message', str(exc))
+            if 'response' in locals():
+                documento.response_payload = response
             if self._is_pending_dian_conflict(
                 documento.last_error_code,
                 documento.last_error_message,
@@ -400,7 +529,7 @@ class FacturacionElectronicaService:
             return VentaFacturaElectronica.objects.select_related(
                 'venta',
                 'numbering_range',
-            ).prefetch_related('intentos').get(
+            ).prefetch_related('entregas', 'intentos', 'soportes').get(
                 venta_id=venta_id,
                 empresa=empresa,
             )
@@ -443,6 +572,11 @@ class FacturacionElectronicaService:
     @transaction.atomic
     def enviar_email(self, venta_id: int, email: Optional[str] = None) -> VentaFacturaElectronica:
         documento = self.obtener_documento(venta_id)
+        if not documento.bill_number:
+            raise FacturacionValidacionError(
+                'La venta aun no tiene factura emitida.',
+                code='factus_email_sin_numero',
+            )
         target_email = email or documento.venta.cliente.email
         if not target_email:
             raise FacturacionValidacionError(
@@ -463,41 +597,140 @@ class FacturacionElectronicaService:
             is_success=True,
             response_payload=response,
         )
+        self._registrar_entrega(
+            documento,
+            medio=FacturaElectronicaEntrega.Medio.EMAIL,
+            destino=target_email,
+            resultado=FacturaElectronicaEntrega.Resultado.EXITOSO,
+            mensaje='Factura enviada por email al adquirente.',
+            metadata={'response': response},
+        )
         return documento
 
-    def descargar_pdf(self, venta_id: int) -> Dict[str, Any]:
+    def descargar_pdf(self, venta_id: int, usuario=None) -> Dict[str, Any]:
         documento = self.obtener_documento(venta_id)
         if not documento.bill_number:
             raise FacturacionValidacionError(
                 'La venta aun no tiene factura emitida.',
                 code='factus_pdf_sin_numero',
             )
-        payload = self._adapter_for_empresa(documento.empresa).descargar_pdf(
-            documento.bill_number,
-        )
-        self._registrar_intento(
-            factura=documento,
-            action=FacturaElectronicaIntento.Action.DESCARGAR_PDF,
-            is_success=True,
+        try:
+            payload = self._adapter_for_empresa(documento.empresa).descargar_pdf(
+                documento.bill_number,
+            )
+            self._registrar_intento(
+                factura=documento,
+                action=FacturaElectronicaIntento.Action.DESCARGAR_PDF,
+                is_success=True,
+            )
+            self._registrar_soporte(
+                documento,
+                tipo=FacturaElectronicaSoporte.Tipo.PDF,
+                payload=payload,
+            )
+        except FacturacionError as exc:
+            self._registrar_intento(
+                factura=documento,
+                action=FacturaElectronicaIntento.Action.DESCARGAR_PDF,
+                is_success=False,
+                error_message=str(exc),
+            )
+            payload = self._payload_desde_soporte(
+                documento,
+                tipo=FacturaElectronicaSoporte.Tipo.PDF,
+            )
+            if payload is None:
+                raise
+        self._registrar_entrega(
+            documento,
+            medio=FacturaElectronicaEntrega.Medio.DESCARGA,
+            destino=payload.get('filename') or documento.bill_number,
+            resultado=FacturaElectronicaEntrega.Resultado.EXITOSO,
+            mensaje='Representacion grafica descargada para entrega al adquirente.',
+            usuario=usuario,
         )
         return payload
 
-    def descargar_xml(self, venta_id: int) -> Dict[str, Any]:
+    def descargar_xml(self, venta_id: int, usuario=None) -> Dict[str, Any]:
         documento = self.obtener_documento(venta_id)
         if not documento.bill_number:
             raise FacturacionValidacionError(
                 'La venta aun no tiene factura emitida.',
                 code='factus_xml_sin_numero',
             )
-        payload = self._adapter_for_empresa(documento.empresa).descargar_xml(
-            documento.bill_number,
-        )
-        self._registrar_intento(
-            factura=documento,
-            action=FacturaElectronicaIntento.Action.DESCARGAR_XML,
-            is_success=True,
-        )
+        try:
+            payload = self._adapter_for_empresa(documento.empresa).descargar_xml(
+                documento.bill_number,
+            )
+            self._registrar_intento(
+                factura=documento,
+                action=FacturaElectronicaIntento.Action.DESCARGAR_XML,
+                is_success=True,
+            )
+            self._registrar_soporte(
+                documento,
+                tipo=FacturaElectronicaSoporte.Tipo.XML,
+                payload=payload,
+            )
+        except FacturacionError as exc:
+            self._registrar_intento(
+                factura=documento,
+                action=FacturaElectronicaIntento.Action.DESCARGAR_XML,
+                is_success=False,
+                error_message=str(exc),
+            )
+            payload = self._payload_desde_soporte(
+                documento,
+                tipo=FacturaElectronicaSoporte.Tipo.XML,
+            )
+            if payload is None:
+                raise
         return payload
+
+    @transaction.atomic
+    def registrar_entrega(
+        self,
+        venta_id: int,
+        *,
+        medio: str,
+        destino: str = '',
+        resultado: str = FacturaElectronicaEntrega.Resultado.EXITOSO,
+        mensaje: str = '',
+        usuario=None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> VentaFacturaElectronica:
+        documento = self.obtener_documento(venta_id)
+        if documento.status != VentaFacturaElectronica.Status.EMITIDA:
+            raise FacturacionValidacionError(
+                'Solo se puede registrar entrega de una factura emitida.',
+                code='factus_entrega_sin_emision',
+            )
+        if medio not in FacturaElectronicaEntrega.Medio.values:
+            raise FacturacionValidacionError(
+                'Medio de entrega no valido.',
+                code='factus_entrega_medio',
+            )
+        if resultado not in FacturaElectronicaEntrega.Resultado.values:
+            raise FacturacionValidacionError(
+                'Resultado de entrega no valido.',
+                code='factus_entrega_resultado',
+            )
+        self._registrar_entrega(
+            documento,
+            medio=medio,
+            destino=destino,
+            resultado=resultado,
+            mensaje=mensaje,
+            usuario=usuario,
+            metadata=metadata,
+        )
+        if (
+            medio == FacturaElectronicaEntrega.Medio.EMAIL
+            and resultado == FacturaElectronicaEntrega.Resultado.EXITOSO
+        ):
+            documento.email_last_sent_at = timezone.now()
+            documento.save(update_fields=['email_last_sent_at', 'updated_at'])
+        return documento
 
     @transaction.atomic
     def crear_nota_credito(

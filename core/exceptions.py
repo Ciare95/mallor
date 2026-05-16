@@ -202,6 +202,20 @@ class CategoriaConProductosError(InventarioError):
         )
 
 
+class ImportacionInventarioError(InventarioError):
+    """Excepción cuando falla la validación de importación de Excel."""
+
+    def __init__(self, errors):
+        message = _(
+            'El archivo contiene errores de validacion.'
+        )
+        super().__init__(
+            message=message,
+            code='importacion_inventario_invalida',
+        )
+        self.errors = errors
+
+
 class VentaError(MallorError):
     """
     Excepción base para errores de dominio en el módulo de ventas.

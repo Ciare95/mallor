@@ -224,10 +224,7 @@ export default function ClientesPage() {
 
   return (
     <div className="space-y-6">
-      <section className="surface p-3">
-        <div className="mb-2 text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-          Modulo de clientes
-        </div>
+      <section className="surface p-2.5">
         <div className="grid gap-2.5 sm:grid-cols-3">
           {tabs.map((tab) => {
             const Icon = tab.icon;
@@ -238,26 +235,13 @@ export default function ClientesPage() {
                 key={tab.key}
                 type="button"
                 onClick={() => handleTabChange(tab.key)}
-                className={`tab-card min-h-[68px] px-3 py-2.5 ${active ? 'tab-card-active' : ''}`}
+                className={`module-nav-card min-h-[52px] ${active ? 'module-nav-card-active' : ''}`}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <Icon
-                    className={`h-3.5 w-3.5 ${
-                      active ? 'text-[var(--accent)]' : 'text-soft'
-                    }`}
-                  />
-                  {tab.key === CLIENTES_VISTAS.FORMULARIO ? (
-                    <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-                      {modoFormulario === 'edit' ? 'edicion' : 'alta'}
-                    </span>
-                  ) : (
-                    <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-                      {tab.note}
-                    </span>
-                  )}
-                </div>
-                <div className="mt-2.5 font-display text-[1.15rem] leading-none text-main">
-                  {tab.label}
+                <div className="flex items-center gap-3">
+                  <span className="module-nav-icon">
+                    <Icon className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="module-nav-label">{tab.label}</span>
                 </div>
               </button>
             );

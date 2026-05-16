@@ -138,6 +138,15 @@ export default function IAPage() {
     },
   });
 
+  const clearAllMutation = useMutation({
+    mutationFn: () => limpiarHistorialIA(),
+    onSuccess: () => {
+      setPendingMessages([]);
+      setIaSesionActivaId(newSessionId());
+      queryClient.invalidateQueries({ queryKey: ['ia', 'historial', empresaActivaId] });
+    },
+  });
+
   const messages = useMemo(
     () => toMessages(activeHistoryQuery.data?.results ?? [], pendingMessages),
     [activeHistoryQuery.data, pendingMessages],
@@ -189,11 +198,21 @@ export default function IAPage() {
     setIaSesionActivaId(newSessionId());
   };
 
+  const handleClearHistory = () => {
+    const confirmed = window.confirm(
+      '¿Estás seguro de borrar todo el historial IA? Esta acción no se puede deshacer.',
+    );
+    if (!confirmed) {
+      return;
+    }
+    clearAllMutation.mutate();
+  };
+
   const suggestions = suggestionsQuery.data?.results ?? [];
   const role = empresaActiva?.rol_usuario || 'Sin rol';
 
   return (
-    <div className="grid min-h-[calc(100vh-170px)] gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
+    <div className="grid h-[calc(100vh-170px)] min-h-[calc(100vh-170px)] gap-5 xl:grid-cols-[300px_minmax(0,1fr)]">
       <HistorialIA
         sessions={sessions}
         activeSessionId={iaSesionActivaId}
@@ -203,10 +222,12 @@ export default function IAPage() {
         }}
         onNewSession={handleNewSession}
         onClearSession={() => clearMutation.mutate({ sesionId: iaSesionActivaId })}
-        isClearing={clearMutation.isPending}
+        onClearHistory={handleClearHistory}
+        isClearingSession={clearMutation.isPending}
+        isClearingHistory={clearAllMutation.isPending}
       />
 
-      <section className="surface flex min-h-[620px] flex-col overflow-hidden">
+      <section className="ia-chat-shell surface flex min-h-[620px] flex-col overflow-hidden">
         <div className="border-b border-app px-5 py-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-3">
@@ -242,7 +263,7 @@ export default function IAPage() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto bg-[rgba(255,255,255,0.36)] px-5 py-5">
+        <div className="ia-chat-scroll flex-1 overflow-y-auto px-5 py-5">
           {messages.length ? (
             <div className="space-y-4">
               {messages.map((message) => (
@@ -296,7 +317,7 @@ export default function IAPage() {
               rows={1}
               maxLength={2000}
               className="app-textarea max-h-40 min-h-[48px] resize-none"
-              placeholder="Pregunta por ventas, inventario, cartera o indicadores permitidos..."
+              placeholder="Pregunta por ventas, clientes, proveedores, inventario, cartera o facturacion..."
               disabled={chatMutation.isPending || !empresaActivaId}
             />
             <button

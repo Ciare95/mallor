@@ -127,6 +127,7 @@ const ProductosPage = () => {
           onManageCategories={() => setVistaActual(INVENTARIO_VISTAS.CATEGORIAS)}
           onCreateInvoice={() => setVistaActual(INVENTARIO_VISTAS.FACTURA)}
           onProcessInvoice={() => setVistaActual(INVENTARIO_VISTAS.PROCESAR_FACTURA)}
+          onImportSuccess={() => invalidateInventario()}
           onToast={toast}
         />
       )}

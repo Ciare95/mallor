@@ -95,25 +95,24 @@ const CategoriaManager = ({ onBack, onToast }) => {
 
   return (
     <div className="space-y-6">
-      <section className="surface p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex items-start gap-4">
+      <section className="surface p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
             <button
               type="button"
               onClick={onBack}
-              className="app-button-secondary min-h-11"
+              className="app-button-secondary min-h-10"
               aria-label="Volver al inventario"
             >
               <ArrowLeft className="h-4 w-4" />
               Volver
             </button>
-            <div>
-              <div className="eyebrow">Taxonomia</div>
-              <h1 className="section-title mt-2">Gestion de categorias</h1>
-              <p className="body-copy mt-2">
-                Organiza lineas, familias o marcas sin perder legibilidad en la
-                vista operativa.
-              </p>
+            <div className="space-y-2">
+              <div className="section-chip">Taxonomia</div>
+              <div className="text-sm font-semibold text-main">Gestion de categorias</div>
+              <div className="text-[12px] text-soft">
+                Lineas y familias con lectura operativa compacta.
+              </div>
             </div>
           </div>
           <div className="app-pill">
@@ -124,15 +123,15 @@ const CategoriaManager = ({ onBack, onToast }) => {
 
       <div className="grid gap-6 lg:grid-cols-[0.88fr_1.12fr]">
         <form onSubmit={handleSubmit} className="surface p-5 sm:p-6">
-          <div className="mb-6 flex items-center gap-3">
+          <div className="mb-5 flex items-center gap-3">
             <div className="rounded-lg border border-[var(--accent-line)] bg-[var(--accent-soft)] p-3 text-[var(--accent)]">
               <FolderTree className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="section-title">
+              <div className="text-sm font-semibold text-main">
                 {categoriaEditando ? 'Editar categoria' : 'Nueva categoria'}
-              </h2>
-              <p className="body-copy mt-1">
+              </div>
+              <p className="mt-1 text-[12px] text-soft">
                 Define etiquetas claras para que inventario y compras compartan
                 el mismo lenguaje.
               </p>

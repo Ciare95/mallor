@@ -50,7 +50,10 @@ describe('LoginPage', () => {
     renderWithProviders(<LoginPage />, { route: '/login' });
 
     await user.type(screen.getByLabelText(/usuario/i), 'admin');
-    await user.type(screen.getByLabelText(/contrasena/i), 'Secret123');
+    await user.type(
+      screen.getByLabelText(/contrasena/i, { selector: 'input' }),
+      'Secret123',
+    );
     await user.click(screen.getByRole('checkbox', { name: /recordarme/i }));
     await user.click(screen.getByRole('button', { name: /entrar/i }));
 
@@ -64,6 +67,53 @@ describe('LoginPage', () => {
       );
       expect(useAppStore.getState().token).toBe('access-token');
       expect(localStorage.getItem('token')).toBeNull();
+      expect(mockedNavigate).toHaveBeenCalledWith('/', { replace: true });
     });
+  });
+
+  it('redirige a ventas cuando entra un EMPLEADO', async () => {
+    const user = userEvent.setup();
+    login.mockResolvedValueOnce({
+      access: 'access-token',
+      user: { username: 'empleado' },
+      empresa_activa: 1,
+      empresas: [
+        {
+          id: 1,
+          razon_social: 'Empresa A',
+          rol_usuario: 'EMPLEADO',
+        },
+      ],
+    });
+
+    renderWithProviders(<LoginPage />, { route: '/login' });
+
+    await user.type(screen.getByLabelText(/usuario/i), 'empleado');
+    await user.type(
+      screen.getByLabelText(/contrasena/i, { selector: 'input' }),
+      'Secret123',
+    );
+    await user.click(screen.getByRole('button', { name: /entrar/i }));
+
+    await waitFor(() => {
+      expect(mockedNavigate).toHaveBeenCalledWith('/ventas', { replace: true });
+    });
+  });
+
+  it('permite mostrar y ocultar la contrasena', async () => {
+    const user = userEvent.setup();
+
+    renderWithProviders(<LoginPage />, { route: '/login' });
+
+    const passwordInput = screen.getByLabelText(/contrasena/i, {
+      selector: 'input',
+    });
+    expect(passwordInput).toHaveAttribute('type', 'password');
+
+    await user.click(screen.getByRole('button', { name: /mostrar contrasena/i }));
+    expect(passwordInput).toHaveAttribute('type', 'text');
+
+    await user.click(screen.getByRole('button', { name: /ocultar contrasena/i }));
+    expect(passwordInput).toHaveAttribute('type', 'password');
   });
 });

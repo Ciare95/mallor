@@ -16,6 +16,7 @@ from core.exceptions import (
     FacturacionDocumentoNoEncontradoError,
     FacturacionError,
     ProductoNoEncontradoError,
+    StockInsuficienteError,
     VentaError,
     VentaNoEncontradaError,
 )
@@ -38,7 +39,12 @@ from ventas.serializers import (
 )
 from ventas.facturacion_services import FacturacionElectronicaService
 from ventas.models import FactusNumberingRange
-from ventas.services import AbonoService, VentaReporteService, VentaService
+from ventas.services import (
+    AbonoService,
+    ContadorService,
+    VentaReporteService,
+    VentaService,
+)
 
 
 class VentasPagination(PageNumberPagination):
@@ -100,6 +106,7 @@ class VentaPermission(BaseVentasPermission):
         'factura_pdf': 'ver_factura',
         'factura_xml': 'ver_factura',
         'factura_email': 'crear_factura',
+        'factura_entrega': 'crear_factura',
         'factura_nota_credito': 'anular_factura',
     }
 
@@ -127,6 +134,18 @@ class FacturacionPermission(BaseVentasPermission):
         'validar_conexion': 'validar_conexion_facturacion',
         'sincronizar_rangos': 'sincronizar_rangos_facturacion',
         'rangos': 'ver_configuracion_facturacion',
+    }
+
+
+class ContadorPermission(BaseVentasPermission):
+    action_mapping = {
+        'resumen': 'ver_contador',
+        'riesgos_dian': 'ver_contador',
+        'facturas': 'ver_contador',
+        'impuestos': 'ver_contador',
+        'cartera': 'ver_contador',
+        'inventario_valorizado': 'ver_contador',
+        'soportes': 'ver_contador',
     }
 
 
@@ -175,6 +194,30 @@ def _clean_filter_values(filtros: Dict[str, Any]) -> Dict[str, Any]:
         for key, value in filtros.items()
         if value not in (None, '')
     }
+
+
+def _contador_filtros(request: Request) -> Dict[str, Any]:
+    filtros = {
+        'periodo': request.query_params.get('periodo') or 'mes',
+        'estado': request.query_params.get('estado') or '',
+        'q': request.query_params.get('q') or '',
+    }
+    if request.query_params.get('fecha_inicio'):
+        filtros['fecha_inicio'] = _parse_date_param(
+            request.query_params.get('fecha_inicio'),
+            'fecha_inicio',
+        )
+    if request.query_params.get('fecha_fin'):
+        filtros['fecha_fin'] = _parse_date_param(
+            request.query_params.get('fecha_fin'),
+            'fecha_fin',
+        )
+    if request.query_params.get('cliente_id'):
+        filtros['cliente_id'] = _parse_int_param(
+            request.query_params.get('cliente_id'),
+            'cliente_id',
+        )
+    return _clean_filter_values(filtros)
 
 
 class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
@@ -292,7 +335,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
             )
         except DRFValidationError as exc:
             return _validation_error_response(exc)
-        except VentaError as exc:
+        except (StockInsuficienteError, VentaError) as exc:
             return Response(
                 {'error': _error_message(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -360,7 +403,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
                 {'error': exc.message},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        except VentaError as exc:
+        except (StockInsuficienteError, VentaError) as exc:
             return Response(
                 {'error': _error_message(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -602,7 +645,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
     def factura_pdf(self, request: Request, pk: int = None) -> Response:
         service = FacturacionElectronicaService()
         try:
-            payload = service.descargar_pdf(int(pk))
+            payload = service.descargar_pdf(int(pk), usuario=request.user)
             response = HttpResponse(
                 payload['content'],
                 content_type=payload['content_type'],
@@ -626,7 +669,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
     def factura_xml(self, request: Request, pk: int = None) -> Response:
         service = FacturacionElectronicaService()
         try:
-            payload = service.descargar_xml(int(pk))
+            payload = service.descargar_xml(int(pk), usuario=request.user)
             response = HttpResponse(
                 payload['content'],
                 content_type=payload['content_type'],
@@ -656,6 +699,27 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
             )
             serializer = VentaFacturaElectronicaSerializer(documento)
             return Response(serializer.data)
+        except FacturacionError as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=True, methods=['post'], url_path='factura/entrega')
+    def factura_entrega(self, request: Request, pk: int = None) -> Response:
+        service = FacturacionElectronicaService()
+        try:
+            documento = service.registrar_entrega(
+                int(pk),
+                medio=request.data.get('medio', ''),
+                destino=request.data.get('destino', ''),
+                resultado=request.data.get('resultado', 'EXITOSO'),
+                mensaje=request.data.get('mensaje', ''),
+                usuario=request.user,
+                metadata=request.data.get('metadata') or {},
+            )
+            serializer = VentaFacturaElectronicaSerializer(documento)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
         except FacturacionError as exc:
             return Response(
                 {'error': _error_message(exc)},
@@ -1033,3 +1097,72 @@ class FacturacionViewSet(RolePermissionMixin, viewsets.ViewSet):
         )
         serializer = FactusNumberingRangeSerializer(queryset, many=True)
         return Response(serializer.data)
+
+
+class ContadorViewSet(RolePermissionMixin, viewsets.ViewSet):
+    required_roles = None
+    permission_classes = [ContadorPermission]
+
+    @action(detail=False, methods=['get'], url_path='resumen')
+    def resumen(self, request: Request) -> Response:
+        try:
+            return Response(ContadorService.resumen(_contador_filtros(request)))
+        except (VentaError, ValueError) as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=False, methods=['get'], url_path='riesgos-dian')
+    def riesgos_dian(self, request: Request) -> Response:
+        try:
+            return Response(ContadorService.riesgos_dian(_contador_filtros(request)))
+        except (VentaError, ValueError) as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=False, methods=['get'], url_path='facturas')
+    def facturas(self, request: Request) -> Response:
+        try:
+            return Response(ContadorService.facturas(_contador_filtros(request)))
+        except (VentaError, ValueError) as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=False, methods=['get'], url_path='impuestos')
+    def impuestos(self, request: Request) -> Response:
+        try:
+            return Response(ContadorService.impuestos(_contador_filtros(request)))
+        except (VentaError, ValueError) as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=False, methods=['get'], url_path='cartera')
+    def cartera(self, request: Request) -> Response:
+        try:
+            return Response(ContadorService.cartera(_contador_filtros(request)))
+        except (VentaError, ValueError) as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    @action(detail=False, methods=['get'], url_path='inventario-valorizado')
+    def inventario_valorizado(self, request: Request) -> Response:
+        return Response(ContadorService.inventario_valorizado())
+
+    @action(detail=False, methods=['get'], url_path='soportes')
+    def soportes(self, request: Request) -> Response:
+        try:
+            return Response(ContadorService.soportes(_contador_filtros(request)))
+        except (VentaError, ValueError) as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )

@@ -61,7 +61,7 @@ const ProductoDetail = ({
 
   return (
     <div className="space-y-6">
-      <section className="surface p-5 sm:p-6">
+      <section className="surface p-4 sm:p-5">
         <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
           <div className="overflow-hidden rounded-xl border border-app bg-[var(--panel-soft)]">
             {producto.imagen ? (
@@ -78,12 +78,12 @@ const ProductoDetail = ({
             )}
           </div>
 
-          <div className="flex flex-col justify-between gap-6">
+          <div className="flex flex-col justify-between gap-5">
             <div>
               <button
                 type="button"
                 onClick={onBack}
-                className="app-button-secondary mb-5 min-h-11"
+                className="app-button-secondary mb-4 min-h-10"
               >
                 <ArrowLeft className="h-4 w-4" />
                 Volver al inventario
@@ -100,15 +100,15 @@ const ProductoDetail = ({
                 )}
               </div>
 
-              <h1 className="section-title mt-4 max-w-4xl text-[2.5rem] md:text-[3.4rem]">
+              <h1 className="font-display text-[2rem] leading-[0.96] text-main md:text-[2.6rem] mt-3 max-w-4xl">
                 {producto.nombre}
               </h1>
-              <p className="body-copy mt-3 max-w-3xl">
+              <p className="mt-2 max-w-3xl text-[12px] leading-6 text-soft">
                 {producto.descripcion || 'Sin descripcion registrada.'}
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-2.5 sm:grid-cols-3">
               <div className="rounded-xl border border-app bg-white/72 p-4">
                 <p className="eyebrow">Existencias</p>
                 <p className="mt-2 font-display text-[2rem] leading-none text-main">
@@ -198,8 +198,8 @@ const ProductoDetail = ({
 
       <section className="grid gap-6 lg:grid-cols-[0.88fr_1.12fr]">
         <div className="surface p-5 sm:p-6">
-          <h2 className="section-title">Ficha tecnica</h2>
-          <dl className="mt-5 space-y-4 text-sm">
+          <div className="text-sm font-semibold text-main">Ficha tecnica</div>
+          <dl className="mt-4 space-y-4 text-sm">
             <Row label="Marca" value={producto.marca || 'Sin marca'} />
             <Row label="INVIMA" value={producto.invima || 'No aplica'} />
             <Row
@@ -219,9 +219,9 @@ const ProductoDetail = ({
         </div>
 
         <div className="surface p-5 sm:p-6">
-          <div className="mb-5">
-            <h2 className="section-title">Historial de movimientos</h2>
-            <p className="body-copy mt-1">
+          <div className="mb-4">
+            <div className="text-sm font-semibold text-main">Historial de movimientos</div>
+            <p className="mt-1 text-[12px] text-soft">
               Ultimos movimientos registrados para este producto.
             </p>
           </div>

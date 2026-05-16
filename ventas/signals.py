@@ -71,16 +71,26 @@ def actualizar_stock_y_venta_al_guardar_detalle(
     Actualiza el stock del producto y recalcula la venta.
     """
     detalle_anterior = getattr(instance, '_stock_snapshot', None)
+    allow_negative = instance.venta.permite_stock_negativo_ventas()
 
     if created or detalle_anterior is None:
-        instance.producto.actualizar_stock(-instance.cantidad)
+        instance.producto.actualizar_stock(
+            -instance.cantidad,
+            allow_negative=allow_negative,
+        )
     elif detalle_anterior.producto_id == instance.producto_id:
         diferencia = instance.cantidad - detalle_anterior.cantidad
         if diferencia:
-            instance.producto.actualizar_stock(-diferencia)
+            instance.producto.actualizar_stock(
+                -diferencia,
+                allow_negative=allow_negative,
+            )
     else:
         detalle_anterior.producto.actualizar_stock(detalle_anterior.cantidad)
-        instance.producto.actualizar_stock(-instance.cantidad)
+        instance.producto.actualizar_stock(
+            -instance.cantidad,
+            allow_negative=allow_negative,
+        )
 
     _recalcular_totales_venta(instance.venta_id)
 

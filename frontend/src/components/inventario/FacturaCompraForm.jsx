@@ -125,24 +125,23 @@ const FacturaCompraForm = ({ onSubmit, onCancel, isLoading, error }) => {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <section className="surface p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex items-start gap-4">
+      <section className="surface p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
             <button
               type="button"
               onClick={onCancel}
-              className="app-button-secondary min-h-11"
+              className="app-button-secondary min-h-10"
             >
               <ArrowLeft className="h-4 w-4" />
               Volver
             </button>
-            <div>
-              <div className="eyebrow">Compras</div>
-              <h1 className="section-title mt-2">Registrar factura de compra</h1>
-              <p className="body-copy mt-2">
-                Carga encabezado y detalle con una lectura clara del costo antes
-                de registrar la entrada.
-              </p>
+            <div className="space-y-2">
+              <div className="section-chip">Compras</div>
+              <div className="text-sm font-semibold text-main">Registrar factura de compra</div>
+              <div className="text-[12px] text-soft">
+                Encabezado y detalle con lectura compacta del costo.
+              </div>
             </div>
           </div>
           <div className="rounded-lg border border-[var(--accent-line)] bg-[var(--accent-soft)] p-3 text-[var(--accent)]">
@@ -275,10 +274,10 @@ const FacturaCompraForm = ({ onSubmit, onCancel, isLoading, error }) => {
       </section>
 
       <section className="surface overflow-hidden">
-        <div className="border-b border-app p-5">
+        <div className="border-b border-app p-4 sm:p-5">
           <div>
-            <h2 className="section-title">Productos de la factura</h2>
-            <p className="body-copy mt-1">
+            <div className="text-sm font-semibold text-main">Productos de la factura</div>
+            <p className="mt-1 text-[12px] text-soft">
               El transporte se calcula al final como porcentaje global de la factura.
             </p>
           </div>

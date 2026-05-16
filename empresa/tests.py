@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from cliente.models import Cliente
-from empresa.models import Empresa, EmpresaUsuario
+from empresa.models import Empresa, EmpresaConfiguracion, EmpresaUsuario
 from inventario.models import Producto
 from usuario.models import Usuario
 from ventas.models import FactusCredential, Venta, VentaFacturaElectronica
@@ -185,6 +185,95 @@ class EmpresaApiTest(TestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_lista_empresas_expone_configuracion_operativa_por_defecto(self):
+        response = self.client.get('/api/empresas/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        empresa = response.data['results'][0]
+        self.assertEqual(
+            empresa['configuracion_operativa']['tema'],
+            EmpresaConfiguracion.Tema.LIGHT,
+        )
+        self.assertFalse(
+            empresa['configuracion_operativa'][
+                'permitir_stock_negativo_ventas'
+            ],
+        )
+        self.assertEqual(
+            empresa['configuracion_operativa']['atajos_ventas'],
+            EmpresaConfiguracion.get_default_atajos_ventas(),
+        )
+
+    def test_admin_puede_consultar_y_actualizar_configuracion_operativa(self):
+        response = self.client.get(
+            f'/api/empresas/{self.empresa_principal.id}/configuracion/',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data['atajos_ventas'],
+            EmpresaConfiguracion.get_default_atajos_ventas(),
+        )
+
+        patch_response = self.client.patch(
+            f'/api/empresas/{self.empresa_principal.id}/configuracion/',
+            {
+                'tema': EmpresaConfiguracion.Tema.DARK,
+                'permitir_stock_negativo_ventas': True,
+                'atajos_ventas_activos': True,
+                'atajos_ventas': {
+                    'registrar_venta': 'ctrl+shift+r',
+                    'configurar_cobro': 'Ctrl+Alt+P',
+                    'nueva_precuenta': 'Ctrl+Shift+N',
+                    'quitar_ultimo_producto': 'Supr',
+                },
+            },
+            format='json',
+        )
+
+        self.assertEqual(patch_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            patch_response.data['tema'],
+            EmpresaConfiguracion.Tema.DARK,
+        )
+        self.assertTrue(patch_response.data['permitir_stock_negativo_ventas'])
+        self.assertEqual(
+            patch_response.data['atajos_ventas'],
+            {
+                'registrar_venta': 'Ctrl+Shift+R',
+                'configurar_cobro': 'Ctrl+Alt+P',
+                'nueva_precuenta': 'Ctrl+Shift+N',
+                'quitar_ultimo_producto': 'Delete',
+            },
+        )
+
+    def test_empleado_no_puede_ver_ni_editar_configuracion_operativa(self):
+        empleado = Usuario.objects.create_user(
+            username='empleado_config',
+            email='empleado_config@mallor.test',
+            password='Secret123',
+            role=Usuario.Rol.EMPLEADO,
+        )
+        EmpresaUsuario.objects.create(
+            empresa=self.empresa_principal,
+            usuario=empleado,
+            rol=EmpresaUsuario.Rol.EMPLEADO,
+            activo=True,
+        )
+        self.client.login(username=empleado.username, password='Secret123')
+
+        get_response = self.client.get(
+            f'/api/empresas/{self.empresa_principal.id}/configuracion/',
+        )
+        patch_response = self.client.patch(
+            f'/api/empresas/{self.empresa_principal.id}/configuracion/',
+            {'tema': EmpresaConfiguracion.Tema.DARK},
+            format='json',
+        )
+
+        self.assertEqual(get_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(patch_response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class AislamientoMultitenantApiTest(TestCase):

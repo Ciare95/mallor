@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
-from core.exceptions import FacturacionValidacionError
+from core.exceptions import FacturacionOperacionError, FacturacionValidacionError
 from ventas.models import Venta, VentaFacturaElectronica
 
 
@@ -53,7 +53,10 @@ def build_reference_code(venta: Venta) -> str:
     documento = getattr(venta, 'factura_documento', None)
     if documento and documento.reference_code:
         return documento.reference_code
-    return f'VENTA-{venta.id}'
+    empresa_id = venta.empresa_id or 0
+    created_at = venta.created_at or venta.fecha_venta or timezone.now()
+    timestamp = timezone.localtime(created_at).strftime('%Y%m%d%H%M%S')
+    return f'MLR-E{empresa_id}-V{venta.id}-{timestamp}'
 
 
 def _validate_cliente(venta: Venta) -> None:
@@ -62,6 +65,18 @@ def _validate_cliente(venta: Venta) -> None:
         raise FacturacionValidacionError(
             'La venta no tiene cliente asociado.',
             code='factus_cliente_requerido',
+        )
+
+    if not cliente.numero_documento:
+        raise FacturacionValidacionError(
+            'El adquirente debe tener numero de documento para facturar.',
+            code='factus_cliente_documento',
+        )
+
+    if not cliente.get_nombre_completo():
+        raise FacturacionValidacionError(
+            'El adquirente debe tener nombre o razon social para facturar.',
+            code='factus_cliente_nombre',
         )
 
     if not cliente.municipio_codigo:
@@ -81,6 +96,58 @@ def _validate_cliente(venta: Venta) -> None:
             'El cliente debe tener telefono para facturar.',
             code='factus_cliente_telefono',
         )
+
+
+def _validate_empresa(venta: Venta) -> None:
+    empresa = venta.empresa
+    if empresa is None:
+        raise FacturacionValidacionError(
+            'La venta no tiene empresa facturadora asociada.',
+            code='factus_empresa_requerida',
+        )
+
+    required_fields = {
+        'nit': 'NIT del vendedor',
+        'razon_social': 'razon social del vendedor',
+        'direccion': 'direccion fiscal del vendedor',
+        'municipio_codigo': 'codigo de municipio del vendedor',
+    }
+    for field, label in required_fields.items():
+        if not getattr(empresa, field):
+            raise FacturacionValidacionError(
+                f'Falta {label} para cumplir requisitos minimos de factura.',
+                code=f'factus_empresa_{field}',
+            )
+
+
+def _validate_detalles_articulo_617(venta: Venta) -> None:
+    for detalle in venta.detalles.select_related('producto').all():
+        producto = detalle.producto
+        if not producto.nombre:
+            raise FacturacionValidacionError(
+                'Cada item debe tener descripcion para facturar.',
+                code='factus_item_descripcion',
+            )
+        if not producto.unidad_medida_codigo:
+            raise FacturacionValidacionError(
+                'Cada item debe tener unidad de medida DIAN/Factus.',
+                code='factus_item_unidad_medida',
+            )
+        if not producto.estandar_codigo:
+            raise FacturacionValidacionError(
+                'Cada item debe tener codigo estandar DIAN/Factus.',
+                code='factus_item_estandar',
+            )
+        if detalle.precio_unitario <= Decimal('0.00'):
+            raise FacturacionValidacionError(
+                'Cada item debe tener valor unitario mayor que cero.',
+                code='factus_item_valor_unitario',
+            )
+        if producto.iva is None:
+            raise FacturacionValidacionError(
+                'Cada item debe tener IVA definido, incluso si es 0%.',
+                code='factus_item_iva',
+            )
 
 
 def validar_venta_facturable(venta: Venta) -> None:
@@ -114,7 +181,9 @@ def validar_venta_facturable(venta: Venta) -> None:
             code='factus_venta_sin_detalles',
         )
 
+    _validate_empresa(venta)
     _validate_cliente(venta)
+    _validate_detalles_articulo_617(venta)
 
 
 def build_factus_bill_payload(
@@ -236,6 +305,48 @@ def extract_bill_result(payload: Dict[str, Any]) -> Dict[str, Any]:
         ),
         'raw': payload,
     }
+
+
+def validate_bill_response(
+    request_payload: Dict[str, Any],
+    response_payload: Dict[str, Any],
+) -> None:
+    data = _first_data(response_payload)
+    if isinstance(data, list):
+        data = data[0] if data else {}
+    data = data or {}
+
+    request_customer = request_payload.get('customer') or {}
+    response_customer = data.get('customer') or {}
+    request_identification = str(
+        request_customer.get('identification') or '',
+    ).strip()
+    response_identification = str(
+        response_customer.get('identification') or '',
+    ).strip()
+
+    request_total = str(
+        ((request_payload.get('payment_details') or [{}])[0]).get('amount') or '',
+    ).strip()
+    response_total = str(
+        ((data.get('totals') or {}).get('total')) or '',
+    ).strip()
+
+    if (
+        request_identification
+        and response_identification
+        and request_identification != response_identification
+    ):
+        raise FacturacionOperacionError(
+            'Factus devolvio una factura con un cliente distinto al enviado.',
+            code='factus_respuesta_inconsistente',
+        )
+
+    if request_total and response_total and request_total != response_total:
+        raise FacturacionOperacionError(
+            'Factus devolvio una factura con total distinto al enviado.',
+            code='factus_respuesta_inconsistente',
+        )
 
 
 def build_credit_note_payload(

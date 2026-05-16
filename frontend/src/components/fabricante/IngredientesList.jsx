@@ -44,21 +44,20 @@ export default function IngredientesList({
 
   return (
     <section className="surface overflow-hidden">
-      <div className="border-b border-app p-5 sm:p-6">
+      <div className="border-b border-app p-4 sm:p-5">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div>
-            <div className="eyebrow">Catalogo de materias primas</div>
-            <h2 className="section-title mt-2">Ingredientes</h2>
-            <p className="body-copy mt-2 max-w-2xl">
-              Consulta costos, proveedor, niveles actuales y capacidad de
-              reposicion desde una sola vista operativa.
+          <div className="space-y-2">
+            <div className="section-chip">Catalogo de materias primas</div>
+            <div className="text-sm font-semibold text-main">Ingredientes</div>
+            <p className="max-w-2xl text-[12px] text-soft">
+              Costos, proveedor y reposicion en una sola vista operativa.
             </p>
           </div>
 
           <button
             type="button"
             onClick={onCreate}
-            className="app-button-primary min-h-11"
+            className="app-button-primary min-h-10"
           >
             <PackagePlus className="h-4 w-4" />
             Nuevo ingrediente

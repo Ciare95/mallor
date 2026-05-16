@@ -3,6 +3,15 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 
+def get_default_atajos_ventas():
+    return {
+        'registrar_venta': 'Ctrl+V',
+        'configurar_cobro': 'Ctrl+C',
+        'nueva_precuenta': 'Ctrl+N',
+        'quitar_ultimo_producto': 'Delete',
+    }
+
+
 class Empresa(models.Model):
     """
     Raiz fiscal y operativa de un tenant en Mallor.
@@ -28,6 +37,12 @@ class Empresa(models.Model):
         _('nombre comercial'),
         max_length=200,
         blank=True,
+    )
+    logo = models.ImageField(
+        _('logo'),
+        upload_to='empresas/',
+        blank=True,
+        null=True,
     )
     email = models.EmailField(_('correo electronico'), blank=True)
     telefono = models.CharField(_('telefono'), max_length=30, blank=True)
@@ -74,6 +89,85 @@ class Empresa(models.Model):
         return empresa
 
 
+class EmpresaConfiguracion(models.Model):
+    """
+    Preferencias operativas por empresa para tema y POS.
+    """
+
+    class Tema(models.TextChoices):
+        LIGHT = 'LIGHT', _('Claro')
+        DARK = 'DARK', _('Oscuro')
+
+    class TicketPaperWidth(models.TextChoices):
+        MM58 = '58', _('58 mm')
+        MM80 = '80', _('80 mm')
+
+    ATAJOS_VENTAS_KEYS = (
+        'registrar_venta',
+        'configurar_cobro',
+        'nueva_precuenta',
+        'quitar_ultimo_producto',
+    )
+
+    empresa = models.OneToOneField(
+        Empresa,
+        on_delete=models.CASCADE,
+        related_name='configuracion_operativa',
+        verbose_name=_('empresa'),
+    )
+    tema = models.CharField(
+        _('tema'),
+        max_length=10,
+        choices=Tema.choices,
+        default=Tema.LIGHT,
+    )
+    permitir_stock_negativo_ventas = models.BooleanField(
+        _('permitir stock negativo en ventas'),
+        default=False,
+    )
+    atajos_ventas_activos = models.BooleanField(
+        _('atajos de ventas activos'),
+        default=True,
+    )
+    atajos_ventas = models.JSONField(
+        _('atajos de ventas'),
+        default=get_default_atajos_ventas,
+    )
+    ticket_paper_width = models.CharField(
+        _('ancho de papel para tirilla'),
+        max_length=2,
+        choices=TicketPaperWidth.choices,
+        default=TicketPaperWidth.MM80,
+    )
+    ticket_show_logo = models.BooleanField(
+        _('mostrar logo en tirilla'),
+        default=True,
+    )
+    ticket_copies = models.PositiveSmallIntegerField(
+        _('copias de tirilla'),
+        default=1,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'empresas_configuracion'
+        verbose_name = _('configuracion de empresa')
+        verbose_name_plural = _('configuraciones de empresa')
+
+    def __str__(self):
+        return f'Configuracion {self.empresa}'
+
+    @classmethod
+    def get_default_atajos_ventas(cls):
+        return get_default_atajos_ventas().copy()
+
+    @classmethod
+    def get_or_create_for_empresa(cls, empresa):
+        config, _ = cls.objects.get_or_create(empresa=empresa)
+        return config
+
+
 class EmpresaUsuario(models.Model):
     """
     Membresia y rol operativo de un usuario dentro de una empresa.
@@ -82,6 +176,7 @@ class EmpresaUsuario(models.Model):
     class Rol(models.TextChoices):
         PROPIETARIO = 'PROPIETARIO', _('Propietario')
         ADMIN = 'ADMIN', _('Administrador')
+        CONTADOR = 'CONTADOR', _('Contador')
         EMPLEADO = 'EMPLEADO', _('Empleado')
 
     empresa = models.ForeignKey(

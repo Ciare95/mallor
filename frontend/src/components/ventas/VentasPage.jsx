@@ -1,7 +1,8 @@
 import { startTransition, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { BarChart3, CreditCard, ListOrdered, Wallet } from 'lucide-react';
+import { BarChart3, CreditCard, ListOrdered, Plus, Wallet } from 'lucide-react';
 import useToast from '../../hooks/useToast';
+import { useVentasKeyboardShortcuts } from '../../hooks/useVentasKeyboardShortcuts';
 import {
   crearNotaCreditoVenta,
   descargarFacturaVentaPdf,
@@ -24,11 +25,16 @@ import {
   VENTA_DETALLE_TABS,
   useVentasStore,
 } from '../../store/useVentasStore';
-import { useAppStore } from '../../store/useStore';
 import {
+  persistLastTicketPreferences,
+  resolveTicketPreferences,
+  useAppStore,
+} from '../../store/useStore';
+import {
+  calculateVentaTotals,
   buildVentaPayload,
-  printVentaTicket,
 } from '../../utils/ventas';
+import { ThermalTicketPreviewModal } from './ThermalTicket';
 import CuentasPorCobrar from './CuentasPorCobrar';
 import ReportesVentas from './ReportesVentas';
 import VentaDetail from './VentaDetail';
@@ -49,6 +55,11 @@ export default function VentasPage() {
     detalleTab,
     cargarVentaEnDraft,
     resetDraft,
+    precuentas,
+    precuentaActivaId,
+    agregarPrecuenta,
+    setPrecuentaActiva,
+    cerrarPrecuenta,
     setDraftField,
     addProductoAlDraft,
     actualizarItemDraft,
@@ -57,14 +68,81 @@ export default function VentasPage() {
     registrarClienteTemporal,
   } = useVentasStore();
   const [abonoError, setAbonoError] = useState(null);
+  const [ticketPreviewState, setTicketPreviewState] = useState({
+    open: false,
+    venta: null,
+    draft: null,
+    settings: resolveTicketPreferences(),
+  });
   const [posFocusSignal, setPosFocusSignal] = useState(0);
+  const [cobroShortcutSignal, setCobroShortcutSignal] = useState(0);
+  const [submitShortcutSignal, setSubmitShortcutSignal] = useState(0);
   const empresaActiva = useAppStore((state) => state.empresaActiva);
+  const configuracionOperativa = useAppStore(
+    (state) => state.configuracionOperativa,
+  );
+  const user = useAppStore((state) => state.user);
+
+  useVentasKeyboardShortcuts({
+    enabled:
+      vistaActual === VENTAS_VISTAS.POS
+      && configuracionOperativa.atajos_ventas_activos,
+    shortcuts: configuracionOperativa.atajos_ventas,
+    onRegistrarVenta: () => setSubmitShortcutSignal((current) => current + 1),
+    onConfigurarCobro: () => setCobroShortcutSignal((current) => current + 1),
+    onNuevaPrecuenta: agregarPrecuenta,
+    onQuitarUltimoProducto: () => {
+      const lastItem = draft.items[draft.items.length - 1];
+      if (lastItem) {
+        eliminarItemDraft(lastItem.id);
+      }
+    },
+  });
 
   const invalidateVentas = () => {
     queryClient.invalidateQueries({ queryKey: ['ventas'] });
     queryClient.invalidateQueries({ queryKey: ['abonos'] });
     queryClient.invalidateQueries({ queryKey: ['inventario'] });
     queryClient.invalidateQueries({ queryKey: ['facturacion'] });
+  };
+
+  const getPreferredTicketSettings = () =>
+    resolveTicketPreferences({
+      empresaId: empresaActiva?.id || empresaActiva?.empresa_id,
+      userId: user?.id,
+      config: configuracionOperativa,
+    });
+
+  const rememberTicketSettings = (settings) => {
+    persistLastTicketPreferences(
+      empresaActiva?.id || empresaActiva?.empresa_id,
+      user?.id,
+      settings,
+    );
+  };
+
+  const buildDraftTicketSettings = (draftSource) =>
+    resolveTicketPreferences({
+      empresaId: empresaActiva?.id || empresaActiva?.empresa_id,
+      userId: user?.id,
+      config: configuracionOperativa,
+      fallback: {
+        paperWidth: draftSource?.ticketPaperWidth,
+        showLogo: draftSource?.ticketShowLogo,
+        copies: draftSource?.ticketCopies,
+      },
+    });
+
+  const openTicketPreview = ({ venta = null, draft: previewDraft = null, settings }) => {
+    setTicketPreviewState({
+      open: true,
+      venta,
+      draft: previewDraft,
+      settings:
+        settings
+        || buildDraftTicketSettings(previewDraft || draft)
+        || getPreferredTicketSettings(),
+    });
   };
 
   const refreshVentaDetail = async (ventaId, tab = detalleTab) => {
@@ -77,13 +155,17 @@ export default function VentasPage() {
 
   const crearVentaMutation = useMutation({
     mutationFn: crearVentaCompleta,
-    onSuccess: (venta) => {
+    onSuccess: (venta, variables) => {
       invalidateVentas();
       toast.success(`Venta ${venta.numero_venta} registrada`);
       if (draft.imprimirTicket) {
-        printVentaTicket(venta, empresaActiva);
+        openTicketPreview({
+          venta,
+          draft: variables,
+          settings: buildDraftTicketSettings(variables),
+        });
       }
-      resetDraft();
+      cerrarPrecuenta(variables.precuentaId);
       setVentaSeleccionada(null);
       setPosFocusSignal((current) => current + 1);
       startTransition(() => {
@@ -375,12 +457,9 @@ export default function VentasPage() {
   ];
 
   return (
-    <div className="space-y-6">
-      <section className="surface p-3">
-        <div className="mb-2 text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-          Modulo de ventas
-        </div>
-        <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="space-y-4">
+      <section className="surface p-2">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const active = vistaActual === tab.key;
@@ -389,20 +468,15 @@ export default function VentasPage() {
                 key={tab.key}
                 type="button"
                 onClick={() => setVistaActual(tab.key)}
-                className={`tab-card min-h-[68px] px-3 py-2.5 ${active ? 'tab-card-active' : ''}`}
+                className={`module-nav-card min-h-[52px] ${active ? 'module-nav-card-active' : ''}`}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <Icon
-                    className={`h-3.5 w-3.5 ${
-                      active ? 'text-[var(--accent)]' : 'text-soft'
-                    }`}
-                  />
-                  <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-                    {tab.note}
+                <div className="flex items-center gap-3">
+                  <span className="module-nav-icon">
+                    <Icon className="h-3.5 w-3.5" />
                   </span>
-                </div>
-                <div className="mt-2.5 font-display text-[1.15rem] leading-none text-main">
-                  {tab.label}
+                  <span className="module-nav-label">
+                    {tab.label}
+                  </span>
                 </div>
               </button>
             );
@@ -411,35 +485,50 @@ export default function VentasPage() {
       </section>
 
       {vistaActual === VENTAS_VISTAS.POS && (
-        <VentaForm
-          draft={draft}
-          localClients={clientesTemporales}
-          isLoading={
-            crearVentaMutation.isPending || actualizarVentaMutation.isPending
-          }
-          error={
-            crearVentaMutation.isError
-              ? extractApiError(
-                  crearVentaMutation.error,
-                  'No fue posible registrar la venta',
-                )
-              : actualizarVentaMutation.isError
+        <>
+          <PrecuentasBar
+            precuentas={precuentas}
+            activeId={precuentaActivaId}
+            onSelect={setPrecuentaActiva}
+            onAdd={agregarPrecuenta}
+          />
+          <VentaForm
+            draft={draft}
+            localClients={clientesTemporales}
+            isLoading={
+              crearVentaMutation.isPending || actualizarVentaMutation.isPending
+            }
+            error={
+              crearVentaMutation.isError
                 ? extractApiError(
-                    actualizarVentaMutation.error,
-                    'No fue posible actualizar la venta',
+                    crearVentaMutation.error,
+                    'No fue posible registrar la venta',
                   )
-                : null
-          }
-          onChangeField={setDraftField}
-          onAddProduct={addProductoAlDraft}
-          onUpdateItem={actualizarItemDraft}
-          onRemoveItem={eliminarItemDraft}
-          onSelectClient={setClienteSeleccionado}
-          onCreateQuickClient={registrarClienteTemporal}
-          onReset={handleOpenPos}
-          onSubmit={handleSubmitVenta}
-          focusSignal={posFocusSignal}
-        />
+                : actualizarVentaMutation.isError
+                  ? extractApiError(
+                      actualizarVentaMutation.error,
+                      'No fue posible actualizar la venta',
+                    )
+                  : null
+            }
+            onChangeField={setDraftField}
+            onAddProduct={addProductoAlDraft}
+            onUpdateItem={actualizarItemDraft}
+            onRemoveItem={eliminarItemDraft}
+            onSelectClient={setClienteSeleccionado}
+            onCreateQuickClient={registrarClienteTemporal}
+            onReset={handleOpenPos}
+            onSubmit={(payload) =>
+              handleSubmitVenta({
+                ...payload,
+                precuentaId: precuentaActivaId,
+              })
+            }
+            focusSignal={posFocusSignal}
+            openCobroSignal={cobroShortcutSignal}
+            submitSignal={submitShortcutSignal}
+          />
+        </>
       )}
 
       {vistaActual === VENTAS_VISTAS.LISTA && (
@@ -468,6 +557,12 @@ export default function VentasPage() {
           onDescargarFacturaXml={handleDescargarFacturaXml}
           onEnviarFacturaEmail={handleEnviarFacturaEmail}
           onCrearNotaCredito={handleCrearNotaCredito}
+          onOpenTicketPreview={(venta) =>
+            openTicketPreview({
+              venta,
+              settings: getPreferredTicketSettings(),
+            })
+          }
           abonoSubmitting={registrarAbonoMutation.isPending}
           abonoError={abonoError}
         />
@@ -487,6 +582,80 @@ export default function VentasPage() {
       {vistaActual === VENTAS_VISTAS.REPORTES && <ReportesVentas />}
 
       <ToastContainer toasts={toasts} onClose={closeToast} />
+
+      <ThermalTicketPreviewModal
+        open={ticketPreviewState.open}
+        onClose={() =>
+          setTicketPreviewState((current) => ({
+            ...current,
+            open: false,
+          }))
+        }
+        venta={ticketPreviewState.venta}
+        draft={ticketPreviewState.draft}
+        empresa={empresaActiva}
+        initialSettings={ticketPreviewState.settings}
+        onSettingsChange={(nextSettings) =>
+          setTicketPreviewState((current) => ({
+            ...current,
+            settings: nextSettings,
+          }))
+        }
+        onPrint={(nextSettings) => {
+          rememberTicketSettings(nextSettings);
+          setTicketPreviewState((current) => ({
+            ...current,
+            settings: nextSettings,
+          }));
+        }}
+      />
     </div>
+  );
+}
+
+function PrecuentasBar({ precuentas = [], activeId, onSelect, onAdd }) {
+  return (
+    <section className="surface px-3 py-2">
+      <div className="flex items-center gap-2 overflow-x-auto">
+        {precuentas.map((precuenta) => {
+          const active = precuenta.id === activeId;
+          const total = calculateVentaTotals(precuenta.draft).total;
+          const itemCount = precuenta.draft.items.length;
+
+          return (
+            <button
+              key={precuenta.id}
+              type="button"
+              onClick={() => onSelect(precuenta.id)}
+              className={`flex min-h-10 min-w-[148px] items-center justify-between gap-3 rounded-md border px-3 py-2 text-left transition ${
+                active
+                  ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-main'
+                  : 'border-app bg-white/72 text-soft hover:bg-white hover:text-main'
+              }`}
+            >
+              <span>
+                <span className="block text-[12px] font-semibold">
+                  {precuenta.label}
+                </span>
+                <span className="mt-0.5 block text-[10px] text-muted">
+                  {itemCount} lineas
+                </span>
+              </span>
+              <span className="text-[11px] font-semibold">
+                ${Math.round(total).toLocaleString('es-CO')}
+              </span>
+            </button>
+          );
+        })}
+        <button
+          type="button"
+          onClick={onAdd}
+          className="flex min-h-10 shrink-0 items-center gap-2 rounded-md border border-app bg-white/72 px-3 py-2 text-[12px] font-semibold text-main transition hover:border-[var(--accent-line)] hover:bg-white"
+        >
+          <Plus className="h-4 w-4" />
+          Nueva precuenta
+        </button>
+      </div>
+    </section>
   );
 }

@@ -24,6 +24,7 @@ Ejemplos de estilo esperados:
 - Si el resultado es cartera agregada: "Tu cartera por cobrar es $28,019.98 distribuida en 4 ventas. Toda esta entre 1 y 30 dias."
 - Si el resultado es clientes con saldo pendiente: "Estos son los clientes con saldo pendiente: Cliente A debe $12,000 en 2 ventas; Cliente B debe $8,500 en 1 venta."
 - Si el usuario pide nombres de clientes que deben, prioriza listar nombres y montos, no un resumen agregado.
+- Si `periodo_consultado` es `todo`, di "en todo el tiempo registrado" o equivalente, no "este mes".
 """
 
 

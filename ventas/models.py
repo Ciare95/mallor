@@ -1,9 +1,12 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Sum
 from django.utils.translation import gettext_lazy as _
+
+from empresa.services import EmpresaService
 
 
 class Venta(models.Model):
@@ -300,6 +303,14 @@ class Venta(models.Model):
             not self.numero_factura_electronica,
         ])
 
+    def permite_stock_negativo_ventas(self):
+        empresa = self.empresa
+        if empresa is None:
+            from empresa.context import get_empresa_actual_or_default
+
+            empresa = get_empresa_actual_or_default()
+        return EmpresaService.permite_stock_negativo_ventas(empresa)
+
     def preparar_para_guardado(self):
         """
         Aplica reglas previas al guardado del modelo.
@@ -529,6 +540,7 @@ class DetalleVenta(models.Model):
 
         if (
             cantidad_requerida > 0
+            and not self.venta.permite_stock_negativo_ventas()
             and not self.producto.validar_stock(cantidad_requerida)
         ):
             raise ValidationError({
@@ -971,6 +983,132 @@ class VentaFacturaElectronica(models.Model):
                 'updated_at',
             ],
         )
+
+
+class FacturaElectronicaEntrega(models.Model):
+    """
+    Evidencia de entrega de la factura al adquirente.
+    """
+
+    class Medio(models.TextChoices):
+        EMAIL = 'EMAIL', _('Email')
+        DESCARGA = 'DESCARGA', _('Descarga')
+        IMPRESION = 'IMPRESION', _('Impresion')
+        OTRO = 'OTRO', _('Otro')
+        SIN_MEDIO = 'SIN_MEDIO', _('Sin medio')
+
+    class Resultado(models.TextChoices):
+        EXITOSO = 'EXITOSO', _('Exitoso')
+        FALLIDO = 'FALLIDO', _('Fallido')
+        PENDIENTE = 'PENDIENTE', _('Pendiente')
+
+    factura = models.ForeignKey(
+        VentaFacturaElectronica,
+        on_delete=models.CASCADE,
+        related_name='entregas',
+    )
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='factura_entregas',
+        verbose_name=_('empresa'),
+    )
+    medio = models.CharField(max_length=20, choices=Medio.choices)
+    destino = models.CharField(max_length=255, blank=True)
+    resultado = models.CharField(
+        max_length=20,
+        choices=Resultado.choices,
+        default=Resultado.PENDIENTE,
+    )
+    mensaje = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='factura_entregas',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'factura_electronica_entregas'
+        verbose_name = _('entrega de factura electronica')
+        verbose_name_plural = _('entregas de facturas electronicas')
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['empresa']),
+            models.Index(fields=['factura']),
+            models.Index(fields=['medio']),
+            models.Index(fields=['resultado']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.factura_id} - {self.medio} - {self.resultado}'
+
+    def save(self, *args, **kwargs):
+        if self.empresa_id is None and self.factura_id:
+            self.empresa = self.factura.empresa
+        super().save(*args, **kwargs)
+
+
+class FacturaElectronicaSoporte(models.Model):
+    """
+    Copia controlada de soportes probatorios de la factura.
+    """
+
+    class Tipo(models.TextChoices):
+        PDF = 'PDF', _('PDF')
+        XML = 'XML', _('XML')
+        OTRO = 'OTRO', _('Otro')
+
+    factura = models.ForeignKey(
+        VentaFacturaElectronica,
+        on_delete=models.CASCADE,
+        related_name='soportes',
+    )
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='factura_soportes',
+        verbose_name=_('empresa'),
+    )
+    tipo = models.CharField(max_length=20, choices=Tipo.choices)
+    filename = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100, blank=True)
+    content = models.BinaryField(default=bytes, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'factura_electronica_soportes'
+        verbose_name = _('soporte de factura electronica')
+        verbose_name_plural = _('soportes de facturas electronicas')
+        indexes = [
+            models.Index(fields=['empresa']),
+            models.Index(fields=['factura']),
+            models.Index(fields=['tipo']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['factura', 'tipo'],
+                name='factura_soporte_tipo_unique',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.factura_id} - {self.tipo}'
+
+    def save(self, *args, **kwargs):
+        if self.empresa_id is None and self.factura_id:
+            self.empresa = self.factura.empresa
+        super().save(*args, **kwargs)
 
 
 class FacturaElectronicaIntento(models.Model):

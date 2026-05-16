@@ -48,4 +48,31 @@ describe('empresas.service', () => {
     );
     expect(result).toEqual({ ok: true });
   });
+
+  it('consulta la configuracion operativa de una empresa', async () => {
+    api.get.mockResolvedValueOnce({ data: { tema: 'DARK' } });
+    const { obtenerConfiguracionEmpresa } = await import('./empresas.service');
+
+    const result = await obtenerConfiguracionEmpresa(8);
+
+    expect(api.get).toHaveBeenCalledWith('/empresas/8/configuracion/');
+    expect(result).toEqual({ tema: 'DARK' });
+  });
+
+  it('actualiza la configuracion operativa de una empresa', async () => {
+    api.patch.mockResolvedValueOnce({ data: { tema: 'LIGHT' } });
+    const { actualizarConfiguracionEmpresa } = await import(
+      './empresas.service'
+    );
+
+    const result = await actualizarConfiguracionEmpresa(8, {
+      tema: 'LIGHT',
+    });
+
+    expect(api.patch).toHaveBeenCalledWith(
+      '/empresas/8/configuracion/',
+      { tema: 'LIGHT' },
+    );
+    expect(result).toEqual({ tema: 'LIGHT' });
+  });
 });

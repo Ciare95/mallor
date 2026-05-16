@@ -2,8 +2,8 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Activity,
   Building2,
+  ClipboardCheck,
   CreditCard,
   Factory,
   FileText,
@@ -15,14 +15,21 @@ import {
   ReceiptText,
   Sparkles,
   Settings,
+  UserRound,
   Users,
 } from 'lucide-react';
 import { useAppStore } from '../store/useStore';
 import { useAuth } from '../hooks/useAuth';
+import mallorLogo from '../assets/mallor-logo.png';
+import mallorLogoDark from '../assets/mallor-logo-dark.png';
 import {
   listarEmpresas,
   seleccionarEmpresa,
 } from '../services/empresas.service';
+import {
+  canAccessRoute,
+  isAdminInterno,
+} from '../utils/roleAccess';
 
 export default function Layout() {
   const location = useLocation();
@@ -35,8 +42,7 @@ export default function Layout() {
   const { logout } = useAuth();
   const queryClient = useQueryClient();
   const rolEmpresa = empresaActiva?.rol_usuario;
-  const puedeAdministrarEmpresa = ['PROPIETARIO', 'ADMIN'].includes(rolEmpresa);
-  const esAdminInterno = Boolean(user?.is_superuser || user?.is_staff);
+  const esUsuarioInterno = isAdminInterno(user);
 
   const empresasQuery = useQuery({
     queryKey: ['empresas'],
@@ -44,6 +50,7 @@ export default function Layout() {
   });
 
   const empresas = empresasQuery.data?.results ?? [];
+  const puedeCambiarEmpresa = empresas.length > 1;
 
   useEffect(() => {
     const empresasDisponibles = empresasQuery.data?.results ?? [];
@@ -70,9 +77,15 @@ export default function Layout() {
   });
 
   const navItems = [
-    { path: '/', label: 'Inicio', icon: Home, end: true },
+    {
+      path: '/',
+      label: 'Inicio',
+      icon: Home,
+      end: true,
+      hidden: !canAccessRoute('home', { role: rolEmpresa, user }),
+    },
     { path: '/ventas', label: 'Ventas', icon: CreditCard, end: false },
-    { path: '/clientes', label: 'Clientes', icon: Building2, end: false },
+    { path: '/clientes', label: 'Clientes', icon: UserRound, end: false },
     {
       path: '/mi-empresa',
       label: 'Mi empresa',
@@ -84,26 +97,51 @@ export default function Layout() {
       label: 'Facturacion',
       icon: ReceiptText,
       end: false,
-      hidden: !puedeAdministrarEmpresa,
+      hidden: !canAccessRoute('facturacion', { role: rolEmpresa, user }),
+    },
+    {
+      path: '/contadores',
+      label: 'Contadores',
+      icon: ClipboardCheck,
+      end: false,
+      hidden: !canAccessRoute('contadores', { role: rolEmpresa, user }),
     },
     { path: '/proveedores', label: 'Proveedores', icon: Factory, end: false },
-    { path: '/fabricante', label: 'Fabricante', icon: FlaskConical, end: false },
+    {
+      path: '/fabricante',
+      label: 'Fabricante',
+      icon: FlaskConical,
+      end: false,
+      hidden: !canAccessRoute('fabricante', { role: rolEmpresa, user }),
+    },
     { path: '/inventario', label: 'Inventario', icon: PackageSearch, end: false },
-    { path: '/informes', label: 'Informes', icon: PieChart, end: false },
-    { path: '/ia', label: 'IA', icon: Sparkles, end: false },
+    {
+      path: '/informes',
+      label: 'Informes',
+      icon: PieChart,
+      end: false,
+      hidden: !canAccessRoute('informes', { role: rolEmpresa, user }),
+    },
+    {
+      path: '/ia',
+      label: 'IA',
+      icon: Sparkles,
+      end: false,
+      hidden: !canAccessRoute('ia', { role: rolEmpresa, user }),
+    },
     {
       path: '/usuarios',
       label: 'Usuarios',
       icon: Users,
       end: false,
-      hidden: !puedeAdministrarEmpresa,
+      hidden: !canAccessRoute('usuarios', { role: rolEmpresa, user }),
     },
     {
       path: '/empresas-admin',
       label: 'Empresas SaaS',
       icon: Settings,
       end: false,
-      hidden: !esAdminInterno,
+      hidden: !esUsuarioInterno,
     },
     { path: '/about', label: 'Acerca', icon: FileText, end: false },
   ].filter((item) => !item.hidden);
@@ -117,30 +155,39 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-app text-main">
-      <div className="pointer-events-none absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(24,23,22,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(24,23,22,0.03)_1px,transparent_1px)] [background-size:32px_32px]" />
+      <div className="app-grid-overlay pointer-events-none absolute inset-0 opacity-70" />
+      <div className="app-top-glow pointer-events-none absolute inset-x-0 top-0 h-[340px]" />
       <div className="relative flex min-h-screen">
         <aside
-          className={`hidden border-r border-app bg-panel/90 backdrop-blur xl:flex xl:flex-col ${
+          className={`sticky top-0 hidden h-screen self-start border-r border-app bg-panel/90 backdrop-blur xl:flex xl:flex-col ${
             sidebarOpen ? 'xl:w-64' : 'xl:w-20'
           }`}
         >
-          <div className="border-b border-app px-4 py-5">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-app bg-[var(--accent-soft)] text-[var(--accent)]">
-                <Activity className="h-4 w-4" />
+          <div className={`border-b border-app ${sidebarOpen ? 'px-5 py-5' : 'px-2 py-4'}`}>
+            <div className="flex items-center justify-center">
+              <div className={`flex items-center justify-center ${
+                sidebarOpen
+                  ? 'w-full max-w-[104px]'
+                  : 'w-9'
+              }`}>
+                <span className="theme-logo-stack">
+                  <img
+                    src={mallorLogo}
+                    alt="Mallor"
+                    className="theme-logo theme-logo-light h-auto w-full object-contain"
+                  />
+                  <img
+                    src={mallorLogoDark}
+                    alt=""
+                    aria-hidden="true"
+                    className="theme-logo theme-logo-dark h-auto w-full object-contain"
+                  />
+                </span>
               </div>
-              {sidebarOpen && (
-                <div>
-                  <div className="font-display text-[1.55rem] text-main">
-                    Mallor
-                  </div>
-                  <div className="eyebrow">consola operativa</div>
-                </div>
-              )}
             </div>
           </div>
 
-          <nav className="flex-1 px-3 py-4">
+          <nav className="flex-1 overflow-y-auto px-3 py-4">
             <div className="mb-3 px-2 text-[10px] uppercase tracking-[0.28em] text-muted">
               {sidebarOpen ? 'Modulos' : 'Menu'}
             </div>
@@ -205,25 +252,33 @@ export default function Layout() {
               </div>
 
               <div className="hidden items-center gap-3 md:flex">
-                <label className="flex items-center gap-2 rounded-full border border-app bg-white/70 px-3 py-1.5">
+                <div className="flex items-center gap-2 rounded-full border border-app bg-panel px-3 py-1.5 shadow-[0_10px_24px_rgba(24,23,22,0.04)]">
                   <span className="text-[10px] uppercase tracking-[0.22em] text-muted">
                     Empresa
                   </span>
-                  <select
-                    value={empresaActiva?.id || ''}
-                    onChange={(event) =>
-                      seleccionarEmpresaMutation.mutate(event.target.value)
-                    }
-                    className="bg-transparent text-[12px] font-semibold text-main outline-none"
-                    disabled={empresasQuery.isLoading || empresas.length <= 1}
-                  >
-                    {empresas.map((empresa) => (
-                      <option key={empresa.id} value={empresa.id}>
-                        {empresa.nombre_comercial || empresa.razon_social}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                  {puedeCambiarEmpresa ? (
+                    <select
+                      value={empresaActiva?.id || ''}
+                      onChange={(event) =>
+                        seleccionarEmpresaMutation.mutate(event.target.value)
+                      }
+                      className="company-switcher-select bg-transparent text-[12px] font-semibold text-main outline-none"
+                      disabled={empresasQuery.isLoading}
+                    >
+                      {empresas.map((empresa) => (
+                        <option key={empresa.id} value={empresa.id}>
+                          {empresa.nombre_comercial || empresa.razon_social}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="text-[12px] font-semibold text-main">
+                      {empresaActiva?.nombre_comercial
+                        || empresaActiva?.razon_social
+                        || 'Sin empresa'}
+                    </span>
+                  )}
+                </div>
                 <div className="app-pill border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]">
                   {rolEmpresa || 'Sin rol'}
                 </div>
@@ -233,13 +288,12 @@ export default function Layout() {
                 <button
                   type="button"
                   onClick={logout}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border border-app bg-white/70 text-soft transition hover:bg-white"
+                  className="flex h-9 w-9 items-center justify-center rounded-full border border-app bg-panel text-soft transition hover:bg-panel-strong"
                   title="Salir"
                   aria-label="Cerrar sesion"
                 >
                   <LogOut className="h-4 w-4" />
                 </button>
-                <div className="app-pill">React + DRF</div>
               </div>
             </div>
 
@@ -255,7 +309,7 @@ export default function Layout() {
                       `inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-full border px-3.5 py-2 text-[12px] font-semibold transition ${
                         isActive
                           ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]'
-                          : 'border-app bg-white/60 text-soft'
+                          : 'border-app bg-panel text-soft'
                       }`
                     }
                   >

@@ -50,26 +50,25 @@ const ProcesarFacturaForm = ({
 
   return (
     <div className="space-y-6">
-      <section className="surface p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex items-start gap-4">
+      <section className="surface p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
             <button
               type="button"
               onClick={onCancel}
-              className="app-button-secondary min-h-11"
+              className="app-button-secondary min-h-10"
             >
               <ArrowLeft className="h-4 w-4" />
               Volver
             </button>
-            <div>
-              <div className="eyebrow">Procesamiento</div>
-              <h1 className="section-title mt-2">
+            <div className="space-y-2">
+              <div className="section-chip">Procesamiento</div>
+              <div className="text-sm font-semibold text-main">
                 Procesar factura y actualizar inventario
-              </h1>
-              <p className="body-copy mt-2">
-                Busca facturas pendientes, revisa el costo y confirma el ingreso
-                con una lectura mucho mas limpia.
-              </p>
+              </div>
+              <div className="text-[12px] text-soft">
+                Busca pendientes, valida costo y confirma ingreso.
+              </div>
             </div>
           </div>
           <div className="rounded-lg border border-[var(--accent-line)] bg-[var(--accent-soft)] p-3 text-[var(--accent)]">
@@ -162,10 +161,10 @@ const ProcesarFacturaForm = ({
             <div className="space-y-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
-                  <h2 className="section-title">
+                  <div className="text-sm font-semibold text-main">
                     Factura {facturaSeleccionada.numero_factura}
-                  </h2>
-                  <p className="body-copy mt-2">
+                  </div>
+                  <p className="mt-2 text-[12px] text-soft">
                     {facturaSeleccionada.detalles?.length || 0} producto
                     {facturaSeleccionada.detalles?.length !== 1 ? 's' : ''} listo
                     {facturaSeleccionada.detalles?.length !== 1 ? 's' : ''} para

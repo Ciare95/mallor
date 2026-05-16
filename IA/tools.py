@@ -1,21 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any, Callable, Dict, Iterable, List, Optional
+from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
-from django.db.models import Count, Max, Sum
+from django.db.models import Count, Max, Min, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from cliente.models import Cliente
 from empresa.context import reset_empresa_actual, set_empresa_actual
 from empresa.models import EmpresaUsuario
-from informes.services import ReporteEstadisticasService
-from inventario.models import Producto
+from informes.services import CierreCajaService, ReporteEstadisticasService
+from inventario.models import FacturaCompra, Producto
 from ventas.models import (
     FacturacionElectronicaConfig,
     FactusNumberingRange,
@@ -30,6 +31,7 @@ ADMIN_ROLES = (
 )
 ALL_ROLES = ADMIN_ROLES + (EmpresaUsuario.Rol.EMPLEADO,)
 MAX_TOOL_RESULTS = getattr(settings, 'IA_MAX_TOOL_RESULTS', 20)
+BUSINESS_TIMEZONE = ZoneInfo('America/Bogota')
 
 
 class IAToolError(ValueError):
@@ -65,8 +67,13 @@ def _parse_limit(value: Any, default: int = 10) -> int:
     return max(1, min(limit, MAX_TOOL_RESULTS))
 
 
-def _period_dates(params: Dict[str, Any]) -> tuple[date, date]:
-    today = timezone.localdate()
+def _period_dates(
+    params: Dict[str, Any],
+    *,
+    queryset=None,
+    date_field: Optional[str] = None,
+) -> tuple[date, date]:
+    today = timezone.localdate(timezone=BUSINESS_TIMEZONE)
     periodo = str(params.get('periodo') or '').lower().strip()
     fecha_inicio = params.get('fecha_inicio')
     fecha_fin = params.get('fecha_fin')
@@ -85,16 +92,49 @@ def _period_dates(params: Dict[str, Any]) -> tuple[date, date]:
         return today, today
     if periodo == 'semana':
         return today - timedelta(days=today.weekday()), today
+    if periodo in {'todo', 'historico', 'histórico'}:
+        if queryset is not None and date_field:
+            primer_valor = queryset.aggregate(primera_fecha=Min(date_field))['primera_fecha']
+            if isinstance(primer_valor, datetime):
+                return timezone.localtime(
+                    primer_valor,
+                    BUSINESS_TIMEZONE,
+                ).date(), today
+            if isinstance(primer_valor, date):
+                return primer_valor, today
+        return today, today
     if periodo == 'mes' or not periodo:
         return today.replace(day=1), today
 
-    raise IAToolError('Periodo no soportado. Use hoy, semana, mes o fechas ISO.')
+    raise IAToolError('Periodo no soportado. Use hoy, semana, mes, todo o fechas ISO.')
+
+
+def _period_scope(params: Dict[str, Any]) -> str:
+    if params.get('fecha_inicio') and params.get('fecha_fin'):
+        return 'rango'
+    periodo = str(params.get('periodo') or '').lower().strip()
+    if periodo in {'todo', 'historico', 'histórico'}:
+        return 'todo'
+    if periodo in {'hoy', 'semana', 'mes'}:
+        return periodo
+    return 'mes'
 
 
 def _tool_resumen_ventas_periodo(context, params):
-    start, end = _period_dates(params)
+    ventas_qs = Venta.objects.filter(
+        empresa=context.empresa,
+        estado=Venta.Estado.TERMINADA,
+    )
+    start, end = _period_dates(
+        params,
+        queryset=ventas_qs,
+        date_field='fecha_venta',
+    )
     return {
         'tipo': 'resumen_ventas_periodo',
+        'periodo_consultado': _period_scope(params),
+        'fecha_inicio': start,
+        'fecha_fin': end,
         'datos': ReporteEstadisticasService.estadisticas_ventas_periodo(start, end),
     }
 
@@ -127,7 +167,15 @@ def _tool_productos_bajo_stock(context, params):
 
 
 def _tool_productos_mas_vendidos(context, params):
-    start, end = _period_dates(params)
+    ventas_qs = Venta.objects.filter(
+        empresa=context.empresa,
+        estado=Venta.Estado.TERMINADA,
+    )
+    start, end = _period_dates(
+        params,
+        queryset=ventas_qs,
+        date_field='fecha_venta',
+    )
     limit = _parse_limit(params.get('limite'))
     return {
         'tipo': 'productos_mas_vendidos',
@@ -147,7 +195,15 @@ def _tool_valor_inventario(context, params):
 
 
 def _tool_mejores_clientes(context, params):
-    start, end = _period_dates(params)
+    ventas_qs = Venta.objects.filter(
+        empresa=context.empresa,
+        estado=Venta.Estado.TERMINADA,
+    )
+    start, end = _period_dates(
+        params,
+        queryset=ventas_qs,
+        date_field='fecha_venta',
+    )
     limit = _parse_limit(params.get('limite'))
     return {
         'tipo': 'mejores_clientes',
@@ -230,13 +286,100 @@ def _tool_resumen_facturacion_electronica(context, params):
     }
 
 
+def _tool_utilidad_periodo(context, params):
+    ventas_qs = Venta.objects.filter(
+        empresa=context.empresa,
+        estado=Venta.Estado.TERMINADA,
+    )
+    start, end = _period_dates(
+        params,
+        queryset=ventas_qs,
+        date_field='fecha_venta',
+    )
+    ventas = ReporteEstadisticasService.estadisticas_ventas_periodo(start, end)
+    gastos = CierreCajaService.calcular_gastos_periodo(start, end)
+    total_ventas = Decimal(str((ventas.get('resumen') or {}).get('total_ventas', 0)))
+    total_gastos = Decimal(str(gastos.get('total', 0)))
+    utilidad = total_ventas - total_gastos
+
+    return {
+        'tipo': 'utilidad_periodo',
+        'periodo_consultado': _period_scope(params),
+        'fecha_inicio': start,
+        'fecha_fin': end,
+        'ventas': ventas,
+        'gastos': gastos,
+        'resumen': {
+            'total_ventas': _json_safe(total_ventas),
+            'total_gastos': _json_safe(total_gastos),
+            'utilidad_neta': _json_safe(utilidad),
+        },
+    }
+
+
+def _tool_proveedores_por_pagar(context, params):
+    limit = _parse_limit(params.get('limite'))
+    facturas_qs = FacturaCompra.objects.select_related('proveedor').filter(
+        empresa=context.empresa,
+        estado=FacturaCompra.ESTADO_PENDIENTE,
+        proveedor__isnull=False,
+        proveedor__activo=True,
+    )
+    proveedores = facturas_qs.values(
+        'proveedor_id',
+        'proveedor__razon_social',
+        'proveedor__nombre_comercial',
+        'proveedor__forma_pago',
+        'proveedor__telefono',
+        'proveedor__email',
+    ).annotate(
+        total_pendiente=Coalesce(
+            Sum('total'),
+            Decimal('0.00'),
+        ),
+        cantidad_facturas=Count('id'),
+        ultima_factura=Max('fecha_factura'),
+    ).order_by('-total_pendiente', '-cantidad_facturas')[:limit]
+    total_pendiente = facturas_qs.aggregate(
+        total=Coalesce(
+            Sum('total'),
+            Decimal('0.00'),
+        ),
+        cantidad_facturas=Count('id'),
+        proveedores=Count('proveedor_id', distinct=True),
+    )
+
+    return {
+        'tipo': 'proveedores_por_pagar',
+        'total': {
+            'total_pendiente': _json_safe(total_pendiente['total']),
+            'cantidad_facturas': total_pendiente['cantidad_facturas'],
+            'proveedores_con_saldo': total_pendiente['proveedores'],
+        },
+        'resultados': [
+            {
+                'proveedor_id': item['proveedor_id'],
+                'nombre': item['proveedor__nombre_comercial'] or item['proveedor__razon_social'],
+                'razon_social': item['proveedor__razon_social'],
+                'forma_pago': item['proveedor__forma_pago'],
+                'telefono': item['proveedor__telefono'],
+                'email': item['proveedor__email'],
+                'total_pendiente': _json_safe(item['total_pendiente']),
+                'cantidad_facturas': item['cantidad_facturas'],
+                'ultima_factura': _json_safe(item['ultima_factura']),
+            }
+            for item in proveedores
+        ],
+    }
+
+
 TOOLS: Dict[str, ToolDefinition] = {
     'resumen_ventas_periodo': ToolDefinition(
         name='resumen_ventas_periodo',
         description='Resumen de ventas por periodo.',
         roles=ALL_ROLES,
         executor=_tool_resumen_ventas_periodo,
-        parameters={'periodo': 'hoy|semana|mes', 'fecha_inicio': 'YYYY-MM-DD', 'fecha_fin': 'YYYY-MM-DD'},
+        parameters={'periodo': 'hoy|semana|mes|todo', 'fecha_inicio': 'YYYY-MM-DD', 'fecha_fin': 'YYYY-MM-DD'},
     ),
     'productos_bajo_stock': ToolDefinition(
         name='productos_bajo_stock',
@@ -250,7 +393,7 @@ TOOLS: Dict[str, ToolDefinition] = {
         description='Productos mas vendidos por periodo.',
         roles=ALL_ROLES,
         executor=_tool_productos_mas_vendidos,
-        parameters={'periodo': 'hoy|semana|mes', 'limite': '1..20'},
+        parameters={'periodo': 'hoy|semana|mes|todo', 'limite': '1..20'},
     ),
     'valor_inventario': ToolDefinition(
         name='valor_inventario',
@@ -264,7 +407,7 @@ TOOLS: Dict[str, ToolDefinition] = {
         description='Clientes con mayor compra en un periodo.',
         roles=ADMIN_ROLES,
         executor=_tool_mejores_clientes,
-        parameters={'periodo': 'hoy|semana|mes', 'limite': '1..20'},
+        parameters={'periodo': 'hoy|semana|mes|todo', 'limite': '1..20'},
     ),
     'cuentas_por_cobrar': ToolDefinition(
         name='cuentas_por_cobrar',
@@ -286,6 +429,20 @@ TOOLS: Dict[str, ToolDefinition] = {
         roles=ADMIN_ROLES,
         executor=_tool_resumen_facturacion_electronica,
         parameters={},
+    ),
+    'utilidad_periodo': ToolDefinition(
+        name='utilidad_periodo',
+        description='Compara ventas y gastos del periodo para estimar utilidad neta.',
+        roles=ADMIN_ROLES,
+        executor=_tool_utilidad_periodo,
+        parameters={'periodo': 'hoy|semana|mes|todo', 'fecha_inicio': 'YYYY-MM-DD', 'fecha_fin': 'YYYY-MM-DD'},
+    ),
+    'proveedores_por_pagar': ToolDefinition(
+        name='proveedores_por_pagar',
+        description='Proveedores con facturas de compra pendientes por pagar.',
+        roles=ADMIN_ROLES,
+        executor=_tool_proveedores_por_pagar,
+        parameters={'limite': '1..20'},
     ),
 }
 

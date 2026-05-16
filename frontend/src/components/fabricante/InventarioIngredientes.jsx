@@ -20,114 +20,126 @@ export default function InventarioIngredientes({
   const stats = getIngredientInventoryStats(ingredients);
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.04fr_0.96fr]">
-      <section className="surface p-5 sm:p-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="eyebrow">Inventario de ingredientes</div>
-            <h2 className="section-title mt-2">Pulso de abastecimiento</h2>
-            <p className="body-copy mt-2 max-w-2xl">
-              Control rapido del capital inmovilizado, cobertura disponible y
-              puntos de reposicion para sostener la produccion.
-            </p>
+    <section className="surface p-4 sm:p-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-2">
+          <div className="section-chip">Inventario de ingredientes</div>
+          <div className="text-sm font-semibold text-main">
+            Pulso de abastecimiento
           </div>
+          <p className="max-w-2xl text-[12px] text-soft">
+            Capital inmovilizado, cobertura y puntos de reposicion en una sola
+            lectura.
+          </p>
+        </div>
 
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="app-pill">
+            {lowStockIngredients.length} en observacion
+          </div>
           <button
             type="button"
             onClick={onCreateIngredient}
-            className="app-button-primary min-h-11"
+            className="app-button-primary min-h-10"
           >
             <PackageCheck className="h-4 w-4" />
             Nuevo ingrediente
           </button>
         </div>
+      </div>
 
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <Metric
-            label="Valor total"
-            value={formatCurrency(stats.totalValue)}
-            helper="Costo acumulado del stock disponible."
-            icon={CircleDollarSign}
-          />
-          <Metric
-            label="Stock agregado"
-            value={formatNumber(stats.totalStock)}
-            helper="Suma de unidades base en bodega."
-            icon={Boxes}
-          />
-          <Metric
-            label="Bajo minimo"
-            value={stats.underStockCount}
-            helper="Ingredientes que ya requieren compra."
-            icon={AlertTriangle}
-            tone="warning"
-          />
-          <Metric
-            label="Proveedores"
-            value={stats.activeSuppliers}
-            helper="Aliados activos en la cadena."
-            icon={ArrowUpRight}
-            tone="safe"
-          />
-        </div>
-      </section>
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Metric
+          label="Valor total"
+          value={formatCurrency(stats.totalValue)}
+          helper="Costo acumulado del stock disponible."
+          icon={CircleDollarSign}
+        />
+        <Metric
+          label="Stock agregado"
+          value={formatNumber(stats.totalStock)}
+          helper="Suma de unidades base en bodega."
+          icon={Boxes}
+        />
+        <Metric
+          label="Bajo minimo"
+          value={stats.underStockCount}
+          helper="Ingredientes que ya requieren compra."
+          icon={AlertTriangle}
+          tone="warning"
+        />
+        <Metric
+          label="Proveedores"
+          value={stats.activeSuppliers}
+          helper="Aliados activos en la cadena."
+          icon={ArrowUpRight}
+          tone="safe"
+        />
+      </div>
 
-      <section className="surface p-5 sm:p-6">
-        <div className="flex items-center justify-between gap-3">
+      <div className="mt-6 rounded-xl border border-app bg-white/68 p-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="eyebrow">Reposicion sugerida</div>
-            <h3 className="section-title mt-2">Alertas de bajo stock</h3>
+            <div className="mt-2 text-sm font-semibold text-main">
+              Prioridades de abastecimiento
+            </div>
           </div>
-          <div className="app-pill">
-            {lowStockIngredients.length} en observacion
-          </div>
+          {lowStockIngredients.length > 0 && (
+            <div className="text-[12px] text-soft">
+              Ajusta primero los insumos con menor cobertura.
+            </div>
+          )}
         </div>
 
-        <div className="mt-5 space-y-3">
+        <div className="mt-4">
           {lowStockIngredients.length === 0 ? (
-            <div className="empty-state min-h-[240px]">
-              <AlertTriangle className="mb-3 h-10 w-10 text-[var(--accent)]" />
+            <div className="rounded-xl border border-dashed border-app bg-[var(--panel-soft)] px-4 py-6 text-center">
+              <AlertTriangle className="mx-auto mb-3 h-8 w-8 text-[var(--accent)]" />
               <div className="text-base font-semibold text-main">
                 Todo el stock esta por encima del minimo.
               </div>
-              <p className="body-copy mt-2 max-w-sm">
-                Puedes pasar a productos fabricados o registrar un nuevo insumo
+              <p className="mx-auto mt-2 max-w-xl text-[12px] text-soft">
+                Puedes concentrarte en fabricacion o registrar un nuevo insumo
                 para ampliar el catalogo de recetas.
               </p>
             </div>
           ) : (
-            lowStockIngredients.slice(0, 6).map((ingredient) => (
-              <div
-                key={ingredient.id}
-                className="rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] p-4"
-              >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="text-sm font-semibold text-main">
-                      {ingredient.nombre}
+            <div className="grid gap-3 xl:grid-cols-3">
+              {lowStockIngredients.slice(0, 3).map((ingredient) => (
+                <div
+                  key={ingredient.id}
+                  className="rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] p-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-main">
+                        {ingredient.nombre}
+                      </div>
+                      <div className="mt-1 text-[12px] text-[var(--warning-text)]">
+                        Disponible {formatNumber(ingredient.stock_actual)}{' '}
+                        {unitLabel(ingredient.unidad_medida)}
+                      </div>
                     </div>
-                    <div className="mt-1 text-[12px] text-[var(--warning-text)]">
-                      Disponible {formatNumber(ingredient.stock_actual)}{' '}
-                      {unitLabel(ingredient.unidad_medida)} de un minimo de{' '}
-                      {formatNumber(ingredient.stock_minimo)}{' '}
-                      {unitLabel(ingredient.unidad_medida)}
+                    <div className="rounded-full border border-[rgba(149,100,0,0.18)] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--warning-text)]">
+                      Min {formatNumber(ingredient.stock_minimo)}
                     </div>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => onAdjustStock(ingredient)}
-                    className="app-button-secondary min-h-10"
+                    className="app-button-secondary mt-4 min-h-10 w-full"
                   >
                     Ajustar stock
                   </button>
                 </div>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
-      </section>
-    </div>
+      </div>
+    </section>
   );
 }
 

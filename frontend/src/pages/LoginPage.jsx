@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Activity, LockKeyhole, LogIn } from 'lucide-react';
+import { Eye, EyeOff, LockKeyhole, LogIn } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import mallorLogo from '../assets/mallor-logo.png';
+import mallorLogoDark from '../assets/mallor-logo-dark.png';
+import { getDefaultAuthenticatedPath } from '../utils/roleAccess';
 
 export default function LoginPage() {
   const navigate = useNavigate();
@@ -14,6 +17,7 @@ export default function LoginPage() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -25,12 +29,22 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      await login({
+      const session = await login({
         username: form.username.trim(),
         password: form.password,
         rememberMe: form.rememberMe,
       });
-      navigate(searchParams.get('next') || '/', { replace: true });
+      const empresaActiva = session.empresas?.find(
+        (item) => String(item.id) === String(session.empresa_activa),
+      );
+      navigate(
+        getDefaultAuthenticatedPath({
+          role: empresaActiva?.rol_usuario,
+          user: session.user,
+          nextPath: searchParams.get('next'),
+        }),
+        { replace: true },
+      );
     } catch (requestError) {
       setError(
         requestError.response?.data?.detail
@@ -45,30 +59,31 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-app text-main">
       <div className="pointer-events-none absolute inset-0 opacity-70 [background-image:linear-gradient(rgba(24,23,22,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(24,23,22,0.03)_1px,transparent_1px)] [background-size:32px_32px]" />
-      <main className="relative mx-auto flex min-h-screen w-full max-w-6xl items-center px-5 py-10">
-        <section className="grid w-full gap-8 lg:grid-cols-[1fr_420px] lg:items-center">
-          <div className="max-w-2xl">
-            <div className="mb-6 flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-app bg-[var(--accent-soft)] text-[var(--accent)]">
-                <Activity className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-display text-[2rem] leading-none">
-                  Mallor
-                </div>
-                <div className="eyebrow">consola operativa</div>
+      <main className="relative flex min-h-screen w-full items-center px-5 py-8 sm:px-8 lg:px-10">
+        <section className="grid min-h-[calc(100vh-4rem)] w-full grid-cols-1 items-center gap-10 lg:grid-cols-2">
+          <div className="flex min-h-[48vh] items-center justify-center lg:min-h-full">
+            <div className="relative flex w-full items-center justify-center">
+              <div className="pointer-events-none absolute inset-x-[10%] inset-y-[14%] rounded-[56px] bg-[radial-gradient(circle,rgba(47,106,82,0.09)_0%,rgba(47,106,82,0.03)_42%,transparent_74%)] blur-3xl" />
+              <div className="relative flex w-full max-w-[520px] items-center justify-center px-6 lg:max-w-[560px]">
+                <span className="theme-logo-stack w-full max-w-[460px] lg:max-w-[500px]">
+                  <img
+                    src={mallorLogo}
+                    alt="Mallor"
+                    className="theme-logo theme-logo-light h-auto w-full object-contain"
+                  />
+                  <img
+                    src={mallorLogoDark}
+                    alt=""
+                    aria-hidden="true"
+                    className="theme-logo theme-logo-dark h-auto w-full object-contain"
+                  />
+                </span>
               </div>
             </div>
-            <h1 className="font-display text-[3.2rem] leading-[0.95] text-main sm:text-[4.6rem]">
-              Acceso seguro para equipos multitenant.
-            </h1>
-            <p className="mt-5 max-w-xl text-[15px] leading-7 text-soft">
-              La sesion identifica al usuario. La empresa activa, los permisos
-              y el alcance de datos se validan en cada solicitud.
-            </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="surface p-6 sm:p-7">
+          <div className="flex items-center justify-center lg:min-h-full">
+            <form onSubmit={handleSubmit} className="surface w-full max-w-[430px] p-6 sm:p-7">
             <div className="mb-6">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-app bg-white/70 text-soft">
                 <LockKeyhole className="h-4 w-4" />
@@ -94,18 +109,35 @@ export default function LoginPage() {
 
               <label className="app-field">
                 <span className="app-field-label">Contrasena</span>
-                <input
-                  className="app-input"
-                  type="password"
-                  autoComplete="current-password"
-                  value={form.password}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      password: event.target.value,
-                    }))
-                  }
-                />
+                <div className="relative">
+                  <input
+                    className="app-input pr-11"
+                    type={showPassword ? 'text' : 'password'}
+                    autoComplete="current-password"
+                    value={form.password}
+                    onChange={(event) =>
+                      setForm((current) => ({
+                        ...current,
+                        password: event.target.value,
+                      }))
+                    }
+                  />
+                  <button
+                    type="button"
+                    aria-label={
+                      showPassword ? 'Ocultar contrasena' : 'Mostrar contrasena'
+                    }
+                    aria-pressed={showPassword}
+                    onClick={() => setShowPassword((current) => !current)}
+                    className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-soft transition hover:text-main focus:outline-none"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
               </label>
 
               <label className="flex items-center justify-between gap-4 rounded-lg border border-app bg-white/60 px-3.5 py-3">
@@ -145,7 +177,8 @@ export default function LoginPage() {
                 {loading ? 'Validando...' : 'Entrar'}
               </button>
             </div>
-          </form>
+            </form>
+          </div>
         </section>
       </main>
     </div>

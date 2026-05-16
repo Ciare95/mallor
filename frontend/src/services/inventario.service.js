@@ -214,6 +214,31 @@ export const exportarInventarioExcel = async () => {
   return response;
 };
 
+export const descargarPlantillaProductosExcel = async () => {
+  const response = await api.get(
+    `${INVENTARIO_BASE}/productos/plantilla-excel/`,
+    {
+      responseType: 'blob',
+    }
+  );
+  return response;
+};
+
+export const importarProductosExcel = async (archivo) => {
+  const formData = new FormData();
+  formData.append('archivo', archivo);
+  const response = await api.post(
+    `${INVENTARIO_BASE}/productos/importar-excel/`,
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }
+  );
+  return response.data;
+};
+
 export default {
   listarProductos,
   buscarProductos,
@@ -235,4 +260,6 @@ export default {
   obtenerProductosBajoStock,
   obtenerProductosMasVendidos,
   exportarInventarioExcel,
+  descargarPlantillaProductosExcel,
+  importarProductosExcel,
 };

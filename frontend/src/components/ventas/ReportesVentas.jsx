@@ -30,7 +30,11 @@ const defaultFiltro = {
 export default function ReportesVentas() {
   const [filtro, setFiltro] = useState(defaultFiltro);
 
-  const params =
+  const rangeParams = resolveReportRange(filtro);
+  const hasValidCustomRange =
+    filtro.periodo !== 'personalizado' ||
+    Boolean(filtro.fecha_inicio && filtro.fecha_fin);
+  const statsParams =
     filtro.periodo === 'personalizado'
       ? {
           periodo: 'personalizado',
@@ -40,32 +44,35 @@ export default function ReportesVentas() {
       : { periodo: filtro.periodo };
 
   const estadisticasQuery = useQuery({
-    queryKey: ['ventas', 'reportes', 'estadisticas', params],
-    queryFn: () => obtenerEstadisticasVentas(params),
+    queryKey: ['ventas', 'reportes', 'estadisticas', statsParams],
+    queryFn: () => obtenerEstadisticasVentas(statsParams),
+    enabled: hasValidCustomRange,
   });
 
   const periodoQuery = useQuery({
-    queryKey: ['ventas', 'reportes', 'periodo', params],
-    queryFn: () =>
-      obtenerVentasPorPeriodo({
-        fecha_inicio: params.fecha_inicio,
-        fecha_fin: params.fecha_fin,
-      }),
+    queryKey: ['ventas', 'reportes', 'periodo', rangeParams],
+    queryFn: () => obtenerVentasPorPeriodo(rangeParams),
+    enabled: Boolean(rangeParams),
   });
 
   const productosQuery = useQuery({
-    queryKey: ['ventas', 'reportes', 'productos-top', params],
+    queryKey: ['ventas', 'reportes', 'productos-top', rangeParams],
     queryFn: () =>
       obtenerProductosTopVentas({
-        fecha_inicio: params.fecha_inicio,
-        fecha_fin: params.fecha_fin,
+        ...rangeParams,
         limite: 5,
       }),
+    enabled: Boolean(rangeParams),
   });
 
   const carteraQuery = useQuery({
-    queryKey: ['ventas', 'reportes', 'cartera'],
-    queryFn: () => obtenerCuentasPorCobrar({ page_size: 50 }),
+    queryKey: ['ventas', 'reportes', 'cartera', rangeParams],
+    queryFn: () =>
+      obtenerCuentasPorCobrar({
+        ...rangeParams,
+        page_size: 50,
+      }),
+    enabled: Boolean(rangeParams),
   });
 
   const loading =
@@ -158,6 +165,12 @@ export default function ReportesVentas() {
               </>
             )}
           </div>
+
+          {filtro.periodo === 'personalizado' && !hasValidCustomRange && (
+            <div className="mt-4 rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-4 py-3 text-[12px] text-[var(--warning-text)]">
+              Selecciona fecha inicio y fecha fin para consultar el periodo.
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -483,4 +496,43 @@ function agruparPorCliente(ventas) {
   return Array.from(map.entries())
     .map(([label, value]) => ({ label, value }))
     .sort((a, b) => b.value - a.value);
+}
+
+function resolveReportRange(filtro) {
+  if (filtro.periodo === 'personalizado') {
+    if (!filtro.fecha_inicio || !filtro.fecha_fin) {
+      return null;
+    }
+
+    return {
+      fecha_inicio: filtro.fecha_inicio,
+      fecha_fin: filtro.fecha_fin,
+    };
+  }
+
+  const today = new Date();
+  const end = toIsoDate(today);
+  let start = end;
+
+  if (filtro.periodo === 'semana') {
+    const weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - today.getDay() + (today.getDay() === 0 ? -6 : 1));
+    start = toIsoDate(weekStart);
+  } else if (filtro.periodo === 'mes') {
+    start = toIsoDate(new Date(today.getFullYear(), today.getMonth(), 1));
+  } else if (filtro.periodo === 'anio') {
+    start = toIsoDate(new Date(today.getFullYear(), 0, 1));
+  }
+
+  return {
+    fecha_inicio: start,
+    fecha_fin: end,
+  };
+}
+
+function toIsoDate(value) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }

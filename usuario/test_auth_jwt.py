@@ -3,6 +3,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 
+from empresa.models import Empresa
 from empresa.models import EmpresaUsuario
 from tests.factories import EmpresaFactory, EmpresaUsuarioFactory, UsuarioFactory
 
@@ -168,3 +169,36 @@ def test_empleado_no_lista_usuarios_de_empresa(jwt_setup):
     )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+@pytest.mark.django_db
+def test_admin_de_tenant_no_recibe_empresa_principal_implicita():
+    empresa_local = EmpresaFactory(razon_social='Empresa Local JWT')
+    user = UsuarioFactory(
+        username='jwt_admin_local',
+        password='Secret123',
+        role='ADMIN',
+    )
+    EmpresaUsuarioFactory(
+        empresa=empresa_local,
+        usuario=user,
+        rol=EmpresaUsuario.Rol.ADMIN,
+        activo=True,
+    )
+    client = APIClient()
+
+    response = client.post(
+        '/api/auth/login/',
+        {'username': user.username, 'password': 'Secret123'},
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert response.data['empresa_activa'] == empresa_local.id
+    assert [empresa['id'] for empresa in response.data['empresas']] == [
+        empresa_local.id,
+    ]
+    assert not EmpresaUsuario.objects.filter(
+        usuario=user,
+        empresa=Empresa.get_default(),
+    ).exists()

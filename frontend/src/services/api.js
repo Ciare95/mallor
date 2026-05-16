@@ -11,11 +11,47 @@ const api = axios.create({
   },
 });
 
+let refreshRequest = null;
+
+const applyRefreshedSession = ({
+  access,
+  user,
+  empresa_activa: empresaActiva,
+  empresas,
+}) => {
+  const store = useAppStore.getState();
+  store.setToken(access);
+  store.setUser(user);
+  sessionStorage.setItem('mallor_user', JSON.stringify(user));
+  const empresa = empresas?.find(
+    (item) => String(item.id) === String(empresaActiva),
+  );
+  if (empresa) {
+    store.setEmpresaActiva(empresa);
+  }
+  return access;
+};
+
+const refreshAccessToken = async () => {
+  if (!refreshRequest) {
+    refreshRequest = api
+      .post('/auth/refresh/')
+      .then((response) => applyRefreshedSession(response.data))
+      .finally(() => {
+        refreshRequest = null;
+      });
+  }
+  return refreshRequest;
+};
+
 api.interceptors.request.use((config) => {
   const token = useAppStore.getState().token;
   const empresaId = localStorage.getItem('mallor_empresa_activa_id');
+  const isRefreshRequest = config.url?.startsWith('/auth/refresh/');
 
-  if (token) {
+  if (isRefreshRequest) {
+    delete config.headers.Authorization;
+  } else if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   } else {
     delete config.headers.Authorization;
@@ -42,18 +78,7 @@ api.interceptors.response.use(
 
     original._retry = true;
     try {
-      const response = await api.post('/auth/refresh/');
-      const { access, user, empresa_activa: empresaActiva, empresas } = response.data;
-      const store = useAppStore.getState();
-      store.setToken(access);
-      store.setUser(user);
-      sessionStorage.setItem('mallor_user', JSON.stringify(user));
-      const empresa = empresas?.find(
-        (item) => String(item.id) === String(empresaActiva),
-      );
-      if (empresa) {
-        store.setEmpresaActiva(empresa);
-      }
+      const access = await refreshAccessToken();
       original.headers.Authorization = `Bearer ${access}`;
       return api(original);
     } catch (refreshError) {

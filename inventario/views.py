@@ -19,11 +19,12 @@ from .serializers import (
     FacturaCompraSerializer,
     FacturaCompraCreateSerializer,
     HistorialInventarioSerializer,
-    InventarioExportSerializer,
+    ImportarProductosExcelSerializer,
 )
 from .services import (
     CategoriaService,
     ProductoService,
+    ProductoImportService,
     StockService,
     FacturaCompraService,
     ReporteService,
@@ -39,10 +40,15 @@ from core.exceptions import (
     FacturaSinDetallesError,
     CategoriaNoEncontradaError,
     CategoriaConProductosError,
+    ImportacionInventarioError,
 )
 from empresa.services import EmpresaService
 from usuario.utils import RolePermissionMixin
-from .utils import generar_excel_inventario, generar_respuesta_excel
+from .utils import (
+    generar_excel_inventario,
+    generar_plantilla_excel_inventario,
+    generar_respuesta_excel,
+)
 
 
 class InventarioPagination(PageNumberPagination):
@@ -119,6 +125,28 @@ class ReportesPermission(BaseInventarioPermission):
         'bajo_stock': 'ver_informe_inventario',
         'mas_vendidos': 'ver_informe_inventario',
     }
+
+
+class ProductoExcelTemplatePermission(permissions.BasePermission):
+    def has_permission(self, request: Request, view) -> bool:
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return EmpresaService.validar_permiso_operacion(
+            request.user,
+            getattr(request, 'empresa', None),
+            'listar_productos',
+        )
+
+
+class ProductoExcelImportPermission(permissions.BasePermission):
+    def has_permission(self, request: Request, view) -> bool:
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return EmpresaService.validar_permiso_operacion(
+            request.user,
+            getattr(request, 'empresa', None),
+            'crear_producto',
+        )
 
 
 class CategoriaViewSet(RolePermissionMixin, viewsets.ModelViewSet):
@@ -638,4 +666,101 @@ class ExportarInventarioView(RolePermissionMixin, views.APIView):
                     'error': str(e)
                 }},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class PlantillaProductosExcelView(RolePermissionMixin, views.APIView):
+    required_roles = None
+    permission_classes = [ProductoExcelTemplatePermission]
+
+    def get(self, request: Request) -> Response:
+        try:
+            output = generar_plantilla_excel_inventario()
+            filename = (
+                f"plantilla_productos_"
+                f"{timezone.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            )
+            return generar_respuesta_excel(output, filename)
+        except Exception as e:
+            return Response(
+                {'error': _(
+                    'Error al generar la plantilla: %(error)s'
+                ) % {'error': str(e)}},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+
+class ImportarProductosExcelView(RolePermissionMixin, views.APIView):
+    required_roles = None
+    permission_classes = [ProductoExcelImportPermission]
+
+    def post(self, request: Request) -> Response:
+        serializer = ImportarProductosExcelSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {
+                    'success': False,
+                    'message': (
+                        'Debes seleccionar un archivo Excel en formato .xlsx.'
+                    ),
+                    'errors': [
+                        {
+                            'row': 1,
+                            'column': 'Archivo',
+                            'value': '',
+                            'error': serializer.errors.get(
+                                'archivo',
+                                ['Archivo inválido.'],
+                            )[0],
+                        },
+                    ],
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            imported_count = ProductoImportService.importar_desde_excel(
+                serializer.validated_data['archivo'],
+                usuario=request.user if request.user.is_authenticated else None,
+            )
+            return Response(
+                {
+                    'success': True,
+                    'message': _(
+                        'Importación completada exitosamente.'
+                    ),
+                    'imported_count': imported_count,
+                },
+                status=status.HTTP_200_OK,
+            )
+        except ImportacionInventarioError as exc:
+            return Response(
+                {
+                    'success': False,
+                    'message': _(
+                        'No se pudo importar el archivo porque hay '
+                        'datos inválidos. Corrige los errores y vuelve '
+                        'a subir la plantilla.'
+                    ),
+                    'errors': exc.errors,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            return Response(
+                {
+                    'success': False,
+                    'message': _(
+                        'Ocurrió un error inesperado al importar el archivo.'
+                    ),
+                    'errors': [
+                        {
+                            'row': 1,
+                            'column': 'Archivo',
+                            'value': '',
+                            'error': str(e),
+                        },
+                    ],
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

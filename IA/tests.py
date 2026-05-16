@@ -1,15 +1,19 @@
 import json
+from datetime import timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from IA.llm.ports import LLMConfigurationError
+from IA.llm.ports import LLMConfigurationError, LLMResponse
 from IA.models import MensajeIA
 from cliente.models import Cliente
 from empresa.models import Empresa, EmpresaUsuario
-from inventario.models import Producto
+from inventario.models import FacturaCompra, Producto
+from proveedor.models import Proveedor
 from usuario.models import Usuario
 from ventas.models import (
     FacturacionElectronicaConfig,
@@ -18,6 +22,8 @@ from ventas.models import (
     Venta,
     VentaFacturaElectronica,
 )
+
+BUSINESS_TIMEZONE = ZoneInfo('America/Bogota')
 
 
 class IAAislamientoMultitenantTest(TestCase):
@@ -202,6 +208,7 @@ class IAPermisosYSecretosTest(TestCase):
         tools = {item['tool'] for item in sugerencias.data['results']}
         self.assertNotIn('resumen_facturacion_electronica', tools)
         self.assertNotIn('mejores_clientes', tools)
+        self.assertNotIn('proveedores_por_pagar', tools)
 
     def test_no_guarda_secretos_credenciales_en_historial(self):
         self.client.login(username=self.admin.username, password=self.password)
@@ -318,6 +325,21 @@ class IADeepSeekFallbackTest(TestCase):
             precio_compra=Decimal('1000.00'),
             precio_venta=Decimal('1500.00'),
         )
+        self.proveedor = Proveedor.objects.create(
+            empresa=self.empresa,
+            tipo_documento=Proveedor.TipoDocumento.NIT,
+            numero_documento='900123456',
+            razon_social='Laboratorios Norte SAS',
+            nombre_comercial='Lab Norte',
+            nombre_contacto='Ana Compras',
+            email='compras@labnorte.test',
+            telefono='3000000002',
+            direccion='Calle 2',
+            ciudad='Bogota',
+            departamento='Cundinamarca',
+            tipo_productos='Medicamentos',
+            forma_pago=Proveedor.FormaPago.CREDITO_30,
+        )
 
     def test_chat_no_rompe_si_llm_falla_por_configuracion_o_red(self):
         class BrokenLLMClient:
@@ -339,6 +361,36 @@ class IADeepSeekFallbackTest(TestCase):
 
         self.assertIn('ventas', result['respuesta'].lower())
         self.assertEqual(result['herramienta_usada'], 'resumen_ventas_periodo')
+
+    def test_resumen_ventas_no_usa_texto_llm_si_contradice_backend(self):
+        class WrongSalesLLMClient:
+            def chat(self, messages, *, temperature=None):
+                return LLMResponse(
+                    content='Hoy no registras ventas. Ayer vendiste $72,520.',
+                    tokens_entrada=1,
+                    tokens_salida=1,
+                )
+
+        from IA.services import IAService
+
+        request = type('RequestStub', (), {
+            'user': self.usuario,
+            'empresa': self.empresa,
+        })()
+
+        result = IAService.procesar_consulta(
+            request=request,
+            consulta='Cuanto vendi hoy?',
+            llm_client=WrongSalesLLMClient(),
+        )
+
+        self.assertEqual(result['herramienta_usada'], 'resumen_ventas_periodo')
+        self.assertEqual(
+            result['metadatos']['datos']['resumen']['cantidad_ventas'],
+            1,
+        )
+        self.assertIn('$28,019.98', result['respuesta'])
+        self.assertNotIn('Hoy no registras ventas', result['respuesta'])
 
     def test_consulta_inventario_usa_herramienta_de_inventario(self):
         response = self.client.post(
@@ -409,3 +461,130 @@ class IADeepSeekFallbackTest(TestCase):
             'clientes_con_saldo_pendiente',
         )
         self.assertIn('cliente cartera', detalle.data['respuesta'].lower())
+
+    def test_mejor_cliente_en_todo_el_tiempo_no_se_limita_al_mes_actual(self):
+        venta_anterior = Venta.objects.create(
+            empresa=self.empresa,
+            cliente=self.cliente,
+            subtotal=Decimal('90000.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('90000.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+        venta_anterior.fecha_venta = timezone.now() - timedelta(days=45)
+        venta_anterior.save(update_fields=['fecha_venta'])
+
+        response = self.client.post(
+            '/api/ia/chat/',
+            {'consulta': 'mi mejor cliente en todo el tiempo'},
+            format='json',
+            HTTP_X_EMPRESA_ID=str(self.empresa.id),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['herramienta_usada'], 'mejores_clientes')
+        self.assertEqual(
+            response.data['metadatos']['datos']['fecha_inicio'],
+            timezone.localtime(
+                venta_anterior.fecha_venta,
+                BUSINESS_TIMEZONE,
+            ).date().isoformat(),
+        )
+        primer_cliente = response.data['metadatos']['datos']['resultados'][0]
+        self.assertEqual(primer_cliente['nombre'], 'Cliente Cartera')
+        self.assertGreater(primer_cliente['total_comprado'], 90000)
+
+    def test_consulta_proveedor_por_pagar_devuelve_proveedores_pendientes(self):
+        FacturaCompra.objects.create(
+            empresa=self.empresa,
+            numero_factura='FC-001',
+            proveedor=self.proveedor,
+            fecha_factura=timezone.localdate(timezone=BUSINESS_TIMEZONE),
+            subtotal=Decimal('50000.00'),
+            iva=Decimal('0.00'),
+            total=Decimal('50000.00'),
+            usuario_registro=self.usuario,
+            estado=FacturaCompra.ESTADO_PENDIENTE,
+        )
+
+        response = self.client.post(
+            '/api/ia/chat/',
+            {'consulta': 'A que proveedor le debo pagar'},
+            format='json',
+            HTTP_X_EMPRESA_ID=str(self.empresa.id),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['herramienta_usada'], 'proveedores_por_pagar')
+        self.assertEqual(
+            response.data['metadatos']['total']['total_pendiente'],
+            50000.0,
+        )
+        self.assertIn('lab norte', response.data['respuesta'].lower())
+
+    def test_consulta_ganancia_comparando_ventas_con_gastos_usa_utilidad_periodo(self):
+        FacturaCompra.objects.create(
+            empresa=self.empresa,
+            numero_factura='FC-002',
+            proveedor=self.proveedor,
+            fecha_factura=timezone.localdate(timezone=BUSINESS_TIMEZONE),
+            subtotal=Decimal('10000.00'),
+            iva=Decimal('0.00'),
+            total=Decimal('10000.00'),
+            usuario_registro=self.usuario,
+            estado=FacturaCompra.ESTADO_PROCESADA,
+        )
+
+        response = self.client.post(
+            '/api/ia/chat/',
+            {'consulta': 'Cual es mi ganancia comparando ventas con gastos este mes'},
+            format='json',
+            HTTP_X_EMPRESA_ID=str(self.empresa.id),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['herramienta_usada'], 'utilidad_periodo')
+        self.assertEqual(
+            response.data['metadatos']['resumen']['total_ventas'],
+            28019.98,
+        )
+        self.assertEqual(
+            response.data['metadatos']['resumen']['total_gastos'],
+            10000.0,
+        )
+        self.assertIn('utilidad neta', response.data['respuesta'].lower())
+
+    def test_consulta_ganancia_en_todo_el_periodo_reconoce_alcance_historico(self):
+        venta_anterior = Venta.objects.create(
+            empresa=self.empresa,
+            cliente=self.cliente,
+            subtotal=Decimal('5000.00'),
+            impuestos=Decimal('0.00'),
+            total=Decimal('5000.00'),
+            estado=Venta.Estado.TERMINADA,
+            usuario_registro=self.usuario,
+        )
+        venta_anterior.fecha_venta = timezone.now() - timedelta(days=45)
+        venta_anterior.save(update_fields=['fecha_venta'])
+
+        response = self.client.post(
+            '/api/ia/chat/',
+            {'consulta': 'Cual es mi ganancia comparando ventas con gastos en todo el periodo de tiempo'},
+            format='json',
+            HTTP_X_EMPRESA_ID=str(self.empresa.id),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['herramienta_usada'], 'utilidad_periodo')
+        self.assertEqual(
+            response.data['metadatos']['periodo_consultado'],
+            'todo',
+        )
+        self.assertEqual(
+            response.data['metadatos']['fecha_inicio'],
+            timezone.localtime(
+                venta_anterior.fecha_venta,
+                BUSINESS_TIMEZONE,
+            ).date().isoformat(),
+        )

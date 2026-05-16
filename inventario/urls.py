@@ -7,6 +7,8 @@ from .views import (
     FacturaCompraViewSet,
     ReportesViewSet,
     ExportarInventarioView,
+    ImportarProductosExcelView,
+    PlantillaProductosExcelView,
 )
 
 router = DefaultRouter()
@@ -16,6 +18,16 @@ router.register(r'facturas', FacturaCompraViewSet, basename='factura')
 router.register(r'reportes', ReportesViewSet, basename='reporte')
 
 urlpatterns = [
-    path('', include(router.urls)),
     path('exportar/excel/', ExportarInventarioView.as_view(), name='exportar-inventario'),
+    path(
+        'productos/plantilla-excel/',
+        PlantillaProductosExcelView.as_view(),
+        name='productos-plantilla-excel',
+    ),
+    path(
+        'productos/importar-excel/',
+        ImportarProductosExcelView.as_view(),
+        name='productos-importar-excel',
+    ),
+    path('', include(router.urls)),
 ]

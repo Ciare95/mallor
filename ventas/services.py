@@ -30,7 +30,14 @@ from inventario.models import HistorialInventario, Producto
 from usuario.models import Usuario
 from empresa.context import get_empresa_actual_or_default
 from empresa.services import EmpresaService
-from ventas.models import Abono, DetalleVenta, Venta
+from ventas.models import (
+    Abono,
+    DetalleVenta,
+    FacturaElectronicaEntrega,
+    FacturaElectronicaSoporte,
+    Venta,
+    VentaFacturaElectronica,
+)
 
 
 QUANTIZER = Decimal('0.01')
@@ -211,6 +218,7 @@ class _VentaInventarioService:
     def validar_stock_detalles(
         detalles_data: List[Dict[str, Any]],
         detalles_actuales: Optional[List[DetalleVenta]] = None,
+        allow_negative: bool = False,
     ) -> None:
         stock_requerido = defaultdict(lambda: Decimal('0.00'))
         stock_actual = defaultdict(lambda: Decimal('0.00'))
@@ -231,6 +239,9 @@ class _VentaInventarioService:
             producto = productos.get(producto_id)
             if producto is None:
                 raise ProductoNoEncontradoError(producto_id)
+
+            if allow_negative:
+                continue
 
             disponible = producto.existencias + stock_actual[producto_id]
             if cantidad_requerida > disponible:
@@ -403,6 +414,7 @@ class VentaService:
             usuario,
         )
         empresa = get_empresa_actual_or_default()
+        allow_negative = EmpresaService.permite_stock_negativo_ventas(empresa)
         EmpresaService.validar_empresa_activa(empresa)
         cliente = _VentaInventarioService.obtener_cliente(
             datos_venta.pop('cliente', None),
@@ -417,7 +429,10 @@ class VentaService:
         datos_venta['cliente'] = cliente
         datos_venta.pop('detalles', None)
 
-        _VentaInventarioService.validar_stock_detalles(detalles_data)
+        _VentaInventarioService.validar_stock_detalles(
+            detalles_data,
+            allow_negative=allow_negative,
+        )
 
         venta = Venta.objects.create(**datos_venta)
 
@@ -568,6 +583,9 @@ class VentaService:
             _VentaInventarioService.validar_stock_detalles(
                 detalles_data,
                 detalles_actuales=detalles_actuales,
+                allow_negative=EmpresaService.permite_stock_negativo_ventas(
+                    venta.empresa,
+                ),
             )
             totales = _VentaInventarioService.calcular_totales_proyectados(
                 detalles_data,
@@ -873,6 +891,378 @@ class AbonoService:
             ),
         )['total']
         return total.quantize(QUANTIZER)
+
+
+class ContadorService:
+    """
+    Consultas de lectura para control contable, fiscal y probatorio.
+    """
+
+    @staticmethod
+    def _resolver_periodo(filtros: Optional[Dict[str, Any]] = None) -> Dict[str, date]:
+        filtros = filtros or {}
+        fecha_inicio = filtros.get('fecha_inicio')
+        fecha_fin = filtros.get('fecha_fin')
+        if fecha_inicio and fecha_fin:
+            return {'fecha_inicio': fecha_inicio, 'fecha_fin': fecha_fin}
+        periodo = filtros.get('periodo') or 'mes'
+        return VentaReporteService._resolver_filtro_periodo(periodo)
+
+    @staticmethod
+    def _ventas_periodo(filtros: Optional[Dict[str, Any]] = None):
+        fechas = ContadorService._resolver_periodo(filtros)
+        return VentaService._queryset_base().filter(
+            estado=Venta.Estado.TERMINADA,
+            fecha_venta__date__gte=fechas['fecha_inicio'],
+            fecha_venta__date__lte=fechas['fecha_fin'],
+        )
+
+    @staticmethod
+    def _facturas_periodo(filtros: Optional[Dict[str, Any]] = None):
+        fechas = ContadorService._resolver_periodo(filtros)
+        queryset = VentaFacturaElectronica.objects.select_related(
+            'venta',
+            'venta__cliente',
+        ).prefetch_related(
+            'entregas',
+            'soportes',
+        ).filter(
+            empresa=get_empresa_actual_or_default(),
+            venta__fecha_venta__date__gte=fechas['fecha_inicio'],
+            venta__fecha_venta__date__lte=fechas['fecha_fin'],
+        )
+        filtros = filtros or {}
+        if filtros.get('estado'):
+            queryset = queryset.filter(status=filtros['estado'])
+        if filtros.get('cliente_id'):
+            queryset = queryset.filter(venta__cliente_id=filtros['cliente_id'])
+        if filtros.get('q'):
+            termino = filtros['q']
+            queryset = queryset.filter(
+                Q(bill_number__icontains=termino)
+                | Q(cufe__icontains=termino)
+                | Q(reference_code__icontains=termino)
+                | Q(venta__numero_venta__icontains=termino)
+                | Q(venta__cliente__nombre__icontains=termino)
+                | Q(venta__cliente__numero_documento__icontains=termino)
+            )
+        return queryset
+
+    @staticmethod
+    def _money(value: Any) -> str:
+        return str((value or Decimal('0.00')).quantize(QUANTIZER))
+
+    @staticmethod
+    def _venta_item(venta: Venta) -> Dict[str, Any]:
+        cliente = venta.cliente
+        return {
+            'id': venta.id,
+            'numero_venta': venta.numero_venta,
+            'fecha_venta': venta.fecha_venta,
+            'cliente': cliente.get_nombre_completo() if cliente else 'Consumidor Final',
+            'cliente_documento': cliente.numero_documento if cliente else '',
+            'subtotal': ContadorService._money(venta.subtotal),
+            'impuestos': ContadorService._money(venta.impuestos),
+            'total': ContadorService._money(venta.total),
+            'total_abonado': ContadorService._money(venta.total_abonado),
+            'saldo_pendiente': ContadorService._money(venta.saldo_pendiente),
+            'factura_electronica': venta.factura_electronica,
+            'factura_status': getattr(
+                getattr(venta, 'factura_documento', None),
+                'status',
+                '',
+            ),
+        }
+
+    @staticmethod
+    def _factura_item(documento: VentaFacturaElectronica) -> Dict[str, Any]:
+        venta = documento.venta
+        cliente = venta.cliente
+        entregada = (
+            bool(documento.email_last_sent_at)
+            or documento.entregas.filter(
+                resultado=FacturaElectronicaEntrega.Resultado.EXITOSO,
+            ).exists()
+        )
+        soporte_pdf = documento.soportes.filter(
+            tipo=FacturaElectronicaSoporte.Tipo.PDF,
+        ).exists()
+        soporte_xml = documento.soportes.filter(
+            tipo=FacturaElectronicaSoporte.Tipo.XML,
+        ).exists()
+        return {
+            'id': documento.id,
+            'venta_id': venta.id,
+            'numero_venta': venta.numero_venta,
+            'cliente': cliente.get_nombre_completo() if cliente else 'Consumidor Final',
+            'cliente_documento': cliente.numero_documento if cliente else '',
+            'fecha_venta': venta.fecha_venta,
+            'status': documento.status,
+            'reference_code': documento.reference_code,
+            'bill_number': documento.bill_number,
+            'cufe': documento.cufe,
+            'resolution_number': documento.resolution_number,
+            'validated_at': documento.validated_at,
+            'email_last_sent_at': documento.email_last_sent_at,
+            'entregada': entregada,
+            'soporte_pdf_disponible': soporte_pdf,
+            'soporte_xml_disponible': soporte_xml,
+            'request_guardado': bool(documento.request_payload),
+            'response_guardado': bool(documento.response_payload),
+            'subtotal': ContadorService._money(venta.subtotal),
+            'impuestos': ContadorService._money(venta.impuestos),
+            'total': ContadorService._money(venta.total),
+            'last_error_code': documento.last_error_code,
+            'last_error_message': documento.last_error_message,
+        }
+
+    @staticmethod
+    def _respuesta_inconsistente(documento: VentaFacturaElectronica) -> bool:
+        request_payload = documento.request_payload or {}
+        response_payload = documento.response_payload or {}
+        data = response_payload.get('data') if isinstance(response_payload, dict) else {}
+        if not isinstance(data, dict):
+            return False
+
+        request_customer = request_payload.get('customer') or {}
+        response_customer = data.get('customer') or {}
+        request_identification = str(request_customer.get('identification') or '').strip()
+        response_identification = str(response_customer.get('identification') or '').strip()
+        if (
+            request_identification
+            and response_identification
+            and request_identification != response_identification
+        ):
+            return True
+
+        request_total = str(
+            ((request_payload.get('payment_details') or [{}])[0]).get('amount') or '',
+        ).strip()
+        response_total = str(((data.get('totals') or {}).get('total')) or '').strip()
+        return bool(request_total and response_total and request_total != response_total)
+
+    @staticmethod
+    def resumen(filtros: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        fechas = ContadorService._resolver_periodo(filtros)
+        ventas = ContadorService._ventas_periodo(filtros)
+        facturas = ContadorService._facturas_periodo(filtros)
+        agregados = ventas.aggregate(
+            total_ventas=Count('id'),
+            subtotal=Coalesce(
+                Sum('subtotal'),
+                Decimal('0.00'),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
+            impuestos=Coalesce(
+                Sum('impuestos'),
+                Decimal('0.00'),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
+            total=Coalesce(
+                Sum('total'),
+                Decimal('0.00'),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
+            cartera=Coalesce(
+                Sum('saldo_pendiente'),
+                Decimal('0.00'),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
+        )
+        facturas_emitidas = facturas.filter(
+            status=VentaFacturaElectronica.Status.EMITIDA,
+        ).count()
+        facturas_error = facturas.filter(
+            status=VentaFacturaElectronica.Status.ERROR,
+        ).count()
+        facturas_pendientes = facturas.filter(
+            status=VentaFacturaElectronica.Status.PENDIENTE_ENVIO,
+        ).count()
+        sin_entrega = facturas.filter(
+            status=VentaFacturaElectronica.Status.EMITIDA,
+        ).exclude(
+            Q(email_last_sent_at__isnull=False)
+            | Q(entregas__resultado=FacturaElectronicaEntrega.Resultado.EXITOSO),
+        ).distinct().count()
+        ventas_sin_fe = ventas.filter(factura_electronica=True).exclude(
+            factura_documento__status=VentaFacturaElectronica.Status.EMITIDA,
+        ).count()
+
+        return {
+            'fecha_inicio': fechas['fecha_inicio'],
+            'fecha_fin': fechas['fecha_fin'],
+            'total_ventas': agregados['total_ventas'] or 0,
+            'subtotal': ContadorService._money(agregados['subtotal']),
+            'impuestos': ContadorService._money(agregados['impuestos']),
+            'total': ContadorService._money(agregados['total']),
+            'cartera': ContadorService._money(agregados['cartera']),
+            'facturas_emitidas': facturas_emitidas,
+            'facturas_error': facturas_error,
+            'facturas_pendientes': facturas_pendientes,
+            'facturas_sin_entrega': sin_entrega,
+            'ventas_facturables_sin_fe': ventas_sin_fe,
+            'riesgos_altos': ventas_sin_fe + facturas_error + sin_entrega,
+        }
+
+    @staticmethod
+    def riesgos_dian(filtros: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        ventas = ContadorService._ventas_periodo(filtros)
+        facturas = ContadorService._facturas_periodo(filtros)
+        ventas_sin_fe = ventas.filter(factura_electronica=True).exclude(
+            factura_documento__status=VentaFacturaElectronica.Status.EMITIDA,
+        )
+        facturas_error = facturas.filter(status=VentaFacturaElectronica.Status.ERROR)
+        facturas_sin_entrega = facturas.filter(
+            status=VentaFacturaElectronica.Status.EMITIDA,
+        ).exclude(
+            Q(email_last_sent_at__isnull=False)
+            | Q(entregas__resultado=FacturaElectronicaEntrega.Resultado.EXITOSO),
+        ).distinct()
+        soportes_faltantes = [
+            documento
+            for documento in facturas.order_by('-updated_at')[:200]
+            if (
+                documento.status == VentaFacturaElectronica.Status.EMITIDA
+                and (
+                    not documento.request_payload
+                    or not documento.response_payload
+                    or not documento.soportes.filter(
+                        tipo=FacturaElectronicaSoporte.Tipo.PDF,
+                    ).exists()
+                    or not documento.soportes.filter(
+                        tipo=FacturaElectronicaSoporte.Tipo.XML,
+                    ).exists()
+                )
+            )
+        ]
+        inconsistentes = [
+            ContadorService._factura_item(documento)
+            for documento in facturas
+            if ContadorService._respuesta_inconsistente(documento)
+        ]
+
+        return {
+            'ventas_facturables_sin_fe': [
+                ContadorService._venta_item(venta)
+                for venta in ventas_sin_fe.order_by('-fecha_venta')[:100]
+            ],
+            'facturas_error': [
+                ContadorService._factura_item(documento)
+                for documento in facturas_error.order_by('-updated_at')[:100]
+            ],
+            'facturas_sin_entrega': [
+                ContadorService._factura_item(documento)
+                for documento in facturas_sin_entrega.order_by('-validated_at')[:100]
+            ],
+            'soportes_faltantes': [
+                ContadorService._factura_item(documento)
+                for documento in soportes_faltantes[:100]
+            ],
+            'respuestas_inconsistentes': inconsistentes[:100],
+            'contingencias_vencidas': [],
+        }
+
+    @staticmethod
+    def facturas(filtros: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        queryset = ContadorService._facturas_periodo(filtros)
+        return {
+            'results': [
+                ContadorService._factura_item(documento)
+                for documento in queryset.order_by('-created_at')[:200]
+            ],
+        }
+
+    @staticmethod
+    def impuestos(filtros: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        ventas = ContadorService._ventas_periodo(filtros)
+        por_iva = DetalleVenta.objects.filter(venta__in=ventas).values(
+            'producto__iva',
+        ).annotate(
+            base=Coalesce(
+                Sum('subtotal'),
+                Decimal('0.00'),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
+            impuesto=Coalesce(
+                Sum('iva'),
+                Decimal('0.00'),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
+            total=Coalesce(
+                Sum('total'),
+                Decimal('0.00'),
+                output_field=DecimalField(max_digits=12, decimal_places=2),
+            ),
+        ).order_by('producto__iva')
+        notas_credito = VentaFacturaElectronica.objects.filter(
+            empresa=get_empresa_actual_or_default(),
+            status=VentaFacturaElectronica.Status.ANULADA,
+            venta__in=ventas,
+        ).count()
+        return {
+            'resumen': ContadorService.resumen(filtros),
+            'por_iva': [
+                {
+                    'iva': str(row['producto__iva'] or Decimal('0.00')),
+                    'base': ContadorService._money(row['base']),
+                    'impuesto': ContadorService._money(row['impuesto']),
+                    'total': ContadorService._money(row['total']),
+                }
+                for row in por_iva
+            ],
+            'notas_credito': notas_credito,
+        }
+
+    @staticmethod
+    def cartera(filtros: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        filtros = filtros or {}
+        cartera_filtros = {
+            'cliente_id': filtros.get('cliente_id'),
+            'fecha_desde': filtros.get('fecha_inicio'),
+            'fecha_hasta': filtros.get('fecha_fin'),
+            'q': filtros.get('q'),
+        }
+        ventas = AbonoService.obtener_cuentas_por_cobrar(cartera_filtros)
+        total = sum((venta.saldo_pendiente for venta in ventas), Decimal('0.00'))
+        return {
+            'total': ContadorService._money(total),
+            'results': [ContadorService._venta_item(venta) for venta in ventas[:200]],
+        }
+
+    @staticmethod
+    def inventario_valorizado() -> Dict[str, Any]:
+        productos = Producto.objects.select_related('categoria').filter(
+            empresa=get_empresa_actual_or_default(),
+        ).order_by('nombre')
+        rows = []
+        costo_total = Decimal('0.00')
+        venta_total = Decimal('0.00')
+        for producto in productos[:500]:
+            costo = (producto.existencias * producto.precio_compra).quantize(QUANTIZER)
+            venta = (producto.existencias * producto.precio_venta).quantize(QUANTIZER)
+            costo_total += costo
+            venta_total += venta
+            rows.append({
+                'id': producto.id,
+                'codigo': producto.codigo_interno_formateado,
+                'nombre': producto.nombre,
+                'categoria': producto.categoria.nombre if producto.categoria else '',
+                'existencias': str(producto.existencias),
+                'precio_compra': ContadorService._money(producto.precio_compra),
+                'precio_venta': ContadorService._money(producto.precio_venta),
+                'iva': str(producto.iva),
+                'costo_valorizado': ContadorService._money(costo),
+                'venta_valorizada': ContadorService._money(venta),
+            })
+        return {
+            'costo_total': ContadorService._money(costo_total),
+            'venta_total': ContadorService._money(venta_total),
+            'results': rows,
+        }
+
+    @staticmethod
+    def soportes(filtros: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        return ContadorService.facturas(filtros)
 
 
 class VentaReporteService:

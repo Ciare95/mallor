@@ -11,10 +11,22 @@ import {
 import { useInventarioStore } from '../../store/useInventarioStore';
 import { formatCurrency } from '../../utils/formatters';
 import ExportarInventario from './ExportarInventario';
+import ImportarProductosExcel from './ImportarProductosExcel';
 
 const getResults = (data) => data?.results || data || [];
 
-const ProductosList = ({ onCreate, onView, onEdit, onDelete, onAdjustStock, onManageCategories, onCreateInvoice, onProcessInvoice, onToast }) => {
+const ProductosList = ({
+  onCreate,
+  onView,
+  onEdit,
+  onDelete,
+  onAdjustStock,
+  onManageCategories,
+  onCreateInvoice,
+  onProcessInvoice,
+  onImportSuccess,
+  onToast,
+}) => {
   const {
     filtrosProductos,
     setFiltrosProductos,
@@ -108,72 +120,57 @@ const ProductosList = ({ onCreate, onView, onEdit, onDelete, onAdjustStock, onMa
 
   return (
     <div className="space-y-6">
-      <section className="surface p-3">
-        <div className="mb-2 text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-          Modulo de inventario
-        </div>
+      <section className="surface p-2.5">
         <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
           <button
             type="button"
             onClick={onManageCategories}
-            className="tab-card min-h-[68px] px-3 py-2.5"
+            className="module-nav-card min-h-[52px]"
           >
-            <div className="flex items-center justify-between gap-3">
-              <Boxes className="h-3.5 w-3.5 text-soft" />
-              <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-                Gestion
+            <div className="flex items-center gap-3">
+              <span className="module-nav-icon">
+                <Boxes className="h-3.5 w-3.5" />
               </span>
-            </div>
-            <div className="mt-2.5 font-display text-[1.15rem] leading-none text-main">
-              Categorias
+              <span className="module-nav-label">Categorias</span>
             </div>
           </button>
 
           <button
             type="button"
             onClick={onCreateInvoice}
-            className="tab-card min-h-[68px] px-3 py-2.5"
+            className="module-nav-card min-h-[52px]"
           >
-            <div className="flex items-center justify-between gap-3">
-              <PackagePlus className="h-3.5 w-3.5 text-soft" />
-              <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-                Compras
+            <div className="flex items-center gap-3">
+              <span className="module-nav-icon">
+                <PackagePlus className="h-3.5 w-3.5" />
               </span>
-            </div>
-            <div className="mt-2.5 font-display text-[1.15rem] leading-none text-main">
-              Registrar factura
+              <span className="module-nav-label">Registrar factura</span>
             </div>
           </button>
 
           <button
             type="button"
             onClick={onProcessInvoice}
-            className="tab-card min-h-[68px] px-3 py-2.5"
+            className="module-nav-card min-h-[52px]"
           >
-            <div className="flex items-center justify-between gap-3">
-              <SlidersHorizontal className="h-3.5 w-3.5 text-soft" />
-              <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-                Flujo
+            <div className="flex items-center gap-3">
+              <span className="module-nav-icon">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
               </span>
-            </div>
-            <div className="mt-2.5 font-display text-[1.15rem] leading-none text-main">
-              Procesar factura
+              <span className="module-nav-label">Procesar factura</span>
             </div>
           </button>
 
           <button
             type="button"
             onClick={onCreate}
-            className="tab-card tab-card-active min-h-[68px] px-3 py-2.5"
+            className="module-nav-card module-nav-card-active min-h-[52px]"
           >
-            <div className="flex items-center justify-between gap-3">
-              <PackagePlus className="h-3.5 w-3.5 text-[var(--accent)]" />
-              <span className="text-[8px] font-semibold uppercase tracking-[0.2em] text-muted">
-                Alta
+            <div className="flex items-center gap-3">
+              <span className="module-nav-icon">
+                <PackagePlus className="h-3.5 w-3.5" />
               </span>
-            </div>
-            <div className="mt-2.5 font-display text-[1.15rem] leading-none text-main">
-              Nuevo producto
+              <span className="module-nav-label">Nuevo producto</span>
             </div>
           </button>
         </div>
@@ -239,6 +236,11 @@ const ProductosList = ({ onCreate, onView, onEdit, onDelete, onAdjustStock, onMa
         </section>
       )}
 
+      <ImportarProductosExcel
+        onImportSuccess={onImportSuccess}
+        onToast={onToast}
+      />
+
       <section className="surface">
         <div className="border-b border-app p-5 md:p-6">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -265,8 +267,8 @@ const ProductosList = ({ onCreate, onView, onEdit, onDelete, onAdjustStock, onMa
                 <SlidersHorizontal className="h-4 w-4" />
                 Stock bajo
               </button>
-              <button type="button" onClick={() => setModoVista('tabla')} className={`min-h-10 rounded-md border p-3 transition ${modoVista === 'tabla' ? 'border-[var(--text-main)] bg-[var(--text-main)] text-white' : 'border-app bg-white/70 text-soft hover:bg-white'}`} aria-label="Vista tabla"><List className="h-4 w-4" /></button>
-              <button type="button" onClick={() => setModoVista('tarjetas')} className={`min-h-10 rounded-md border p-3 transition ${modoVista === 'tarjetas' ? 'border-[var(--text-main)] bg-[var(--text-main)] text-white' : 'border-app bg-white/70 text-soft hover:bg-white'}`} aria-label="Vista tarjetas"><Grid3X3 className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setModoVista('tabla')} className={`min-h-10 rounded-md border p-3 transition ${modoVista === 'tabla' ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-sm' : 'border-app bg-white/70 text-soft hover:bg-white hover:text-main'}`} aria-label="Vista tabla"><List className="h-4 w-4" /></button>
+              <button type="button" onClick={() => setModoVista('tarjetas')} className={`min-h-10 rounded-md border p-3 transition ${modoVista === 'tarjetas' ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)] shadow-sm' : 'border-app bg-white/70 text-soft hover:bg-white hover:text-main'}`} aria-label="Vista tarjetas"><Grid3X3 className="h-4 w-4" /></button>
               <ExportarInventario onSuccess={onToast?.success} onError={onToast?.error} />
             </div>
           </div>

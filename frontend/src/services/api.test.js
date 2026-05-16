@@ -67,6 +67,19 @@ describe('api service', () => {
     expect(config.headers['X-Empresa-Id']).toBe('7');
   });
 
+  it('no envia Authorization al endpoint de refresh', () => {
+    useAppStore.getState().setToken('expired-token');
+
+    const config = requestInterceptor({
+      url: '/auth/refresh/',
+      headers: {
+        Authorization: 'Bearer expired-token',
+      },
+    });
+
+    expect(config.headers.Authorization).toBeUndefined();
+  });
+
   it('refresca access token y reintenta una vez ante 401', async () => {
     post.mockResolvedValueOnce({
       data: {
@@ -86,5 +99,41 @@ describe('api service', () => {
 
     expect(post).toHaveBeenCalledWith('/auth/refresh/');
     expect(useAppStore.getState().token).toBe('new-token');
+  });
+
+  it('comparte un solo refresh cuando varios requests fallan con 401', async () => {
+    let resolveRefresh;
+    post.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+
+    const firstRequest = responseErrorInterceptor({
+      response: { status: 401 },
+      config: { url: '/informes/dashboard/', headers: {} },
+    });
+    const secondRequest = responseErrorInterceptor({
+      response: { status: 401 },
+      config: { url: '/informes/ventas/', headers: {} },
+    });
+
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(post).toHaveBeenCalledWith('/auth/refresh/');
+
+    resolveRefresh({
+      data: {
+        access: 'shared-token',
+        user: { username: 'admin' },
+        empresa_activa: 1,
+        empresas: [{ id: 1, razon_social: 'Empresa A' }],
+      },
+    });
+
+    await Promise.all([firstRequest, secondRequest]);
+
+    expect(useAppStore.getState().token).toBe('shared-token');
+    expect(post).toHaveBeenCalledTimes(1);
   });
 });
