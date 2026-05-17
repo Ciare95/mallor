@@ -1,4 +1,5 @@
 import { calculateNitVerificationDigit } from './nit';
+import { normalizeMunicipioFields } from './municipios';
 
 const DAY_MS = 86400000;
 
@@ -140,6 +141,7 @@ export const calculateDaysPastDue = (venta, diasPlazo = 0) => {
 };
 
 export const buildClientePayload = (form) => ({
+  ...normalizeMunicipioFields(form),
   tipo_documento: form.tipo_documento,
   numero_documento: form.numero_documento.trim(),
   digito_verificacion:
@@ -153,9 +155,6 @@ export const buildClientePayload = (form) => ({
   telefono: form.telefono.trim(),
   celular: form.celular.trim(),
   direccion: form.direccion.trim(),
-  ciudad: form.ciudad.trim(),
-  departamento: form.departamento.trim(),
-  municipio_codigo: form.municipio_codigo.trim(),
   codigo_postal: form.codigo_postal.trim(),
   tipo_cliente: form.tipo_cliente,
   regimen_tributario: form.regimen_tributario,
@@ -167,6 +166,7 @@ export const buildClientePayload = (form) => ({
 });
 
 export const createClienteFormState = (cliente) => ({
+  ...normalizeMunicipioFields(cliente || {}),
   tipo_documento: cliente?.tipo_documento || 'CC',
   numero_documento: cliente?.numero_documento || '',
   digito_verificacion:
@@ -180,9 +180,6 @@ export const createClienteFormState = (cliente) => ({
   telefono: cliente?.telefono || '',
   celular: cliente?.celular || '',
   direccion: cliente?.direccion || '',
-  ciudad: cliente?.ciudad || '',
-  departamento: cliente?.departamento || '',
-  municipio_codigo: cliente?.municipio_codigo || '',
   codigo_postal: cliente?.codigo_postal || '',
   tipo_cliente: cliente?.tipo_cliente || 'NATURAL',
   regimen_tributario: cliente?.regimen_tributario || '',

@@ -10,11 +10,14 @@ export default function MunicipioLookupField({
   label = 'Municipio',
   code,
   onCodeChange,
+  onMunicipioSelect,
   disabled = false,
   required = false,
   helper = 'Busca por nombre o por codigo DIAN.',
   codeLabel = 'Codigo municipio',
   className = '',
+  error,
+  onBlur,
 }) {
   const listId = useId();
   const [query, setQuery] = useState('');
@@ -41,6 +44,7 @@ export default function MunicipioLookupField({
   const selectMunicipio = (municipio) => {
     setQuery(municipio.name);
     onCodeChange(municipio.code);
+    onMunicipioSelect?.(municipio);
     setIsOpen(false);
   };
 
@@ -50,12 +54,14 @@ export default function MunicipioLookupField({
 
     if (!value.trim()) {
       onCodeChange('');
+      onMunicipioSelect?.(null);
       return;
     }
 
     const exactByName = findMunicipioByName(value);
     if (exactByName) {
       onCodeChange(exactByName.code);
+      onMunicipioSelect?.(exactByName);
       return;
     }
 
@@ -66,6 +72,7 @@ export default function MunicipioLookupField({
     }
 
     onCodeChange('');
+    onMunicipioSelect?.(null);
   };
 
   return (
@@ -80,9 +87,12 @@ export default function MunicipioLookupField({
             disabled={disabled}
             placeholder="Ejemplo: Bogota"
             onFocus={() => setIsOpen(true)}
-            onBlur={() => window.setTimeout(() => setIsOpen(false), 120)}
+            onBlur={() => {
+              window.setTimeout(() => setIsOpen(false), 120);
+              onBlur?.();
+            }}
             onChange={(event) => handleChange(event.target.value)}
-            className="app-input min-h-11 pr-10"
+            className={`app-input min-h-11 pr-10 ${error ? 'border-[var(--danger)]' : ''}`}
             aria-expanded={isOpen}
             aria-controls={listId}
             aria-autocomplete="list"
@@ -90,6 +100,7 @@ export default function MunicipioLookupField({
           <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-soft" />
         </div>
         {helper && <span className="text-[12px] text-soft">{helper}</span>}
+        {error && <span className="text-[12px] text-[var(--danger)]">{error}</span>}
         {isOpen && !disabled && options.length > 0 && (
           <div
             id={listId}

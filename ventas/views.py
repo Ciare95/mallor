@@ -134,6 +134,8 @@ class FacturacionPermission(BaseVentasPermission):
         'validar_conexion': 'validar_conexion_facturacion',
         'sincronizar_rangos': 'sincronizar_rangos_facturacion',
         'rangos': 'ver_configuracion_facturacion',
+        'diagnostico_notas_credito_pendientes': 'ver_configuracion_facturacion',
+        'diagnostico_detalle_nota_credito': 'ver_configuracion_facturacion',
     }
 
 
@@ -158,6 +160,25 @@ def _validation_error_response(exc: DRFValidationError) -> Response:
         {'errors': exc.detail},
         status=status.HTTP_400_BAD_REQUEST,
     )
+
+
+def _facturacion_error_response(exc: FacturacionError) -> Response:
+    error_code = getattr(exc, 'code', 'facturacion_error')
+    response_status = status.HTTP_400_BAD_REQUEST
+    payload = {
+        'error': _error_message(exc),
+        'code': error_code,
+    }
+
+    if error_code == 'factus_nota_credito_pendiente_dian':
+        response_status = status.HTTP_409_CONFLICT
+        payload['resolution'] = (
+            'Revisa en Factus la nota credito pendiente asociada a esta '
+            'factura y espera su procesamiento en DIAN o completala desde '
+            'Factus antes de generar una nueva.'
+        )
+
+    return Response(payload, status=response_status)
 
 
 def _parse_date_param(value: Optional[str], field: str) -> Optional[date]:
@@ -610,10 +631,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
         except FacturacionError as exc:
-            return Response(
-                {'error': _error_message(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _facturacion_error_response(exc)
 
     @action(detail=True, methods=['post'], url_path='factura/emitir')
     def emitir_factura(self, request: Request, pk: int = None) -> Response:
@@ -623,10 +641,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
             serializer = VentaFacturaElectronicaSerializer(documento)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         except FacturacionError as exc:
-            return Response(
-                {'error': _error_message(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _facturacion_error_response(exc)
 
     @action(detail=True, methods=['post'], url_path='factura/reintentar')
     def reenviar_factura(self, request: Request, pk: int = None) -> Response:
@@ -636,10 +651,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
             serializer = VentaFacturaElectronicaSerializer(documento)
             return Response(serializer.data)
         except FacturacionError as exc:
-            return Response(
-                {'error': _error_message(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _facturacion_error_response(exc)
 
     @action(detail=True, methods=['get'], url_path='factura/pdf')
     def factura_pdf(self, request: Request, pk: int = None) -> Response:
@@ -660,10 +672,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
         except FacturacionError as exc:
-            return Response(
-                {'error': _error_message(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _facturacion_error_response(exc)
 
     @action(detail=True, methods=['get'], url_path='factura/xml')
     def factura_xml(self, request: Request, pk: int = None) -> Response:
@@ -684,10 +693,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
         except FacturacionError as exc:
-            return Response(
-                {'error': _error_message(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _facturacion_error_response(exc)
 
     @action(detail=True, methods=['post'], url_path='factura/enviar-email')
     def factura_email(self, request: Request, pk: int = None) -> Response:
@@ -700,10 +706,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
             serializer = VentaFacturaElectronicaSerializer(documento)
             return Response(serializer.data)
         except FacturacionError as exc:
-            return Response(
-                {'error': _error_message(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _facturacion_error_response(exc)
 
     @action(detail=True, methods=['post'], url_path='factura/entrega')
     def factura_entrega(self, request: Request, pk: int = None) -> Response:
@@ -721,10 +724,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
             serializer = VentaFacturaElectronicaSerializer(documento)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         except FacturacionError as exc:
-            return Response(
-                {'error': _error_message(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _facturacion_error_response(exc)
 
     @action(detail=True, methods=['post'], url_path='factura/nota-credito')
     def factura_nota_credito(self, request: Request, pk: int = None) -> Response:
@@ -738,10 +738,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
             serializer = VentaFacturaElectronicaSerializer(documento)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         except FacturacionError as exc:
-            return Response(
-                {'error': _error_message(exc)},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return _facturacion_error_response(exc)
 
 
 class AbonoViewSet(RolePermissionMixin, viewsets.ViewSet):
@@ -1097,6 +1094,34 @@ class FacturacionViewSet(RolePermissionMixin, viewsets.ViewSet):
         )
         serializer = FactusNumberingRangeSerializer(queryset, many=True)
         return Response(serializer.data)
+
+    @action(
+        detail=False,
+        methods=['get'],
+        url_path='diagnostico/notas-credito-pendientes',
+    )
+    def diagnostico_notas_credito_pendientes(self, request: Request) -> Response:
+        try:
+            payload = self._service().diagnostico_notas_credito_pendientes()
+            return Response(payload)
+        except FacturacionError as exc:
+            return _facturacion_error_response(exc)
+
+    @action(
+        detail=False,
+        methods=['get'],
+        url_path=r'diagnostico/notas-credito-pendientes/(?P<number>[^/.]+)',
+    )
+    def diagnostico_detalle_nota_credito(
+        self,
+        request: Request,
+        number: str = '',
+    ) -> Response:
+        try:
+            payload = self._service().diagnostico_detalle_nota_credito(number)
+            return Response(payload)
+        except FacturacionError as exc:
+            return _facturacion_error_response(exc)
 
 
 class ContadorViewSet(RolePermissionMixin, viewsets.ViewSet):

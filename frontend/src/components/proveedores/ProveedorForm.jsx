@@ -17,6 +17,8 @@ import {
   createProveedorFormState,
   validateProveedorForm,
 } from '../../utils/proveedores';
+import { getDepartamentoByMunicipioCode } from '../../utils/municipios';
+import MunicipioLookupField from '../forms/MunicipioLookupField';
 import { HelperPanel, SectionShell } from './shared';
 
 const EMPTY_ERRORS = {};
@@ -75,6 +77,17 @@ export default function ProveedorForm({
     setForm((current) => ({
       ...current,
       [field]: value,
+    }));
+  };
+
+  const setMunicipio = (municipio) => {
+    setForm((current) => ({
+      ...current,
+      ciudad: municipio?.name || '',
+      departamento: municipio
+        ? getDepartamentoByMunicipioCode(municipio.code)
+        : '',
+      municipio_codigo: municipio?.code || '',
     }));
   };
 
@@ -217,21 +230,35 @@ export default function ProveedorForm({
                 onBlur={() => handleBlur('direccion')}
                 error={visibleErrors.direccion}
               />
-              <div className="grid gap-4 lg:grid-cols-2">
-                <InputField
-                  label="Ciudad"
-                  value={form.ciudad}
-                  onChange={(value) => setField('ciudad', value)}
-                  onBlur={() => handleBlur('ciudad')}
-                  error={visibleErrors.ciudad}
+              <div className="grid gap-4">
+                <MunicipioLookupField
+                  label="Municipio DIAN"
+                  code={form.municipio_codigo}
+                  required
+                  error={visibleErrors.municipio_codigo}
+                  helper="Selecciona el municipio y el sistema completa ciudad y departamento."
+                  onBlur={() => handleBlur('municipio_codigo')}
+                  onCodeChange={(value) => setField('municipio_codigo', value)}
+                  onMunicipioSelect={setMunicipio}
                 />
-                <InputField
-                  label="Departamento"
-                  value={form.departamento}
-                  onChange={(value) => setField('departamento', value)}
-                  onBlur={() => handleBlur('departamento')}
-                  error={visibleErrors.departamento}
-                />
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <InputField
+                    label="Ciudad"
+                    value={form.ciudad}
+                    readOnly
+                    onBlur={() => handleBlur('ciudad')}
+                    error={visibleErrors.ciudad}
+                    helper="Se completa desde el municipio."
+                  />
+                  <InputField
+                    label="Departamento"
+                    value={form.departamento}
+                    readOnly
+                    onBlur={() => handleBlur('departamento')}
+                    error={visibleErrors.departamento}
+                    helper="Se completa automaticamente."
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -347,6 +374,7 @@ function InputField({
   helper,
   icon: Icon,
   type = 'text',
+  readOnly = false,
 }) {
   return (
     <label className="app-field">
@@ -360,6 +388,7 @@ function InputField({
           value={value}
           onChange={(event) => onChange(event.target.value)}
           onBlur={onBlur}
+          readOnly={readOnly}
           className={`app-input min-h-11 ${Icon ? 'pl-10' : ''} ${
             error
               ? 'border-[rgba(159,47,45,0.28)] focus:border-[rgba(159,47,45,0.42)] focus:shadow-none'

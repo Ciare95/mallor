@@ -39,6 +39,18 @@ const EMPTY_OWNER = {
   phone: '',
 };
 
+const FACTURACION_REQUIRED_FIELDS = [
+  ['nit', 'NIT'],
+  ['razon_social', 'Razon social'],
+  ['direccion', 'Direccion'],
+  ['municipio_codigo', 'Municipio DIAN'],
+];
+
+const getEmpresaFiscalMissingFields = (empresa) =>
+  FACTURACION_REQUIRED_FIELDS
+    .filter(([field]) => !String(empresa?.[field] || '').trim())
+    .map(([, label]) => label);
+
 export default function EmpresasAdminPage() {
   const queryClient = useQueryClient();
   const { toasts, toast, closeToast } = useToast();
@@ -344,53 +356,66 @@ export default function EmpresasAdminPage() {
         )}
 
         <div className="grid gap-3">
-          {empresas.map((empresa) => (
-            <article
-              key={empresa.id}
-              className="grid gap-4 rounded-xl border border-app bg-white/75 p-4 xl:grid-cols-[1fr_0.7fr_0.8fr_auto]"
-            >
-              <div>
-                <div className="flex items-center gap-2">
-                  <Building2 className="h-4 w-4 text-soft" />
-                  <div className="text-[14px] font-semibold text-main">
-                    {empresa.nombre_comercial || empresa.razon_social}
+          {empresas.map((empresa) => {
+            const missingFiscalFields = getEmpresaFiscalMissingFields(empresa);
+            const hasFiscalGaps = missingFiscalFields.length > 0;
+
+            return (
+              <article
+                key={empresa.id}
+                className="grid gap-4 rounded-xl border border-app bg-white/75 p-4 xl:grid-cols-[1fr_0.7fr_0.8fr_auto]"
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-soft" />
+                    <div className="text-[14px] font-semibold text-main">
+                      {empresa.nombre_comercial || empresa.razon_social}
+                    </div>
+                  </div>
+                  <div className="mt-1 text-[12px] text-soft">
+                    NIT {empresa.nit}
+                    {empresa.digito_verificacion
+                      ? `-${empresa.digito_verificacion}`
+                      : ''}
                   </div>
                 </div>
-                <div className="mt-1 text-[12px] text-soft">
-                  NIT {empresa.nit}
-                  {empresa.digito_verificacion
-                    ? `-${empresa.digito_verificacion}`
-                    : ''}
+                <Info label="Usuarios" value={empresa.usuarios_count} />
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusBadge status={empresa.activo ? 'ACTIVA' : 'INACTIVA'} />
+                  <StatusBadge
+                    status={empresa.factus_configured ? 'FACTUS' : 'SIN FACTUS'}
+                  />
+                  <StatusBadge
+                    status={hasFiscalGaps ? 'FISCAL INCOMPLETA' : 'FISCAL OK'}
+                  />
+                  {hasFiscalGaps && (
+                    <div className="w-full text-[12px] leading-5 text-soft">
+                      Falta: {missingFiscalFields.join(', ')}
+                    </div>
+                  )}
                 </div>
-              </div>
-              <Info label="Usuarios" value={empresa.usuarios_count} />
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge status={empresa.activo ? 'ACTIVA' : 'INACTIVA'} />
-                <StatusBadge
-                  status={empresa.factus_configured ? 'FACTUS' : 'SIN FACTUS'}
-                />
-              </div>
-              <div className="flex flex-wrap items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => beginEdit(empresa)}
-                  className="app-button-secondary min-h-10"
-                >
-                  <PencilLine className="h-4 w-4" />
-                  Editar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => toggleActivo(empresa)}
-                  disabled={editarMutation.isPending}
-                  className="app-button-secondary min-h-10"
-                >
-                  <Save className="h-4 w-4" />
-                  {empresa.activo ? 'Inactivar' : 'Activar'}
-                </button>
-              </div>
-            </article>
-          ))}
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => beginEdit(empresa)}
+                    className="app-button-secondary min-h-10"
+                  >
+                    <PencilLine className="h-4 w-4" />
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleActivo(empresa)}
+                    disabled={editarMutation.isPending}
+                    className="app-button-secondary min-h-10"
+                  >
+                    <Save className="h-4 w-4" />
+                    {empresa.activo ? 'Inactivar' : 'Activar'}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </SectionShell>
 

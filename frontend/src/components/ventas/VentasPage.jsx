@@ -33,6 +33,8 @@ import {
 import {
   calculateVentaTotals,
   buildVentaPayload,
+  FACTUS_NOTA_CREDITO_PENDIENTE_DIAN_CODE,
+  resolveFacturaErrorMessage,
 } from '../../utils/ventas';
 import { ThermalTicketPreviewModal } from './ThermalTicket';
 import CuentasPorCobrar from './CuentasPorCobrar';
@@ -280,10 +282,32 @@ export default function VentasPage() {
       await refreshVentaDetail(variables.venta.id);
       toast.success('Nota credito registrada');
     },
-    onError: (error) => {
-      toast.error(
-        extractApiError(error, 'No fue posible generar la nota credito'),
+    onError: async (error, variables) => {
+      const errorCode = error?.response?.data?.code || '';
+      const message = extractApiError(
+        error,
+        'No fue posible generar la nota credito',
       );
+
+      invalidateVentas();
+      if (variables?.venta?.id) {
+        try {
+          const refreshed = await refreshVentaDetail(variables.venta.id);
+          toast.error(resolveFacturaErrorMessage(refreshed.factura_documento));
+          return;
+        } catch {
+          // If refresh fails, fall back to the API error payload.
+        }
+      }
+
+      if (errorCode === FACTUS_NOTA_CREDITO_PENDIENTE_DIAN_CODE) {
+        toast.error(
+          'Ya existe una nota credito pendiente en la DIAN para esta factura.',
+        );
+        return;
+      }
+
+      toast.error(message);
     },
   });
 

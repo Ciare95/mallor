@@ -71,6 +71,15 @@ def _extract_rows(payload: Dict[str, Any]) -> list[Dict[str, Any]]:
     return []
 
 
+def _nested_get(source: Dict[str, Any], path: str) -> Any:
+    current: Any = source
+    for segment in path.split('.'):
+        if not isinstance(current, dict):
+            return None
+        current = current.get(segment)
+    return current
+
+
 def _normalize_range_document_code(value: Any) -> str:
     raw = str(value or '').strip().lower()
     mapping = {
@@ -126,6 +135,73 @@ class FacturacionElectronicaService:
 
     def _adapter_for_empresa(self, empresa):
         return self.adapter or FactusAdapter(empresa=empresa)
+
+    @staticmethod
+    def _extract_qr_payload(
+        response_payload: Optional[Dict[str, Any]],
+        *,
+        cufe: str = '',
+    ) -> Dict[str, Any]:
+        payload = response_payload or {}
+        data = payload.get('data') if isinstance(payload, dict) else {}
+        if not isinstance(data, dict):
+            data = {}
+
+        qr_value = (
+            data.get('qr_image')
+            or data.get('qr')
+            or data.get('qr_code')
+            or data.get('qr_data_url')
+            or data.get('qr_url')
+            or _nested_get(data, 'links.qr')
+            or _nested_get(data, 'bill.links.qr')
+            or _nested_get(data, 'invoice.links.qr')
+            or cufe
+        )
+        public_url = _nested_get(data, 'links.public_url') or ''
+
+        return {
+            'value': str(qr_value or '').strip(),
+            'source_url': (
+                str(_nested_get(data, 'links.qr') or '').strip()
+            ),
+            'public_url': str(public_url).strip(),
+            'cufe': str(cufe or '').strip(),
+        }
+
+    @staticmethod
+    def _build_qr_svg(qr_value: str) -> str:
+        normalized = str(qr_value or '').strip()
+        if not normalized:
+            return ''
+
+        try:
+            from reportlab.graphics import renderSVG
+            from reportlab.graphics.barcode.qr import QrCodeWidget
+            from reportlab.graphics.shapes import Drawing
+        except Exception as exc:
+            logger.warning('No fue posible importar generador SVG de QR: %s', exc)
+            return ''
+
+        try:
+            qr_widget = QrCodeWidget(normalized)
+            bounds = qr_widget.getBounds()
+            width = bounds[2] - bounds[0]
+            height = bounds[3] - bounds[1]
+            size = 132
+            drawing = Drawing(
+                size,
+                size,
+                transform=[size / width, 0, 0, size / height, 0, 0],
+            )
+            drawing.add(qr_widget)
+            svg = renderSVG.drawToString(drawing)
+            if isinstance(svg, bytes):
+                return svg.decode('utf-8')
+            return str(svg)
+        except Exception as exc:
+            logger.warning('No fue posible generar SVG QR para factura: %s', exc)
+            return ''
 
     @staticmethod
     def get_config(empresa=None) -> FacturacionElectronicaConfig:
@@ -356,6 +432,27 @@ class FacturacionElectronicaService:
             ],
         )
 
+    @staticmethod
+    def _next_credit_note_reference_code(
+        documento: VentaFacturaElectronica,
+        current_reference: str,
+    ) -> str:
+        base_reference = current_reference or f'NC-{documento.reference_code}'
+        if '-R' in base_reference:
+            base_reference = base_reference.rsplit('-R', 1)[0]
+        retry_prefix = f'{base_reference}-R'
+        next_retry = 1
+
+        if current_reference.startswith(retry_prefix):
+            try:
+                next_retry = int(
+                    current_reference.removeprefix(retry_prefix),
+                ) + 1
+            except ValueError:
+                next_retry = 1
+
+        return f'{retry_prefix}{next_retry}'
+
     def validar_conexion(self) -> Dict[str, Any]:
         empresa = get_empresa_actual_or_default()
         EmpresaService.validar_empresa_activa(empresa)
@@ -452,6 +549,135 @@ class FacturacionElectronicaService:
             'company_snapshot': empresa_response,
         }
 
+    def diagnostico_notas_credito_pendientes(self) -> Dict[str, Any]:
+        empresa = get_empresa_actual_or_default()
+        EmpresaService.validar_empresa_activa(empresa)
+        config = self.get_config(empresa)
+        response = self._adapter_for_empresa(empresa).listar_notas_credito(
+            status='0',
+        )
+        rows = _extract_rows(response)
+
+        bill_numbers = []
+        for row in rows:
+            bill_number = _nested_get(row, 'bill.number')
+            if bill_number:
+                bill_numbers.append(str(bill_number))
+
+        documentos = {
+            documento.bill_number: documento
+            for documento in VentaFacturaElectronica.objects.select_related('venta').filter(
+                empresa=empresa,
+                bill_number__in=bill_numbers,
+            )
+        }
+
+        items = []
+        for row in rows:
+            bill_number = str(_nested_get(row, 'bill.number') or '').strip()
+            documento = documentos.get(bill_number)
+            customer_name = (
+                _nested_get(row, 'customer.graphic_representation_name')
+                or _nested_get(row, 'customer.names')
+                or _nested_get(row, 'customer.company')
+                or ''
+            )
+            items.append({
+                'reference_code': str(row.get('reference_code') or '').strip(),
+                'number': str(row.get('number') or '').strip(),
+                'is_validated': bool(row.get('is_validated')),
+                'validated_at': row.get('validated_at'),
+                'created_at': row.get('created_at'),
+                'observation': str(row.get('observation') or '').strip(),
+                'total': str(row.get('total') or '').strip(),
+                'errors': row.get('errors'),
+                'customer_name': str(customer_name).strip(),
+                'customer_identification': str(
+                    _nested_get(row, 'customer.identification') or '',
+                ).strip(),
+                'bill_number': bill_number,
+                'bill_reference_code': str(
+                    _nested_get(row, 'bill.reference_code') or '',
+                ).strip(),
+                'local_document': (
+                    {
+                        'venta_id': documento.venta_id,
+                        'numero_venta': documento.venta.numero_venta,
+                        'factura_id': documento.id,
+                        'bill_number': documento.bill_number,
+                        'reference_code': documento.reference_code,
+                        'credit_note_number': documento.credit_note_number,
+                        'last_error_code': documento.last_error_code,
+                        'last_error_message': documento.last_error_message,
+                    }
+                    if documento is not None else None
+                ),
+            })
+
+        return {
+            'environment': config.environment,
+            'count': len(items),
+            'items': items,
+            'fetched_at': timezone.now().isoformat(),
+        }
+
+    def diagnostico_detalle_nota_credito(self, note_number: str) -> Dict[str, Any]:
+        empresa = get_empresa_actual_or_default()
+        EmpresaService.validar_empresa_activa(empresa)
+        response = self._adapter_for_empresa(empresa).consultar_nota_credito(
+            note_number,
+        )
+        data = response.get('data') or {}
+        bill_number = str(_nested_get(data, 'bill.number') or '').strip()
+        documento = None
+        if bill_number:
+            documento = VentaFacturaElectronica.objects.select_related('venta').filter(
+                empresa=empresa,
+                bill_number=bill_number,
+            ).first()
+
+        customer_name = (
+            _nested_get(data, 'customer.graphic_representation_name')
+            or _nested_get(data, 'customer.names')
+            or _nested_get(data, 'customer.company')
+            or ''
+        )
+        return {
+            'reference_code': str(data.get('reference_code') or '').strip(),
+            'number': str(data.get('number') or '').strip(),
+            'is_validated': bool(data.get('is_validated')),
+            'validated_at': data.get('validated_at'),
+            'created_at': data.get('created_at'),
+            'observation': str(data.get('observation') or '').strip(),
+            'total': str(_nested_get(data, 'totals.total') or data.get('total') or '').strip(),
+            'errors': data.get('errors'),
+            'cude': str(data.get('cude') or '').strip(),
+            'bill_number': bill_number,
+            'bill_reference_code': str(
+                _nested_get(data, 'bill.reference_code') or '',
+            ).strip(),
+            'bill_cufe': str(_nested_get(data, 'bill.cufe') or '').strip(),
+            'customer_name': str(customer_name).strip(),
+            'customer_identification': str(
+                _nested_get(data, 'customer.identification') or '',
+            ).strip(),
+            'public_url': str(_nested_get(data, 'links.public_url') or '').strip(),
+            'qr_url': str(_nested_get(data, 'links.qr') or '').strip(),
+            'local_document': (
+                {
+                    'venta_id': documento.venta_id,
+                    'numero_venta': documento.venta.numero_venta,
+                    'factura_id': documento.id,
+                    'bill_number': documento.bill_number,
+                    'reference_code': documento.reference_code,
+                    'credit_note_number': documento.credit_note_number,
+                    'last_error_code': documento.last_error_code,
+                    'last_error_message': documento.last_error_message,
+                }
+                if documento is not None else None
+            ),
+        }
+
     def emitir_factura(self, venta_id: int) -> VentaFacturaElectronica:
         empresa = get_empresa_actual_or_default()
         EmpresaService.validar_empresa_activa(empresa)
@@ -479,11 +705,17 @@ class FacturacionElectronicaService:
             response = self._adapter_for_empresa(empresa).emitir_factura(payload)
             validate_bill_response(payload, response)
             parsed = extract_bill_result(response)
+            qr_payload = self._extract_qr_payload(
+                response,
+                cufe=parsed['cufe'],
+            )
             documento.status = VentaFacturaElectronica.Status.EMITIDA
             documento.bill_number = parsed['bill_number']
             documento.cufe = parsed['cufe']
             documento.resolution_number = parsed['resolution_number']
             documento.response_payload = response
+            documento.qr_payload = qr_payload
+            documento.qr_svg = self._build_qr_svg(qr_payload.get('value', ''))
             documento.validated_at = (
                 _parse_optional_datetime(parsed['validated_at'])
                 or timezone.now()
@@ -732,7 +964,6 @@ class FacturacionElectronicaService:
             documento.save(update_fields=['email_last_sent_at', 'updated_at'])
         return documento
 
-    @transaction.atomic
     def crear_nota_credito(
         self,
         venta_id: int,
@@ -747,26 +978,88 @@ class FacturacionElectronicaService:
                 'No hay rango activo configurado para notas credito.',
                 code='factus_rango_nota_credito',
             )
-        payload = build_credit_note_payload(
-            documento,
-            config.active_credit_note_range.factus_id,
-            concept_code,
-            reason,
+        note_reference = (
+            (
+                documento.credit_note_payload.get('request_payload') or {}
+            ).get('reference_code')
+            or f'NC-{documento.reference_code}'
         )
-        response = self._adapter_for_empresa(documento.empresa).crear_nota_credito(
-            payload,
-        )
-        parsed = extract_bill_result(response)
-        documento.status = VentaFacturaElectronica.Status.ANULADA
-        documento.credit_note_number = parsed['bill_number']
-        documento.credit_note_payload = response
-        documento.response_payload = response
-        documento.save()
-        self._registrar_intento(
-            factura=documento,
-            action=FacturaElectronicaIntento.Action.NOTA_CREDITO,
-            is_success=True,
-            request_payload=payload,
-            response_payload=response,
-        )
-        return documento
+
+        for attempt in range(2):
+            payload = build_credit_note_payload(
+                documento,
+                config.active_credit_note_range.factus_id,
+                concept_code,
+                reason,
+                reference_code=note_reference,
+            )
+            try:
+                response = self._adapter_for_empresa(
+                    documento.empresa,
+                ).crear_nota_credito(payload)
+                parsed = extract_bill_result(response)
+                documento.status = VentaFacturaElectronica.Status.ANULADA
+                documento.credit_note_number = parsed['bill_number']
+                documento.credit_note_payload = {
+                    'request_payload': payload,
+                    'response_payload': response,
+                }
+                documento.response_payload = response
+                documento.last_error_code = ''
+                documento.last_error_message = ''
+                documento.save()
+                self._registrar_intento(
+                    factura=documento,
+                    action=FacturaElectronicaIntento.Action.NOTA_CREDITO,
+                    is_success=True,
+                    request_payload=payload,
+                    response_payload=response,
+                )
+                return documento
+            except Exception as exc:
+                error_code = getattr(exc, 'code', 'factus_error')
+                error_message = getattr(exc, 'message', str(exc))
+                documento.last_error_code = error_code
+                documento.last_error_message = error_message
+                documento.credit_note_payload = {
+                    'request_payload': payload,
+                    'error': error_message,
+                }
+
+                should_retry = (
+                    attempt == 0
+                    and self._is_pending_dian_conflict(error_code, error_message)
+                )
+                if should_retry:
+                    note_reference = self._next_credit_note_reference_code(
+                        documento,
+                        note_reference,
+                    )
+                    documento.save(
+                        update_fields=[
+                            'last_error_code',
+                            'last_error_message',
+                            'credit_note_payload',
+                            'updated_at',
+                        ],
+                    )
+                    continue
+
+                documento.save()
+                self._registrar_intento(
+                    factura=documento,
+                    action=FacturaElectronicaIntento.Action.NOTA_CREDITO,
+                    is_success=False,
+                    request_payload=payload,
+                    error_message=str(exc),
+                )
+                if self._is_pending_dian_conflict(error_code, error_message):
+                    raise FacturacionOperacionError(
+                        (
+                            'Ya existe una nota credito pendiente en la DIAN '
+                            'para esta factura. Revisa el documento pendiente '
+                            'en Factus antes de volver a intentarlo.'
+                        ),
+                        code='factus_nota_credito_pendiente_dian',
+                    ) from exc
+                raise

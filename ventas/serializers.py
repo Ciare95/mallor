@@ -764,6 +764,8 @@ class VentaFacturaElectronicaSerializer(serializers.ModelSerializer):
             'last_error_message',
             'request_payload',
             'response_payload',
+            'qr_payload',
+            'qr_svg',
             'credit_note_number',
             'credit_note_payload',
             'entregas',

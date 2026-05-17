@@ -51,3 +51,13 @@ class FacturacionPort(ABC):
     def consultar_nota_credito(self, note_number: str) -> Dict[str, Any]:
         raise NotImplementedError
 
+    @abstractmethod
+    def listar_notas_credito(
+        self,
+        *,
+        reference_code: Optional[str] = None,
+        number: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        raise NotImplementedError
+

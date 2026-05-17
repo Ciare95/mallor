@@ -358,6 +358,8 @@ def build_credit_note_payload(
     numbering_range_id: int,
     concept_code: str,
     reason: str,
+    *,
+    reference_code: Optional[str] = None,
 ) -> Dict[str, Any]:
     if not factura.bill_number:
         raise FacturacionValidacionError(
@@ -365,11 +367,35 @@ def build_credit_note_payload(
             code='factus_nota_sin_factura',
         )
 
+    original_payload = factura.request_payload or {}
+    payment_details = original_payload.get('payment_details') or []
+    customer = original_payload.get('customer') or {}
+    items = original_payload.get('items') or []
+
+    if not payment_details or not customer or not items:
+        raise FacturacionValidacionError(
+            (
+                'La factura original no tiene payload suficiente para '
+                'construir la nota credito.'
+            ),
+            code='factus_nota_payload_incompleto',
+        )
+
+    note_reference = reference_code or f'NC-{factura.reference_code}'
+    normalized_payment_details = []
+    for detail in payment_details:
+        normalized_detail = dict(detail)
+        normalized_detail['reference_code'] = note_reference
+        normalized_payment_details.append(normalized_detail)
+
     return {
-        'reference_code': f'NC-{factura.reference_code}',
+        'reference_code': note_reference,
+        'correction_concept_code': concept_code,
+        'customization_id': '20',
         'bill_number': factura.bill_number,
         'numbering_range_id': numbering_range_id,
-        'concept_code': concept_code,
-        'customization_id': '20',
+        'payment_details': normalized_payment_details,
         'observation': reason,
+        'customer': customer,
+        'items': items,
     }

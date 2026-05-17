@@ -943,6 +943,8 @@ class VentaFacturaElectronica(models.Model):
     last_error_message = models.TextField(blank=True)
     request_payload = models.JSONField(default=dict, blank=True)
     response_payload = models.JSONField(default=dict, blank=True)
+    qr_payload = models.JSONField(default=dict, blank=True)
+    qr_svg = models.TextField(blank=True)
     credit_note_number = models.CharField(max_length=100, blank=True)
     credit_note_payload = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
