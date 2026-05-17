@@ -7,10 +7,12 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from cliente.models import Cliente
+from core.exceptions import FacturacionValidacionError
 from empresa.context import get_empresa_actual_or_default
 from empresa.services import EmpresaService
 from inventario.models import Producto
 from usuario.models import Usuario
+from ventas.factus_transformers import validar_empresa_facturable
 from ventas.models import (
     Abono,
     DetalleVenta,
@@ -371,6 +373,12 @@ class VentaCreateSerializer(serializers.ModelSerializer):
                         'facturacion electronica.'
                     ),
                 })
+            try:
+                validar_empresa_facturable(empresa)
+            except FacturacionValidacionError as exc:
+                raise serializers.ValidationError({
+                    'empresa': str(exc),
+                }) from exc
 
         return attrs
 
@@ -476,6 +484,13 @@ class VentaUpdateSerializer(serializers.ModelSerializer):
                     'facturacion electronica.'
                 ),
             })
+        if factura_electronica:
+            try:
+                validar_empresa_facturable(instance.empresa)
+            except FacturacionValidacionError as exc:
+                raise serializers.ValidationError({
+                    'empresa': str(exc),
+                }) from exc
 
         return attrs
 

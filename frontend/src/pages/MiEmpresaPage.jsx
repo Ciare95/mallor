@@ -22,6 +22,7 @@ import {
 import useToast from '../hooks/useToast';
 import { ToastContainer } from '../components/ui/Toast';
 import { SectionShell } from '../components/ventas/shared';
+import MunicipioLookupField from '../components/forms/MunicipioLookupField';
 import { buildShortcutFromEvent } from '../utils/shortcuts';
 import { extractApiError } from '../utils/ventas';
 import {
@@ -420,18 +421,19 @@ export default function MiEmpresaPage() {
               />
             </div>
 
-            <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_0.35fr]">
+            <div className="mt-4 grid gap-4">
               <Field
                 label="Direccion"
                 value={empresaForm.direccion}
                 disabled={!puedeEditar}
                 onChange={(value) => setEmpresaField('direccion', value)}
               />
-              <Field
-                label="Codigo municipio"
-                value={empresaForm.municipio_codigo}
+              <MunicipioLookupField
+                label="Municipio DIAN"
+                code={empresaForm.municipio_codigo}
                 disabled={!puedeEditar}
-                onChange={(value) => setEmpresaField('municipio_codigo', value)}
+                onCodeChange={(value) => setEmpresaField('municipio_codigo', value)}
+                helper="Selecciona el municipio facturable y el codigo DIAN se completa solo."
               />
             </div>
           </div>

@@ -38,6 +38,7 @@ from ventas.serializers import (
     DetalleVentaSerializer,
     VentaCreateSerializer,
     VentaSerializer,
+    VentaUpdateSerializer,
 )
 from ventas.services import AbonoService, VentaReporteService, VentaService
 
@@ -976,6 +977,41 @@ class FacturacionElectronicaTest(TestCase):
 
         self.assertFalse(serializer.is_valid())
         self.assertIn('cliente', serializer.errors)
+
+    def test_venta_create_serializer_requiere_empresa_con_municipio_para_facturar(self):
+        self.empresa.municipio_codigo = ''
+        self.empresa.save(update_fields=['municipio_codigo', 'updated_at'])
+
+        serializer = VentaCreateSerializer(data={
+            'cliente': self.cliente.id,
+            'estado': Venta.Estado.TERMINADA,
+            'metodo_pago': Venta.MetodoPago.EFECTIVO,
+            'factura_electronica': True,
+            'usuario_registro': self.usuario.id,
+            'detalles': [
+                {
+                    'producto': self.producto.id,
+                    'cantidad': '1.00',
+                }
+            ],
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('empresa', serializer.errors)
+
+    def test_venta_update_serializer_requiere_empresa_con_municipio_para_facturar(self):
+        venta = self._crear_venta_facturable()
+        self.empresa.municipio_codigo = ''
+        self.empresa.save(update_fields=['municipio_codigo', 'updated_at'])
+
+        serializer = VentaUpdateSerializer(
+            venta,
+            data={'observaciones': 'ajuste manual'},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('empresa', serializer.errors)
 
     def test_build_factus_bill_payload_incluye_mapeos_minimos(self):
         venta = self._crear_venta_facturable()

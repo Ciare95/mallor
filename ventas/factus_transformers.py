@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from core.exceptions import FacturacionOperacionError, FacturacionValidacionError
+from empresa.models import Empresa
 from ventas.models import Venta, VentaFacturaElectronica
 
 
@@ -98,8 +99,7 @@ def _validate_cliente(venta: Venta) -> None:
         )
 
 
-def _validate_empresa(venta: Venta) -> None:
-    empresa = venta.empresa
+def validar_empresa_facturable(empresa: Empresa | None) -> None:
     if empresa is None:
         raise FacturacionValidacionError(
             'La venta no tiene empresa facturadora asociada.',
@@ -118,6 +118,10 @@ def _validate_empresa(venta: Venta) -> None:
                 f'Falta {label} para cumplir requisitos minimos de factura.',
                 code=f'factus_empresa_{field}',
             )
+
+
+def _validate_empresa(venta: Venta) -> None:
+    validar_empresa_facturable(venta.empresa)
 
 
 def _validate_detalles_articulo_617(venta: Venta) -> None:

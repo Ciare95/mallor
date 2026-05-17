@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Building2, Loader2, Plus, Save } from 'lucide-react';
+import { Building2, Loader2, PencilLine, Plus, Save, X } from 'lucide-react';
 import {
   actualizarEmpresaAdmin,
   crearEmpresaAdmin,
   listarEmpresasAdmin,
 } from '../services/empresas.service';
+import MunicipioLookupField from '../components/forms/MunicipioLookupField';
 import { SectionShell, StatusBadge } from '../components/ventas/shared';
 import { extractApiError } from '../utils/ventas';
 import useToast from '../hooks/useToast';
@@ -50,17 +51,23 @@ export default function EmpresasAdminPage() {
     queryFn: listarEmpresasAdmin,
   });
   const empresas = empresasQuery.data?.results || [];
+  const isEditing = editingId !== null;
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['empresas'] });
+  };
+
+  const resetForms = () => {
+    setEmpresaForm(EMPTY_EMPRESA);
+    setOwnerForm(EMPTY_OWNER);
+    setEditingId(null);
   };
 
   const crearMutation = useMutation({
     mutationFn: crearEmpresaAdmin,
     onSuccess: () => {
       invalidate();
-      setEmpresaForm(EMPTY_EMPRESA);
-      setOwnerForm(EMPTY_OWNER);
+      resetForms();
       toast.success('Empresa creada con propietario');
     },
     onError: (error) => {
@@ -72,7 +79,7 @@ export default function EmpresasAdminPage() {
     mutationFn: ({ id, payload }) => actualizarEmpresaAdmin(id, payload),
     onSuccess: () => {
       invalidate();
-      setEditingId(null);
+      resetForms();
       toast.success('Empresa actualizada');
     },
     onError: (error) => {
@@ -97,10 +104,34 @@ export default function EmpresasAdminPage() {
 
   const handleCreate = (event) => {
     event.preventDefault();
+    if (isEditing) {
+      editarMutation.mutate({
+        id: editingId,
+        payload: empresaForm,
+      });
+      return;
+    }
     crearMutation.mutate({
       ...empresaForm,
       propietario: ownerForm,
     });
+  };
+
+  const beginEdit = (empresa) => {
+    setEditingId(empresa.id);
+    setEmpresaForm({
+      nit: empresa.nit || '',
+      digito_verificacion: empresa.digito_verificacion || '',
+      razon_social: empresa.razon_social || '',
+      nombre_comercial: empresa.nombre_comercial || '',
+      email: empresa.email || '',
+      telefono: empresa.telefono || '',
+      direccion: empresa.direccion || '',
+      municipio_codigo: empresa.municipio_codigo || '',
+      ambiente_facturacion: empresa.ambiente_facturacion || 'SANDBOX',
+      activo: Boolean(empresa.activo),
+    });
+    setOwnerForm(EMPTY_OWNER);
   };
 
   const toggleActivo = (empresa) => {
@@ -114,12 +145,33 @@ export default function EmpresasAdminPage() {
     <div className="space-y-6">
       <SectionShell
         eyebrow="Mallor interno"
-        title="Empresas SaaS"
-        description="Alta administrada de tenants, propietario inicial y estado operativo."
+        title={isEditing ? 'Editar empresa' : 'Empresas SaaS'}
+        description={
+          isEditing
+            ? 'Ajusta datos fiscales y operativos del tenant seleccionado.'
+            : 'Alta administrada de tenants, propietario inicial y estado operativo.'
+        }
       >
-        <form className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]" onSubmit={handleCreate}>
+        <form
+          className={`grid gap-4 ${isEditing ? 'xl:grid-cols-1' : 'xl:grid-cols-[1.2fr_0.8fr]'}`}
+          onSubmit={handleCreate}
+        >
           <div className="surface-subtle p-5">
-            <div className="mb-4 eyebrow">Empresa</div>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div className="eyebrow">
+                {isEditing ? 'Empresa en edicion' : 'Empresa'}
+              </div>
+              {isEditing && (
+                <button
+                  type="button"
+                  onClick={resetForms}
+                  className="app-button-secondary min-h-10 px-3"
+                >
+                  <X className="h-4 w-4" />
+                  Cancelar
+                </button>
+              )}
+            </div>
             <div className="grid gap-4 md:grid-cols-2">
               <Field
                 label="NIT"
@@ -155,11 +207,6 @@ export default function EmpresasAdminPage() {
                 value={empresaForm.telefono}
                 onChange={(value) => setEmpresaField('telefono', value)}
               />
-              <Field
-                label="Municipio"
-                value={empresaForm.municipio_codigo}
-                onChange={(value) => setEmpresaField('municipio_codigo', value)}
-              />
               <label className="app-field">
                 <span className="app-field-label">Ambiente</span>
                 <select
@@ -183,62 +230,104 @@ export default function EmpresasAdminPage() {
                   className="app-input min-h-11"
                 />
               </label>
+              <MunicipioLookupField
+                className="md:col-span-2"
+                label="Municipio DIAN"
+                code={empresaForm.municipio_codigo}
+                onCodeChange={(value) => setEmpresaField('municipio_codigo', value)}
+                helper="Selecciona el municipio y el codigo se asigna automaticamente."
+              />
             </div>
           </div>
 
-          <div className="surface-subtle p-5">
-            <div className="mb-4 eyebrow">Propietario inicial</div>
-            <div className="grid gap-4">
-              <Field
-                label="Usuario"
-                value={ownerForm.username}
-                required
-                onChange={(value) => setOwnerField('username', value)}
-              />
-              <Field
-                label="Email"
-                type="email"
-                value={ownerForm.email}
-                required
-                onChange={(value) => setOwnerField('email', value)}
-              />
-              <div className="grid gap-3 md:grid-cols-2">
-                <Field
-                  label="Nombre"
-                  value={ownerForm.first_name}
-                  onChange={(value) => setOwnerField('first_name', value)}
+          {isEditing ? (
+            <div className="surface-subtle p-5">
+              <div className="mb-4 eyebrow">Edicion activa</div>
+              <div className="grid gap-4">
+                <Info
+                  label="Empresa"
+                  value={empresaForm.nombre_comercial || empresaForm.razon_social || '-'}
                 />
                 <Field
-                  label="Apellido"
-                  value={ownerForm.last_name}
-                  onChange={(value) => setOwnerField('last_name', value)}
+                  label="Estado"
+                  value={empresaForm.activo ? 'Activa' : 'Inactiva'}
+                  readOnly
                 />
+                <Info
+                  label="Codigo municipio"
+                  value={empresaForm.municipio_codigo || '--'}
+                />
+                <div className="text-[12px] leading-6 text-soft">
+                  Usa este panel para corregir datos fiscales como direccion,
+                  NIT y codigo de municipio antes de emitir facturas.
+                </div>
               </div>
-              <Field
-                label="Password"
-                type="password"
-                value={ownerForm.password}
-                required
-                onChange={(value) => setOwnerField('password', value)}
-              />
-              <Field
-                label="Confirmar password"
-                type="password"
-                value={ownerForm.confirm_password}
-                required
-                onChange={(value) =>
-                  setOwnerField('confirm_password', value)
-                }
-              />
-              <button
-                type="submit"
-                disabled={crearMutation.isPending}
-                className="app-button-primary min-h-11"
-              >
-                <Plus className="h-4 w-4" />
-                Crear empresa
-              </button>
             </div>
+          ) : (
+            <div className="surface-subtle p-5">
+              <div className="mb-4 eyebrow">Propietario inicial</div>
+              <div className="grid gap-4">
+                <Field
+                  label="Usuario"
+                  value={ownerForm.username}
+                  required
+                  onChange={(value) => setOwnerField('username', value)}
+                />
+                <Field
+                  label="Email"
+                  type="email"
+                  value={ownerForm.email}
+                  required
+                  onChange={(value) => setOwnerField('email', value)}
+                />
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Field
+                    label="Nombre"
+                    value={ownerForm.first_name}
+                    onChange={(value) => setOwnerField('first_name', value)}
+                  />
+                  <Field
+                    label="Apellido"
+                    value={ownerForm.last_name}
+                    onChange={(value) => setOwnerField('last_name', value)}
+                  />
+                </div>
+                <Field
+                  label="Password"
+                  type="password"
+                  value={ownerForm.password}
+                  required
+                  onChange={(value) => setOwnerField('password', value)}
+                />
+                <Field
+                  label="Confirmar password"
+                  type="password"
+                  value={ownerForm.confirm_password}
+                  required
+                  onChange={(value) =>
+                    setOwnerField('confirm_password', value)
+                  }
+                />
+                <button
+                  type="submit"
+                  disabled={crearMutation.isPending}
+                  className="app-button-primary min-h-11"
+                >
+                  <Plus className="h-4 w-4" />
+                  Crear empresa
+                </button>
+              </div>
+            </div>
+          )}
+          <div className={`${isEditing ? 'md:col-span-2' : 'hidden'}`}>
+            <button
+              type="submit"
+              disabled={editarMutation.isPending}
+              className="app-button-primary min-h-11"
+            >
+              <Save className="h-4 w-4" />
+              Guardar cambios
+            </button>
           </div>
         </form>
       </SectionShell>
@@ -281,15 +370,25 @@ export default function EmpresasAdminPage() {
                   status={empresa.factus_configured ? 'FACTUS' : 'SIN FACTUS'}
                 />
               </div>
-              <button
-                type="button"
-                onClick={() => toggleActivo(empresa)}
-                disabled={editarMutation.isPending && editingId === empresa.id}
-                className="app-button-secondary min-h-10"
-              >
-                <Save className="h-4 w-4" />
-                {empresa.activo ? 'Inactivar' : 'Activar'}
-              </button>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => beginEdit(empresa)}
+                  className="app-button-secondary min-h-10"
+                >
+                  <PencilLine className="h-4 w-4" />
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleActivo(empresa)}
+                  disabled={editarMutation.isPending}
+                  className="app-button-secondary min-h-10"
+                >
+                  <Save className="h-4 w-4" />
+                  {empresa.activo ? 'Inactivar' : 'Activar'}
+                </button>
+              </div>
             </article>
           ))}
         </div>
