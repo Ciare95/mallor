@@ -149,6 +149,14 @@ class Producto(models.Model):
         default=0,
         help_text=_('Cantidad disponible en inventario')
     )
+
+    stock_minimo = models.DecimalField(
+        _('stock minimo'),
+        max_digits=10,
+        decimal_places=2,
+        default=10,
+        help_text=_('Cantidad minima esperada antes de considerar bajo stock')
+    )
     
     invima = models.CharField(
         _('invima'),
@@ -236,6 +244,7 @@ class Producto(models.Model):
             models.Index(fields=['nombre']),
             models.Index(fields=['categoria']),
             models.Index(fields=['existencias']),
+            models.Index(fields=['stock_minimo']),
             models.Index(fields=['fecha_caducidad']),
             models.Index(fields=['created_at']),
         ]
@@ -345,6 +354,11 @@ class Producto(models.Model):
         if self.existencias is not None and self.existencias < 0:
             raise ValidationError({
                 'existencias': _('Las existencias no pueden ser negativas')
+            })
+
+        if self.stock_minimo is not None and self.stock_minimo < 0:
+            raise ValidationError({
+                'stock_minimo': _('El stock minimo no puede ser negativo')
             })
         
         # Validar que precio_compra sea positivo (solo si tiene valor)

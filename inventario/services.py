@@ -2,7 +2,7 @@ from typing import List, Dict, Optional, Any
 from decimal import Decimal
 from datetime import date, datetime
 from django.db import transaction
-from django.db.models import Q, Sum, DecimalField
+from django.db.models import Q, Sum, DecimalField, F
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from openpyxl import load_workbook
@@ -289,6 +289,10 @@ class ProductoService:
         if filtros.get('stock_max') is not None:
             q_objects &= Q(existencias__lte=filtros['stock_max'])
 
+        stock_bajo = filtros.get('stock_bajo')
+        if stock_bajo in (True, 'true', 'True', '1', 1):
+            q_objects &= Q(existencias__lte=F('stock_minimo'))
+
         if q_objects:
             queryset = queryset.filter(q_objects)
 
@@ -296,7 +300,8 @@ class ProductoService:
         ordenes_permitidos = [
             'nombre', '-nombre', 'codigo_interno', '-codigo_interno',
             'precio_compra', '-precio_compra', 'precio_venta', '-precio_venta',
-            'existencias', '-existencias', 'created_at', '-created_at',
+            'existencias', '-existencias', 'stock_minimo', '-stock_minimo',
+            'created_at', '-created_at',
         ]
         if ordering in ordenes_permitidos:
             queryset = queryset.order_by(ordering)
@@ -1477,7 +1482,9 @@ class ReporteService:
             dict: Diccionario con valor_compra, valor_venta,
                   cantidad_productos y total_existencias
         """
-        productos = Producto.objects.all()
+        productos = Producto.objects.filter(
+            empresa=get_empresa_actual_or_default()
+        )
         total_valor_compra = Decimal('0.00')
         total_valor_venta = Decimal('0.00')
         total_existencias = Decimal('0')
@@ -1497,9 +1504,7 @@ class ReporteService:
         }
 
     @staticmethod
-    def productos_bajo_stock(
-        minimo: Decimal = Decimal('10')
-    ) -> List[Producto]:
+    def productos_bajo_stock() -> List[Producto]:
         """
         Retorna productos con existencias por debajo del mínimo.
 
@@ -1511,7 +1516,10 @@ class ReporteService:
         """
         return list(
             Producto.objects.select_related('categoria')
-            .filter(existencias__lt=minimo)
+            .filter(
+                empresa=get_empresa_actual_or_default(),
+                existencias__lte=F('stock_minimo'),
+            )
             .order_by('existencias')
         )
 
@@ -1538,13 +1546,13 @@ class ReporteService:
         from django.apps import apps
 
         if not apps.is_installed('ventas'):
-            return ReporteService.productos_bajo_stock(Decimal('0'))[:limite]
+            return ReporteService.productos_bajo_stock()[:limite]
 
         try:
             Venta = apps.get_model('ventas', 'Venta')
             DetalleVenta = apps.get_model('ventas', 'DetalleVenta')
         except LookupError:
-            return ReporteService.productos_bajo_stock(Decimal('0'))[:limite]
+            return ReporteService.productos_bajo_stock()[:limite]
 
         ventas_qs = Venta.objects.filter(
             empresa=get_empresa_actual_or_default(),

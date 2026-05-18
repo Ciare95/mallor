@@ -2,6 +2,7 @@ from decimal import Decimal
 from datetime import date
 from rest_framework import viewsets, status, permissions, views
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.response import Response
 from rest_framework.request import Request
 from rest_framework.pagination import PageNumberPagination
@@ -49,6 +50,10 @@ from .utils import (
     generar_plantilla_excel_inventario,
     generar_respuesta_excel,
 )
+
+
+def _validation_error_payload(error):
+    return error.detail if hasattr(error, 'detail') else str(error)
 
 
 class InventarioPagination(PageNumberPagination):
@@ -183,8 +188,11 @@ class CategoriaViewSet(RolePermissionMixin, viewsets.ModelViewSet):
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
         except ProductoDuplicadoError as e:
             return Response({'error': e.message}, status=status.HTTP_400_BAD_REQUEST)
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except (ValidationError, DRFValidationError) as e:
+            return Response(
+                _validation_error_payload(e),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as e:
             return Response(
                 {'error': _('Error al crear categoría: %(error)s') % {'error': str(e)}},
@@ -226,8 +234,11 @@ class CategoriaViewSet(RolePermissionMixin, viewsets.ModelViewSet):
             return Response({'error': e.message}, status=status.HTTP_404_NOT_FOUND)
         except ProductoDuplicadoError as e:
             return Response({'error': e.message}, status=status.HTTP_400_BAD_REQUEST)
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except (ValidationError, DRFValidationError) as e:
+            return Response(
+                _validation_error_payload(e),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except ValueError:
             return Response({'error': _('ID de categoría inválido')}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
@@ -279,7 +290,7 @@ class ProductoViewSet(RolePermissionMixin, viewsets.ModelViewSet):
         try:
             filtros = {}
             for param in ['q', 'categoria_id', 'marca', 'fecha_caducidad_desde',
-                          'fecha_caducidad_hasta', 'stock_min', 'stock_max', 'ordering']:
+                          'fecha_caducidad_hasta', 'stock_min', 'stock_max', 'stock_bajo', 'ordering']:
                 val = request.query_params.get(param)
                 if val is not None:
                     filtros[param] = val
@@ -323,8 +334,11 @@ class ProductoViewSet(RolePermissionMixin, viewsets.ModelViewSet):
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
         except ProductoDuplicadoError as e:
             return Response({'error': e.message}, status=status.HTTP_400_BAD_REQUEST)
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except (ValidationError, DRFValidationError) as e:
+            return Response(
+                _validation_error_payload(e),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as e:
             return Response(
                 {'error': _('Error al crear producto: %(error)s') % {'error': str(e)}},
@@ -366,8 +380,11 @@ class ProductoViewSet(RolePermissionMixin, viewsets.ModelViewSet):
             return Response({'error': e.message}, status=status.HTTP_404_NOT_FOUND)
         except ProductoDuplicadoError as e:
             return Response({'error': e.message}, status=status.HTTP_400_BAD_REQUEST)
-        except ValidationError as e:
-            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except (ValidationError, DRFValidationError) as e:
+            return Response(
+                _validation_error_payload(e),
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except ValueError:
             return Response({'error': _('ID de producto inválido')}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
@@ -524,9 +541,13 @@ class FacturaCompraViewSet(RolePermissionMixin, viewsets.ViewSet):
             )
             response_serializer = FacturaCompraSerializer(factura)
             return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-        except (FacturaSinDetallesError, ValidationError) as e:
+        except (FacturaSinDetallesError, ValidationError, DRFValidationError) as e:
             status_code = status.HTTP_400_BAD_REQUEST
-            error_msg = e.message if hasattr(e, 'message') else str(e)
+            error_msg = (
+                _validation_error_payload(e)
+                if isinstance(e, DRFValidationError)
+                else (e.message if hasattr(e, 'message') else str(e))
+            )
             return Response({'error': error_msg}, status=status_code)
         except ProductoNoEncontradoError as e:
             return Response({'error': e.message}, status=status.HTTP_404_NOT_FOUND)
@@ -601,12 +622,7 @@ class ReportesViewSet(RolePermissionMixin, viewsets.ViewSet):
     @action(detail=False, methods=['get'], url_path='bajo-stock')
     def bajo_stock(self, request: Request) -> Response:
         try:
-            minimo = request.query_params.get('minimo', '10')
-            try:
-                minimo_dec = Decimal(str(minimo))
-            except (ValueError, TypeError):
-                minimo_dec = Decimal('10')
-            productos = ReporteService.productos_bajo_stock(minimo_dec)
+            productos = ReporteService.productos_bajo_stock()
             serializer = ProductoListSerializer(productos, many=True)
             return Response(serializer.data)
         except Exception as e:

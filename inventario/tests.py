@@ -7,7 +7,7 @@ from usuario.models import Usuario
 from proveedor.models import Proveedor
 
 from .models import Categoria, DetalleFacturaCompra, FacturaCompra, Producto
-from .services import FacturaCompraService
+from .services import FacturaCompraService, ReporteService
 
 
 class CategoriaModelTest(TestCase):
@@ -251,6 +251,19 @@ class ProductoModelTest(TestCase):
             iva=-5.00
         )
         
+        with self.assertRaises(ValidationError):
+            producto.full_clean()
+
+    def test_validacion_stock_minimo_no_negativo(self):
+        producto = Producto(
+            codigo_interno=1017,
+            nombre='Producto Test 12',
+            existencias=10,
+            stock_minimo=-1,
+            precio_compra=10.00,
+            precio_venta=15.00,
+        )
+
         with self.assertRaises(ValidationError):
             producto.full_clean()
         
@@ -508,3 +521,31 @@ class FacturaCompraServiceTest(TestCase):
         producto_alto.refresh_from_db()
         self.assertEqual(producto_bajo.precio_venta, Decimal('1095.00'))
         self.assertEqual(producto_alto.precio_venta, Decimal('3380.00'))
+
+    def test_reporte_bajo_stock_usa_stock_minimo_por_producto(self):
+        producto_bajo = Producto.objects.create(
+            codigo_interno=900005,
+            nombre='Producto con minimo propio',
+            categoria=self.categoria,
+            existencias=Decimal('6.00'),
+            stock_minimo=Decimal('8.00'),
+            precio_compra=Decimal('400.00'),
+            precio_venta=Decimal('500.00'),
+            iva=Decimal('0.00'),
+        )
+        producto_ok = Producto.objects.create(
+            codigo_interno=900006,
+            nombre='Producto fuera de alerta',
+            categoria=self.categoria,
+            existencias=Decimal('6.00'),
+            stock_minimo=Decimal('4.00'),
+            precio_compra=Decimal('400.00'),
+            precio_venta=Decimal('500.00'),
+            iva=Decimal('0.00'),
+        )
+
+        productos = ReporteService.productos_bajo_stock()
+        productos_ids = [producto.id for producto in productos]
+
+        self.assertIn(producto_bajo.id, productos_ids)
+        self.assertNotIn(producto_ok.id, productos_ids)

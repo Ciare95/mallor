@@ -193,10 +193,8 @@ export const obtenerValorTotalInventario = async () => {
   return response.data;
 };
 
-export const obtenerProductosBajoStock = async (minimo = 10) => {
-  const response = await api.get(`${INVENTARIO_BASE}/reportes/bajo-stock/`, {
-    params: { minimo },
-  });
+export const obtenerProductosBajoStock = async () => {
+  const response = await api.get(`${INVENTARIO_BASE}/reportes/bajo-stock/`);
   return response.data;
 };
 

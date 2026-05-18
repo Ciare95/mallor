@@ -1,16 +1,43 @@
 import { useState } from 'react';
-import { AlertCircle, Loader2, PackageCheck, X } from 'lucide-react';
+import {
+  AlertCircle,
+  ClipboardPenLine,
+  Loader2,
+  PackageCheck,
+  X,
+} from 'lucide-react';
 
-const AjusteStockModal = ({ producto, isLoading, error, onConfirm, onCancel }) => {
+const normalizeIntegerInput = (value) => {
+  const stringValue = String(value ?? '');
+  const match = stringValue.match(/^\d+/);
+  return match ? match[0] : '';
+};
+
+const normalizeIntegerDisplay = (value, fallback = '0') => {
+  if (value === '' || value === null || value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return String(Math.trunc(parsed));
+};
+
+const AjusteStockModal = ({
+  producto,
+  isLoading,
+  error,
+  onConfirm,
+  onCancel,
+}) => {
   const [formData, setFormData] = useState({
-    nueva_cantidad: producto?.existencias ?? '',
+    nueva_cantidad: normalizeIntegerDisplay(producto?.existencias),
     motivo: '',
     observaciones: '',
   });
   const [touched, setTouched] = useState(false);
 
   const cantidadInvalida =
-    formData.nueva_cantidad === '' || Number(formData.nueva_cantidad) < 0 || Number.isNaN(Number(formData.nueva_cantidad));
+    formData.nueva_cantidad === ''
+    || Number(formData.nueva_cantidad) < 0
+    || Number.isNaN(Number(formData.nueva_cantidad));
   const motivoInvalido = !formData.motivo.trim();
   const hasError = touched && (cantidadInvalida || motivoInvalido);
 
@@ -25,115 +52,191 @@ const AjusteStockModal = ({ producto, isLoading, error, onConfirm, onCancel }) =
     });
   };
 
+  const handleCantidadChange = (event) => {
+    const nextValue = normalizeIntegerInput(event.target.value);
+    setFormData((prev) => ({
+      ...prev,
+      nueva_cantidad: nextValue,
+    }));
+  };
+
+  const handleCantidadFocus = (event) => {
+    if (normalizeIntegerDisplay(event.target.value, '') === '0') {
+      setFormData((prev) => ({
+        ...prev,
+        nueva_cantidad: '',
+      }));
+    }
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm">
-      <div className="w-full max-w-lg overflow-hidden rounded-3xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between border-b border-slate-200 bg-slate-50 px-6 py-5">
-          <div className="flex items-start gap-3">
-            <div className="rounded-2xl bg-emerald-100 p-3 text-emerald-700">
-              <PackageCheck className="h-6 w-6" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-slate-950">Ajuste manual de stock</h2>
-              <p className="mt-1 text-sm text-slate-600">{producto?.nombre}</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(10,14,13,0.72)] px-4 py-6 backdrop-blur-md">
+      <div className="flex w-full max-w-2xl items-center justify-center">
+        <div className="surface flex max-h-[calc(100vh-3rem)] w-full flex-col overflow-hidden border border-app shadow-[0_28px_80px_rgba(5,12,10,0.34)]">
+          <div className="border-b border-app px-5 py-5 sm:px-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-2xl border border-[var(--accent-line)] bg-[var(--accent-soft)] p-3 text-[var(--accent)]">
+                  <PackageCheck className="h-5 w-5" />
+                </div>
+                <div className="space-y-2">
+                  <div className="section-chip">Ajuste de inventario</div>
+                  <div className="text-lg font-semibold text-main sm:text-xl">
+                    Ajuste manual de stock
+                  </div>
+                  <p className="text-[12px] text-soft">{producto?.nombre}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="rounded-xl border border-app p-2 text-muted transition hover:border-[var(--accent-line)] hover:bg-[var(--panel-soft)] hover:text-main"
+                aria-label="Cerrar modal"
+              >
+                <X className="h-5 w-5" />
+              </button>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-200 hover:text-slate-800"
-            aria-label="Cerrar modal"
-          >
-            <X className="h-5 w-5" />
-          </button>
+
+          <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+            <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:space-y-6 sm:px-6 sm:py-6">
+            {error && (
+              <div className="flex items-center gap-2 rounded-xl border border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger-text)]">
+                <AlertCircle className="h-4 w-4" />
+                {error}
+              </div>
+            )}
+
+            <section className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="rounded-2xl border border-app bg-[var(--panel-soft)] p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+                  Producto
+                </div>
+                <div className="mt-2 text-sm font-semibold text-main">
+                  {producto?.nombre}
+                </div>
+                <div className="mt-1 text-[12px] text-soft">
+                  Registra conteos, mermas o correcciones operativas.
+                </div>
+              </div>
+              <div className="rounded-2xl border border-[var(--accent-line)] bg-[var(--accent-soft)] p-4">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--accent)]/70">
+                  Stock actual
+                </div>
+                <div className="mt-2 text-3xl font-semibold text-[var(--accent)]">
+                  {Number(producto?.existencias || 0)}
+                </div>
+              </div>
+            </section>
+
+            <div className="grid gap-5 md:grid-cols-2">
+              <div>
+                <label className="app-field" htmlFor="nueva_cantidad">
+                  <span className="app-field-label">Nueva cantidad *</span>
+                  <input
+                    id="nueva_cantidad"
+                    type="number"
+                    min="0"
+                    step="1"
+                    inputMode="numeric"
+                    value={formData.nueva_cantidad}
+                    onChange={handleCantidadChange}
+                    onFocus={handleCantidadFocus}
+                    className={`app-input min-h-11 ${touched && cantidadInvalida ? 'border-[rgba(159,47,45,0.28)] focus:border-[rgba(159,47,45,0.42)] focus:shadow-none' : ''}`}
+                  />
+                </label>
+                <p className="mt-2 text-[12px] text-soft">
+                  Define el nuevo stock total que debe quedar registrado.
+                </p>
+                {touched && cantidadInvalida && (
+                  <p className="mt-2 text-[12px] text-[var(--danger-text)]">
+                    Ingresa una cantidad valida mayor o igual a cero.
+                  </p>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-app bg-[var(--panel-soft)] p-4">
+                <div className="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.24em] text-muted">
+                  <ClipboardPenLine className="h-4 w-4" />
+                  Guia rapida
+                </div>
+                <div className="mt-3 space-y-2 text-[12px] text-soft">
+                  <p>Usa un motivo breve y claro para dejar trazabilidad.</p>
+                  <p>Las observaciones son opcionales, pero ayudan en auditoria.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-5">
+              <div>
+                <label className="app-field" htmlFor="motivo">
+                  <span className="app-field-label">Motivo *</span>
+                  <input
+                    id="motivo"
+                    type="text"
+                    value={formData.motivo}
+                    onChange={(event) =>
+                      setFormData((prev) => ({
+                        ...prev,
+                        motivo: event.target.value,
+                      }))}
+                    placeholder="Conteo fisico, merma, devolucion..."
+                    className={`app-input min-h-11 ${touched && motivoInvalido ? 'border-[rgba(159,47,45,0.28)] focus:border-[rgba(159,47,45,0.42)] focus:shadow-none' : ''}`}
+                  />
+                </label>
+                {touched && motivoInvalido && (
+                  <p className="mt-2 text-[12px] text-[var(--danger-text)]">
+                    El motivo es obligatorio.
+                  </p>
+                )}
+              </div>
+
+              <label className="app-field" htmlFor="observaciones">
+                <span className="app-field-label">Observaciones</span>
+                <textarea
+                  id="observaciones"
+                  rows="4"
+                  value={formData.observaciones}
+                  onChange={(event) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      observaciones: event.target.value,
+                    }))}
+                  className="app-textarea"
+                  placeholder="Notas adicionales para el historial del ajuste."
+                />
+              </label>
+            </div>
+
+            {hasError && (
+              <div className="rounded-xl border border-[rgba(176,118,14,0.18)] bg-[rgba(245,166,35,0.08)] px-4 py-3 text-sm text-[var(--warning-text)]">
+                Revisa los campos marcados antes de confirmar el ajuste.
+              </div>
+            )}
+            </div>
+
+            <div className="border-t border-app bg-[var(--panel-strong)] px-5 py-4 sm:px-6">
+              <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={isLoading}
+                className="app-button-secondary min-h-11"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                disabled={isLoading}
+                className="app-button-primary min-h-11"
+              >
+                {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                Confirmar ajuste
+              </button>
+              </div>
+            </div>
+          </form>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-5 px-6 py-6">
-          {error && (
-            <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
-              <AlertCircle className="h-4 w-4" />
-              {error}
-            </div>
-          )}
-
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-            <p className="text-sm text-slate-500">Stock actual</p>
-            <p className="mt-1 text-3xl font-black text-slate-950">{Number(producto?.existencias || 0)}</p>
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="nueva_cantidad">
-              Nueva cantidad *
-            </label>
-            <input
-              id="nueva_cantidad"
-              type="number"
-              min="0"
-              step="0.01"
-              value={formData.nueva_cantidad}
-              onChange={(event) => setFormData((prev) => ({ ...prev, nueva_cantidad: event.target.value }))}
-              className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-            />
-            {touched && cantidadInvalida && (
-              <p className="mt-2 text-sm font-medium text-red-600">Ingresa una cantidad válida mayor o igual a cero.</p>
-            )}
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="motivo">
-              Motivo *
-            </label>
-            <input
-              id="motivo"
-              type="text"
-              value={formData.motivo}
-              onChange={(event) => setFormData((prev) => ({ ...prev, motivo: event.target.value }))}
-              placeholder="Conteo físico, merma, devolución..."
-              className="min-h-11 w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-            />
-            {touched && motivoInvalido && (
-              <p className="mt-2 text-sm font-medium text-red-600">El motivo es obligatorio.</p>
-            )}
-          </div>
-
-          <div>
-            <label className="mb-2 block text-sm font-semibold text-slate-700" htmlFor="observaciones">
-              Observaciones
-            </label>
-            <textarea
-              id="observaciones"
-              rows="3"
-              value={formData.observaciones}
-              onChange={(event) => setFormData((prev) => ({ ...prev, observaciones: event.target.value }))}
-              className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100"
-            />
-          </div>
-
-          {hasError && (
-            <div className="rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Revisa los campos marcados antes de confirmar el ajuste.
-            </div>
-          )}
-
-          <div className="flex flex-col-reverse gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={onCancel}
-              disabled={isLoading}
-              className="min-h-11 rounded-xl border border-slate-300 px-5 py-2.5 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-lg shadow-emerald-600/20 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
-              Confirmar ajuste
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   );

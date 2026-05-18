@@ -37,6 +37,33 @@ const ENVIRONMENT_LABELS = {
   PRODUCCION: 'Produccion',
 };
 
+function resolveCompanySnapshotName(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return '';
+  }
+
+  const nestedCompany = snapshot.data?.company;
+  if (typeof nestedCompany === 'string') {
+    return nestedCompany.trim();
+  }
+
+  if (nestedCompany && typeof nestedCompany === 'object') {
+    return (
+      nestedCompany.company
+      || nestedCompany.razon_social
+      || nestedCompany.name
+      || ''
+    );
+  }
+
+  return (
+    snapshot.company
+    || snapshot.razon_social
+    || snapshot.name
+    || ''
+  );
+}
+
 export default function FacturacionPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -123,6 +150,7 @@ export default function FacturacionPage() {
   const rangosFactura = rangos.filter((item) => !item.is_credit_note_range);
   const rangosNota = rangos.filter((item) => item.is_credit_note_range);
   const notasPendientes = diagnosticoNotasQuery.data?.items || [];
+  const companySnapshotName = resolveCompanySnapshotName(config?.company_snapshot);
 
   const detalleNotaMutation = useMutation({
     mutationFn: obtenerDiagnosticoDetalleNotaCredito,
@@ -294,11 +322,7 @@ export default function FacturacionPage() {
                   />
                   <StatusLine
                     label="Empresa"
-                    value={
-                      config?.company_snapshot?.data?.company?.company
-                        || config?.company_snapshot?.company
-                        || 'Sin snapshot'
-                    }
+                    value={companySnapshotName || 'Sin snapshot'}
                   />
                 </div>
               </div>

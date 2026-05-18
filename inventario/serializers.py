@@ -1,6 +1,8 @@
 from rest_framework import serializers
 from decimal import Decimal
 
+from empresa.context import get_empresa_actual_or_default
+
 from .models import (
     Categoria,
     Producto,
@@ -25,9 +27,20 @@ class CategoriaSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'productos_count', 'created_at', 'updated_at']
 
+    def _get_empresa_actual(self):
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        return getattr(request, 'empresa', None) or get_empresa_actual_or_default()
+
     def validate_nombre(self, value):
         value = value.strip().upper()
-        if Categoria.objects.filter(nombre__iexact=value).exists():
+        queryset = Categoria.objects.filter(
+            empresa=self._get_empresa_actual(),
+            nombre__iexact=value,
+        )
+        instance = getattr(self, 'instance', None)
+        if instance:
+            queryset = queryset.exclude(pk=instance.pk)
+        if queryset.exists():
             raise serializers.ValidationError(
                 'Ya existe una categoría con este nombre'
             )
@@ -80,7 +93,7 @@ class ProductoSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'codigo_interno', 'codigo_interno_formateado',
             'codigo_barras', 'nombre', 'categoria', 'categoria_id',
-            'marca', 'descripcion', 'existencias', 'invima',
+            'marca', 'descripcion', 'existencias', 'stock_minimo', 'invima',
             'precio_compra', 'precio_venta', 'iva',
             'unidad_medida_codigo', 'estandar_codigo',
             'imagen', 'fecha_ingreso', 'fecha_caducidad',
@@ -91,6 +104,17 @@ class ProductoSerializer(serializers.ModelSerializer):
             'id', 'codigo_interno', 'fecha_ingreso',
             'created_at', 'updated_at',
         ]
+
+    def _get_empresa_actual(self):
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        return getattr(request, 'empresa', None) or get_empresa_actual_or_default()
+
+    def get_fields(self):
+        fields = super().get_fields()
+        fields['categoria_id'].queryset = Categoria.objects.filter(
+            empresa=self._get_empresa_actual(),
+        )
+        return fields
 
     def get_valor_inventario(self, obj):
         return obj.calcular_valor_inventario()
@@ -122,7 +146,7 @@ class ProductoListSerializer(serializers.ModelSerializer):
             'id', 'codigo_interno', 'codigo_interno_formateado',
             'codigo_barras', 'nombre', 'categoria_nombre',
             'marca', 'existencias', 'precio_compra', 'precio_venta',
-            'iva', 'unidad_medida_codigo', 'estandar_codigo',
+            'iva', 'stock_minimo', 'unidad_medida_codigo', 'estandar_codigo',
             'valor_inventario',
         ]
 
@@ -136,15 +160,29 @@ class ProductoCreateSerializer(serializers.ModelSerializer):
         fields = [
             'codigo_interno', 'codigo_barras', 'nombre',
             'categoria', 'marca', 'descripcion',
-            'existencias', 'invima',
+            'existencias', 'stock_minimo', 'invima',
             'precio_compra', 'precio_venta', 'iva',
             'unidad_medida_codigo', 'estandar_codigo',
             'imagen', 'fecha_caducidad',
         ]
 
+    def _get_empresa_actual(self):
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        return getattr(request, 'empresa', None) or get_empresa_actual_or_default()
+
+    def get_fields(self):
+        fields = super().get_fields()
+        fields['categoria'].queryset = Categoria.objects.filter(
+            empresa=self._get_empresa_actual(),
+        )
+        return fields
+
     def validate_codigo_interno(self, value):
         if value is not None:
-            if Producto.objects.filter(codigo_interno=value).exists():
+            if Producto.objects.filter(
+                empresa=self._get_empresa_actual(),
+                codigo_interno=value,
+            ).exists():
                 raise serializers.ValidationError(
                     'Ya existe un producto con este código interno'
                 )
@@ -153,7 +191,10 @@ class ProductoCreateSerializer(serializers.ModelSerializer):
     def validate_codigo_barras(self, value):
         if value:
             value = value.strip()
-            if Producto.objects.filter(codigo_barras=value).exists():
+            if Producto.objects.filter(
+                empresa=self._get_empresa_actual(),
+                codigo_barras=value,
+            ).exists():
                 raise serializers.ValidationError(
                     'Ya existe un producto con este código de barras'
                 )
@@ -187,6 +228,13 @@ class ProductoCreateSerializer(serializers.ModelSerializer):
             )
         return value
 
+    def validate_stock_minimo(self, value):
+        if value < 0:
+            raise serializers.ValidationError(
+                'El stock minimo no puede ser negativo'
+            )
+        return value
+
     def validate(self, data):
         precio_compra = data.get('precio_compra')
         precio_venta = data.get('precio_venta')
@@ -212,18 +260,32 @@ class ProductoUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'codigo_interno', 'codigo_barras', 'nombre',
             'categoria', 'marca', 'descripcion',
-            'existencias', 'invima',
+            'existencias', 'stock_minimo', 'invima',
             'precio_compra', 'precio_venta', 'iva',
             'unidad_medida_codigo', 'estandar_codigo',
             'imagen', 'fecha_caducidad',
         ]
         read_only_fields = ['codigo_interno']
 
+    def _get_empresa_actual(self):
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        return getattr(request, 'empresa', None) or get_empresa_actual_or_default()
+
+    def get_fields(self):
+        fields = super().get_fields()
+        fields['categoria'].queryset = Categoria.objects.filter(
+            empresa=self._get_empresa_actual(),
+        )
+        return fields
+
     def validate_codigo_barras(self, value):
         if value:
             value = value.strip()
             instance = getattr(self, 'instance', None)
-            exists = Producto.objects.filter(codigo_barras=value)
+            exists = Producto.objects.filter(
+                empresa=self._get_empresa_actual(),
+                codigo_barras=value,
+            )
             if instance:
                 exists = exists.exclude(pk=instance.pk)
             if exists.exists():
@@ -257,6 +319,13 @@ class ProductoUpdateSerializer(serializers.ModelSerializer):
         if value is not None and (value < 0 or value > 100):
             raise serializers.ValidationError(
                 'El IVA debe estar entre 0 y 100'
+            )
+        return value
+
+    def validate_stock_minimo(self, value):
+        if value is not None and value < 0:
+            raise serializers.ValidationError(
+                'El stock minimo no puede ser negativo'
             )
         return value
 
