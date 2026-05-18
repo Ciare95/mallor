@@ -9,7 +9,13 @@ from cliente.models import Cliente
 from empresa.models import Empresa, EmpresaConfiguracion, EmpresaUsuario
 from inventario.models import Producto
 from usuario.models import Usuario
-from ventas.models import FactusCredential, Venta, VentaFacturaElectronica
+from ventas.models import (
+    FacturacionElectronicaConfig,
+    FactusCredential,
+    FactusEnvironment,
+    Venta,
+    VentaFacturaElectronica,
+)
 
 
 class EmpresaApiTest(TestCase):
@@ -47,13 +53,29 @@ class EmpresaApiTest(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_credenciales_factus_se_guardan_cifradas_y_no_se_exponen(self):
-        EmpresaUsuario.objects.create(
-            empresa=self.empresa_secundaria,
-            usuario=self.usuario,
-            rol=EmpresaUsuario.Rol.ADMIN,
-            activo=True,
+    def test_tenant_admin_no_puede_administrar_credenciales_factus(self):
+        response = self.client.post(
+            f'/api/empresas/{self.empresa_principal.id}/facturacion/credenciales/',
+            {
+                'environment': 'SANDBOX',
+                'base_url': 'https://api-sandbox.factus.com.co',
+                'client_id': 'cliente-prueba',
+                'client_secret': 'secret-super-seguro',
+                'username': 'sandboxv2@factus.com.co',
+                'password': 'password-super-seguro',
+            },
+            format='json',
         )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_superadmin_guarda_credenciales_factus_cifradas_y_no_expuestas(self):
+        admin = Usuario.objects.create_superuser(
+            username='mallor_factus_admin',
+            email='mallor_factus_admin@mallor.test',
+            password='Secret123',
+        )
+        self.client.login(username=admin.username, password='Secret123')
 
         response = self.client.post(
             f'/api/empresas/{self.empresa_secundaria.id}/facturacion/credenciales/',
@@ -94,6 +116,87 @@ class EmpresaApiTest(TestCase):
         self.assertNotIn('password', get_response.data)
         self.assertTrue(get_response.data['has_client_secret'])
         self.assertTrue(get_response.data['has_password'])
+
+    def test_credenciales_rechazan_base_url_que_no_corresponde_al_ambiente(self):
+        admin = Usuario.objects.create_superuser(
+            username='mallor_url_admin',
+            email='mallor_url_admin@mallor.test',
+            password='Secret123',
+        )
+        self.client.login(username=admin.username, password='Secret123')
+
+        response = self.client.post(
+            f'/api/empresas/{self.empresa_secundaria.id}/facturacion/credenciales/',
+            {
+                'environment': 'PRODUCCION',
+                'base_url': 'https://api-sandbox.factus.com.co',
+                'client_id': 'cliente-prueba',
+                'client_secret': 'secret-super-seguro',
+                'username': 'prod@factus.com.co',
+                'password': 'password-super-seguro',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_empresas_expone_resumen_factus(self):
+        admin = Usuario.objects.create_superuser(
+            username='mallor_resumen_admin',
+            email='mallor_resumen_admin@mallor.test',
+            password='Secret123',
+        )
+        self.client.login(username=admin.username, password='Secret123')
+        FactusCredential.objects.create(
+            empresa=self.empresa_secundaria,
+            environment=FactusEnvironment.SANDBOX,
+            base_url='https://api-sandbox.factus.com.co',
+            client_id='cliente-prueba',
+            client_secret='secret-super-seguro',
+            username='sandboxv2@factus.com.co',
+            password='password-super-seguro',
+        )
+        FacturacionElectronicaConfig.get_solo(self.empresa_secundaria)
+
+        response = self.client.get('/api/empresas/admin/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        empresa = next(
+            item for item in response.data['results']
+            if item['id'] == self.empresa_secundaria.id
+        )
+        self.assertEqual(
+            empresa['factus_admin_summary']['status'],
+            'CREDENCIALES_SIN_VALIDAR',
+        )
+
+    def test_no_activa_produccion_sin_rangos_dian(self):
+        admin = Usuario.objects.create_superuser(
+            username='mallor_prod_admin',
+            email='mallor_prod_admin@mallor.test',
+            password='Secret123',
+        )
+        self.client.login(username=admin.username, password='Secret123')
+        FactusCredential.objects.create(
+            empresa=self.empresa_secundaria,
+            environment=FactusEnvironment.PRODUCCION,
+            base_url='https://api.factus.com.co',
+            client_id='cliente-prod',
+            client_secret='secret-prod',
+            username='prod@factus.com.co',
+            password='password-prod',
+        )
+        config = FacturacionElectronicaConfig.get_solo(self.empresa_secundaria)
+        config.last_connection_status = 'ok'
+        config.save()
+
+        response = self.client.patch(
+            f'/api/empresas/admin/{self.empresa_secundaria.id}/',
+            {'ambiente_facturacion': 'PRODUCCION'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_admin_interno_crea_empresa_con_propietario(self):
         admin = Usuario.objects.create_superuser(

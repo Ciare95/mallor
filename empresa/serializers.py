@@ -1,8 +1,84 @@
+from django.utils import timezone
 from rest_framework import serializers
 
 from empresa.models import Empresa, EmpresaConfiguracion, EmpresaUsuario
 from empresa.services import EmpresaService
-from ventas.models import FactusCredential
+from ventas.models import (
+    FactusCredential,
+    FactusEnvironment,
+)
+
+
+FACTUS_BASE_URLS = {
+    FactusEnvironment.SANDBOX: 'https://api-sandbox.factus.com.co',
+    FactusEnvironment.PRODUCCION: 'https://api.factus.com.co',
+}
+
+
+def _active_ranges(queryset):
+    today = timezone.localdate()
+    return queryset.filter(is_active=True).filter(
+        end_date__isnull=True,
+    ) | queryset.filter(is_active=True, end_date__gte=today)
+
+
+def build_factus_admin_summary(empresa):
+    config = getattr(empresa, 'facturacion_config', None)
+    credentials = {
+        credential.environment: credential
+        for credential in empresa.factus_credentials.filter(activo=True)
+    }
+    ranges = empresa.factus_numbering_ranges.all()
+    active_ranges = _active_ranges(ranges)
+    bill_ranges = active_ranges.filter(is_credit_note_range=False)
+    credit_note_ranges = active_ranges.filter(is_credit_note_range=True)
+    environment = (
+        getattr(config, 'environment', '')
+        or empresa.ambiente_facturacion
+        or FactusEnvironment.SANDBOX
+    )
+    has_current_credential = environment in credentials
+    has_ranges = bill_ranges.exists() and credit_note_ranges.exists()
+
+    last_connection_status = getattr(config, 'last_connection_status', '')
+    last_connection_checked_at = getattr(
+        config,
+        'last_connection_checked_at',
+        None,
+    )
+
+    if last_connection_status and last_connection_status != 'ok':
+        status = 'ERROR'
+    elif not has_current_credential:
+        status = 'SIN_CREDENCIALES'
+    elif not last_connection_checked_at:
+        status = 'CREDENCIALES_SIN_VALIDAR'
+    elif not has_ranges:
+        status = 'SIN_RANGOS_DIAN'
+    elif environment == FactusEnvironment.PRODUCCION:
+        status = 'LISTA_PRODUCCION'
+    else:
+        status = 'LISTA_SANDBOX'
+
+    return {
+        'environment': environment,
+        'sandbox_configured': FactusEnvironment.SANDBOX in credentials,
+        'production_configured': FactusEnvironment.PRODUCCION in credentials,
+        'last_connection_status': last_connection_status,
+        'last_connection_checked_at': last_connection_checked_at,
+        'bill_ranges_count': bill_ranges.count(),
+        'credit_note_ranges_count': credit_note_ranges.count(),
+        'active_bill_range': (
+            config.active_bill_range.prefix
+            if config and config.active_bill_range_id else ''
+        ),
+        'active_credit_note_range': (
+            config.active_credit_note_range.prefix
+            if config and config.active_credit_note_range_id else ''
+        ),
+        'status': status,
+        'ready': status in {'LISTA_SANDBOX', 'LISTA_PRODUCCION'},
+    }
 
 
 class EmpresaConfiguracionSerializer(serializers.ModelSerializer):
@@ -242,12 +318,14 @@ class EmpresaAdminSerializer(EmpresaSerializer):
     usuarios_count = serializers.SerializerMethodField()
     factus_configured = serializers.SerializerMethodField()
     factus_enabled = serializers.SerializerMethodField()
+    factus_admin_summary = serializers.SerializerMethodField()
 
     class Meta(EmpresaSerializer.Meta):
         fields = EmpresaSerializer.Meta.fields + [
             'usuarios_count',
             'factus_configured',
             'factus_enabled',
+            'factus_admin_summary',
         ]
 
     def get_usuarios_count(self, obj):
@@ -259,6 +337,9 @@ class EmpresaAdminSerializer(EmpresaSerializer):
     def get_factus_enabled(self, obj):
         config = getattr(obj, 'facturacion_config', None)
         return bool(config and config.is_enabled)
+
+    def get_factus_admin_summary(self, obj):
+        return build_factus_admin_summary(obj)
 
 
 class EmpresaAdminCreateSerializer(serializers.ModelSerializer):
@@ -396,3 +477,34 @@ class FactusCredentialSerializer(serializers.ModelSerializer):
             if validated_data.get(field) in (None, ''):
                 validated_data.pop(field, None)
         return super().update(instance, validated_data)
+
+    def validate(self, attrs):
+        environment = attrs.get(
+            'environment',
+            getattr(self.instance, 'environment', FactusEnvironment.SANDBOX),
+        )
+        base_url = attrs.get(
+            'base_url',
+            getattr(self.instance, 'base_url', FACTUS_BASE_URLS[environment]),
+        )
+        expected_url = FACTUS_BASE_URLS.get(environment)
+        if expected_url and str(base_url).rstrip('/') != expected_url:
+            raise serializers.ValidationError({
+                'base_url': (
+                    f'El ambiente {environment} debe usar {expected_url}.'
+                ),
+            })
+
+        if self.instance is None:
+            required = ('client_id', 'client_secret', 'username', 'password')
+            missing = [
+                field for field in required
+                if not str(attrs.get(field) or '').strip()
+            ]
+            if missing:
+                raise serializers.ValidationError({
+                    field: 'Este campo es requerido para crear credenciales.'
+                    for field in missing
+                })
+
+        return attrs

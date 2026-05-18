@@ -140,16 +140,83 @@ function buildTaxLines(detalles = []) {
   return [...grouped.values()];
 }
 
-function extractQrSource(factura) {
-  const payload = factura?.response_payload?.data || factura?.response_payload || {};
+function getNestedValue(source, path) {
+  return path.split('.').reduce((current, segment) => current?.[segment], source);
+}
+
+function isDataUrl(value = '') {
+  return /^data:image\/[a-zA-Z+.-]+;base64,/.test(String(value).trim());
+}
+
+function svgToDataUrl(svg = '') {
+  const normalized = String(svg || '').trim();
+  if (!normalized) {
+    return null;
+  }
+  return `data:image/svg+xml;utf8,${encodeURIComponent(normalized)}`;
+}
+
+function looksLikeRawBase64(value = '') {
+  const normalized = String(value).trim();
   return (
-    payload.qr_image
-    || payload.qr
-    || payload.qr_code
-    || payload.qr_data_url
-    || payload.qr_url
-    || null
+    normalized.length > 80
+    && !normalized.includes(' ')
+    && /^[A-Za-z0-9+/=]+$/.test(normalized)
   );
+}
+
+function isImageUrl(value = '') {
+  return /\.(png|jpg|jpeg|gif|webp|svg)(\?.*)?$/i.test(String(value).trim());
+}
+
+function buildQrImageSource(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) {
+    return null;
+  }
+  if (isDataUrl(normalized)) {
+    return normalized;
+  }
+  if (looksLikeRawBase64(normalized)) {
+    return `data:image/png;base64,${normalized}`;
+  }
+  if (isImageUrl(normalized)) {
+    return normalized;
+  }
+  return `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(normalized)}`;
+}
+
+function extractQrSource(factura) {
+  if (factura?.qr_svg) {
+    return svgToDataUrl(factura.qr_svg);
+  }
+
+  const persistedQrPayload = factura?.qr_payload || {};
+  const persistedValue = (
+    persistedQrPayload.value
+    || persistedQrPayload.source_url
+    || persistedQrPayload.public_url
+  );
+  if (persistedValue) {
+    return buildQrImageSource(persistedValue);
+  }
+
+  const payload = factura?.response_payload?.data || factura?.response_payload || {};
+  const candidates = [
+    payload.qr_image,
+    payload.qr,
+    payload.qr_code,
+    payload.qr_data_url,
+    payload.qr_url,
+    payload.links?.qr,
+    payload.links?.public_url,
+    getNestedValue(payload, 'bill.qr'),
+    getNestedValue(payload, 'bill.links.qr'),
+    getNestedValue(payload, 'invoice.qr'),
+    getNestedValue(payload, 'invoice.links.qr'),
+  ];
+  const firstMatch = candidates.find(Boolean);
+  return buildQrImageSource(firstMatch);
 }
 
 function buildResolutionSection(factura) {
@@ -228,6 +295,14 @@ export function buildThermalTicketData({
   const normalizedSettings = normalizeSettings(settings);
   const factura = venta.factura_documento || null;
   const isElectronic = Boolean(venta.factura_electronica);
+  const isPendingElectronic =
+    isElectronic &&
+    (
+      venta.invoice_status === 'PENDIENTE_FACTURACION' ||
+      factura?.status === 'PENDIENTE_FACTURACION' ||
+      factura?.status === 'PENDIENTE_ENVIO'
+    ) &&
+    factura?.status !== 'EMITIDA';
   const cliente = getSafeClient(venta.cliente);
   const detalles = venta.detalles || [];
   const lineDiscounts = detalles.reduce(
@@ -286,9 +361,14 @@ export function buildThermalTicketData({
       phone: empresa?.telefono || '',
     },
     invoice: {
-      title: isElectronic ? 'Factura electronica de venta' : 'Factura de venta',
+      title: isPendingElectronic
+        ? 'Prefactura interna'
+        : isElectronic
+          ? 'Factura electronica de venta'
+          : 'Factura de venta',
       number:
-        factura?.bill_number
+        (isPendingElectronic ? venta.prefactura_numero : '')
+        || factura?.bill_number
         || venta.numero_factura_electronica
         || venta.numero_venta,
       dateTime: venta.fecha_facturacion || venta.fecha_venta,
@@ -331,11 +411,16 @@ export function buildThermalTicketData({
     totals,
     paymentInfo,
     isElectronic,
+    isPendingElectronic,
     electronicBilling: {
-      cufe: factura?.cufe || 'Pendiente de emision',
+      cufe: isPendingElectronic
+        ? 'Pendiente de emision con Factus'
+        : factura?.cufe || 'Pendiente de emision',
       qrSrc: extractQrSource(factura),
     },
-    legalText: isElectronic ? LEGAL_TEXT_ELECTRONIC : LEGAL_TEXT_STANDARD,
+    legalText: isPendingElectronic
+      ? 'Documento interno pendiente de emision electronica. No reemplaza factura electronica validada por DIAN.'
+      : isElectronic ? LEGAL_TEXT_ELECTRONIC : LEGAL_TEXT_STANDARD,
     resolution: buildResolutionSection(factura),
     softwareFooter: SOFTWARE_FOOTER,
     observations: venta.observaciones || '',
@@ -367,7 +452,9 @@ function QrBlock({ qrSrc, cufe }) {
           </div>
         )}
       </div>
-      <div className="thermal-ticket__muted-center">{cufe}</div>
+      <div className="thermal-ticket__muted-center thermal-ticket__cufe-block">
+        {cufe}
+      </div>
     </div>
   );
 }
@@ -413,7 +500,7 @@ export function ThermalTicket({
   copyIndex = 0,
   totalCopies = 1,
 }) {
-  const { company, invoice, customer, items, taxes, totals, paymentInfo, electronicBilling, isElectronic } =
+  const { company, invoice, customer, items, taxes, totals, paymentInfo, electronicBilling, isElectronic, isPendingElectronic } =
     ticket;
 
   return (
@@ -583,10 +670,15 @@ export function ThermalTicket({
 
       {isElectronic ? (
         <TicketSection title="Facturacion electronica">
-          <div className="thermal-ticket__text-block">
-            <div className="thermal-ticket__payment-row">
-              <span>CUFE</span>
-              <span>{electronicBilling.cufe}</span>
+          {isPendingElectronic && (
+            <div className="thermal-ticket__legal">
+              Pendiente de emision oficial cuando vuelva la conexion.
+            </div>
+          )}
+          <div className="thermal-ticket__text-block thermal-ticket__cufe-section">
+            <div className="thermal-ticket__label">CUFE</div>
+            <div className="thermal-ticket__cufe-value">
+              {electronicBilling.cufe}
             </div>
           </div>
           <QrBlock

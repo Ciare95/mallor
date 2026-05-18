@@ -1,6 +1,11 @@
 import api from './api';
 
-const BACKEND_ORIGIN = new URL(api.defaults.baseURL).origin;
+const resolveBackendOrigin = () => {
+  const browserOrigin = globalThis.window?.location?.origin || 'http://localhost:8000';
+  return new URL(api.defaults?.baseURL || '/api', browserOrigin).origin;
+};
+
+const BACKEND_ORIGIN = resolveBackendOrigin();
 
 const normalizeImageUrl = (value) => {
   if (!value || typeof value !== 'string') {
@@ -25,7 +30,9 @@ const normalizeEmpresaResponse = (empresa) => {
 
   return {
     ...empresa,
-    logo: normalizeImageUrl(empresa.logo),
+    ...(Object.prototype.hasOwnProperty.call(empresa, 'logo')
+      ? { logo: normalizeImageUrl(empresa.logo) }
+      : {}),
   };
 };
 
@@ -83,6 +90,50 @@ export const crearEmpresaAdmin = async (payload) => {
 export const actualizarEmpresaAdmin = async (empresaId, payload) => {
   const response = await api.patch(`/empresas/admin/${empresaId}/`, payload);
   return normalizeEmpresaResponse(response.data);
+};
+
+export const obtenerCredencialesFactusEmpresa = async (
+  empresaId,
+  environment = 'SANDBOX',
+) => {
+  const response = await api.get(
+    `/empresas/${empresaId}/facturacion/credenciales/`,
+    { params: { environment } },
+  );
+  return response.data;
+};
+
+export const guardarCredencialesFactusEmpresa = async (
+  empresaId,
+  payload,
+) => {
+  const method = payload?.id ? 'patch' : 'post';
+  const response = await api[method](
+    `/empresas/${empresaId}/facturacion/credenciales/`,
+    payload,
+  );
+  return response.data;
+};
+
+export const validarConexionFactusEmpresa = async (empresaId, environment) => {
+  const response = await api.post(
+    `/empresas/${empresaId}/facturacion/validar-conexion/`,
+    { environment },
+  );
+  return response.data;
+};
+
+export const sincronizarRangosFactusEmpresa = async (empresaId, environment) => {
+  const response = await api.post(
+    `/empresas/${empresaId}/facturacion/sincronizar-rangos/`,
+    { environment },
+  );
+  return response.data;
+};
+
+export const listarRangosFactusEmpresa = async (empresaId) => {
+  const response = await api.get(`/empresas/${empresaId}/facturacion/rangos/`);
+  return response.data;
 };
 
 export const obtenerEmpresa = async (empresaId) => {
@@ -147,6 +198,11 @@ export default {
   listarEmpresasAdmin,
   crearEmpresaAdmin,
   actualizarEmpresaAdmin,
+  obtenerCredencialesFactusEmpresa,
+  guardarCredencialesFactusEmpresa,
+  validarConexionFactusEmpresa,
+  sincronizarRangosFactusEmpresa,
+  listarRangosFactusEmpresa,
   obtenerEmpresa,
   seleccionarEmpresa,
   actualizarEmpresa,

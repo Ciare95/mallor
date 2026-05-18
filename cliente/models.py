@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
@@ -30,6 +31,7 @@ class Cliente(models.Model):
         SIMPLIFICADO = 'SIMPLIFICADO', _('Simplificado')
         COMUN = 'COMUN', _('Comun')
 
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     empresa = models.ForeignKey(
         'empresa.Empresa',
         on_delete=models.PROTECT,
@@ -181,6 +183,7 @@ class Cliente(models.Model):
         verbose_name = _('cliente')
         verbose_name_plural = _('clientes')
         indexes = [
+            models.Index(fields=['uuid'], name='clientes_uuid_idx'),
             models.Index(fields=['empresa']),
             models.Index(fields=['numero_documento']),
             models.Index(fields=['tipo_documento']),

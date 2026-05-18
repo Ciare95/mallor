@@ -7,10 +7,12 @@ from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 
 from cliente.models import Cliente
+from core.exceptions import FacturacionValidacionError
 from empresa.context import get_empresa_actual_or_default
 from empresa.services import EmpresaService
 from inventario.models import Producto
 from usuario.models import Usuario
+from ventas.factus_transformers import validar_empresa_facturable
 from ventas.models import (
     Abono,
     DetalleVenta,
@@ -18,6 +20,8 @@ from ventas.models import (
     FacturaElectronicaEntrega,
     FacturaElectronicaIntento,
     FacturaElectronicaSoporte,
+    FactusCredential,
+    FactusEnvironment,
     FactusNumberingRange,
     Venta,
     VentaFacturaElectronica,
@@ -105,6 +109,7 @@ class DetalleVentaSerializer(serializers.ModelSerializer):
         model = DetalleVenta
         fields = [
             'id',
+            'uuid',
             'venta',
             'producto',
             'producto_id',
@@ -119,6 +124,7 @@ class DetalleVentaSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'id',
+            'uuid',
             'venta',
             'subtotal',
             'iva',
@@ -213,7 +219,10 @@ class VentaListSerializer(serializers.ModelSerializer):
         model = Venta
         fields = [
             'id',
+            'uuid',
             'numero_venta',
+            'terminal',
+            'caja_sesion',
             'cliente',
             'cliente_nombre',
             'fecha_venta',
@@ -223,6 +232,9 @@ class VentaListSerializer(serializers.ModelSerializer):
             'saldo_pendiente',
             'metodo_pago',
             'factura_electronica',
+            'sync_status',
+            'invoice_status',
+            'prefactura_numero',
             'usuario_registro',
             'usuario_registro_nombre',
             'detalles_count',
@@ -249,7 +261,10 @@ class VentaSerializer(serializers.ModelSerializer):
         model = Venta
         fields = [
             'id',
+            'uuid',
             'numero_venta',
+            'terminal',
+            'caja_sesion',
             'cliente',
             'fecha_venta',
             'subtotal',
@@ -264,6 +279,10 @@ class VentaSerializer(serializers.ModelSerializer):
             'factura_electronica',
             'numero_factura_electronica',
             'fecha_facturacion',
+            'sync_status',
+            'invoice_status',
+            'cloud_id',
+            'prefactura_numero',
             'observaciones',
             'usuario_registro',
             'detalles',
@@ -305,6 +324,8 @@ class VentaCreateSerializer(serializers.ModelSerializer):
         model = Venta
         fields = [
             'cliente',
+            'terminal',
+            'caja_sesion',
             'descuento',
             'estado',
             'metodo_pago',
@@ -371,6 +392,12 @@ class VentaCreateSerializer(serializers.ModelSerializer):
                         'facturacion electronica.'
                     ),
                 })
+            try:
+                validar_empresa_facturable(empresa)
+            except FacturacionValidacionError as exc:
+                raise serializers.ValidationError({
+                    'empresa': str(exc),
+                }) from exc
 
         return attrs
 
@@ -476,6 +503,13 @@ class VentaUpdateSerializer(serializers.ModelSerializer):
                     'facturacion electronica.'
                 ),
             })
+        if factura_electronica:
+            try:
+                validar_empresa_facturable(instance.empresa)
+            except FacturacionValidacionError as exc:
+                raise serializers.ValidationError({
+                    'empresa': str(exc),
+                }) from exc
 
         return attrs
 
@@ -508,6 +542,7 @@ class AbonoListSerializer(serializers.ModelSerializer):
         model = Abono
         fields = [
             'id',
+            'uuid',
             'venta',
             'venta_numero',
             'monto_abonado',
@@ -532,6 +567,7 @@ class AbonoSerializer(serializers.ModelSerializer):
         model = Abono
         fields = [
             'id',
+            'uuid',
             'venta',
             'monto_abonado',
             'fecha_abono',
@@ -675,6 +711,57 @@ class FacturacionElectronicaConfigSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
 
+    def validate(self, attrs):
+        environment = attrs.get(
+            'environment',
+            getattr(self.instance, 'environment', FactusEnvironment.SANDBOX),
+        )
+        if environment != FactusEnvironment.PRODUCCION:
+            return attrs
+
+        empresa = getattr(self.instance, 'empresa', None)
+        if empresa is None:
+            request = self.context.get('request') if self.context else None
+            empresa = getattr(request, 'empresa', None)
+
+        if empresa is None:
+            return attrs
+
+        active_bill_range = attrs.get(
+            'active_bill_range',
+            getattr(self.instance, 'active_bill_range', None),
+        )
+        active_credit_note_range = attrs.get(
+            'active_credit_note_range',
+            getattr(self.instance, 'active_credit_note_range', None),
+        )
+        has_credential = FactusCredential.objects.filter(
+            empresa=empresa,
+            environment=FactusEnvironment.PRODUCCION,
+            activo=True,
+        ).exists()
+
+        errors = {}
+        if not has_credential:
+            errors['environment'] = (
+                'Debe configurar credenciales Factus de produccion.'
+            )
+        if getattr(self.instance, 'last_connection_status', '') != 'ok':
+            errors['last_connection_status'] = (
+                'Debe validar la conexion productiva con Factus.'
+            )
+        if active_bill_range is None:
+            errors['active_bill_range_id'] = (
+                'Debe sincronizar y seleccionar un rango productivo de factura.'
+            )
+        if active_credit_note_range is None:
+            errors['active_credit_note_range_id'] = (
+                'Debe sincronizar y seleccionar un rango productivo de nota credito.'
+            )
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
+
 
 class FacturaElectronicaIntentoSerializer(serializers.ModelSerializer):
     class Meta:
@@ -747,8 +834,11 @@ class VentaFacturaElectronicaSerializer(serializers.ModelSerializer):
             'email_last_sent_at',
             'last_error_code',
             'last_error_message',
+            'offline_reason',
             'request_payload',
             'response_payload',
+            'qr_payload',
+            'qr_svg',
             'credit_note_number',
             'credit_note_payload',
             'entregas',

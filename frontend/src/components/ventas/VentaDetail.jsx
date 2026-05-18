@@ -19,7 +19,11 @@ import {
   formatDateTime,
   formatNumber,
 } from '../../utils/formatters';
-import { getVentaPaymentDisplayStatus } from '../../utils/ventas';
+import {
+  FACTUS_NOTA_CREDITO_PENDIENTE_DIAN_CODE,
+  getVentaPaymentDisplayStatus,
+  resolveFacturaErrorMessage,
+} from '../../utils/ventas';
 import { useVentasStore } from '../../store/useVentasStore';
 import { VENTA_DETALLE_TABS } from '../../store/useVentasStore';
 import { EmptyState, SectionShell, StatusBadge } from './shared';
@@ -89,6 +93,17 @@ export default function VentaDetail({
   const paymentDisplayStatus = getVentaPaymentDisplayStatus(venta);
   const factura = venta.factura_documento;
   const facturaSolicitada = Boolean(venta.factura_electronica);
+  const notaCreditoPendienteDian =
+    factura?.last_error_code === FACTUS_NOTA_CREDITO_PENDIENTE_DIAN_CODE
+    || (
+      factura?.last_error_code === 'factus_http_409'
+      && String(factura?.last_error_message || '')
+        .toLowerCase()
+        .includes('pendiente por enviar a la dian')
+      && String(factura?.last_error_message || '')
+        .toLowerCase()
+        .includes('nota cr')
+    );
   const tabs = [
     [VENTA_DETALLE_TABS.RESUMEN, 'Resumen'],
     [VENTA_DETALLE_TABS.ABONOS, 'Abonos'],
@@ -204,10 +219,18 @@ export default function VentaDetail({
                   <button
                     type="button"
                     onClick={() => onCrearNotaCredito(venta)}
-                    className="app-button-secondary min-h-10"
+                    disabled={notaCreditoPendienteDian}
+                    title={
+                      notaCreditoPendienteDian
+                        ? 'Ya existe una nota credito pendiente en DIAN para esta factura.'
+                        : 'Generar nota credito'
+                    }
+                    className="app-button-secondary min-h-10 disabled:opacity-40"
                   >
                     <Undo2 className="h-4 w-4" />
-                    Nota credito
+                    {notaCreditoPendienteDian
+                      ? 'Nota pendiente DIAN'
+                      : 'Nota credito'}
                   </button>
                 )}
               </>
@@ -248,7 +271,7 @@ export default function VentaDetail({
                 Ultimo error
               </div>
               <div className="mt-2 text-[13px] font-semibold text-main">
-                {factura?.last_error_message || 'Sin errores registrados'}
+                {resolveFacturaErrorMessage(factura)}
               </div>
             </div>
           </div>

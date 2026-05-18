@@ -62,6 +62,20 @@ def _schedule_facturacion_electronica(venta: Venta) -> None:
     if venta.estado != Venta.Estado.TERMINADA or not venta.factura_electronica:
         return
 
+    try:
+        from offline.services import OfflineService, is_local_mode
+
+        if is_local_mode():
+            config = OfflineService.get_config(venta.empresa)
+            if not config.is_online:
+                _crear_factura_pendiente_offline(venta)
+                return
+    except Exception:
+        logger.exception(
+            'No fue posible evaluar el modo offline para la venta %s',
+            venta.id,
+        )
+
     def _emitir() -> None:
         from ventas.facturacion_services import FacturacionElectronicaService
 
@@ -79,6 +93,84 @@ def _schedule_facturacion_electronica(venta: Venta) -> None:
             )
 
     transaction.on_commit(_emitir)
+
+
+def _build_pending_invoice_payload(venta: Venta) -> Dict[str, Any]:
+    try:
+        from ventas.factus_transformers import (
+            build_factus_bill_payload,
+            build_reference_code,
+        )
+        from ventas.facturacion_services import FacturacionElectronicaService
+
+        config = FacturacionElectronicaService.get_config(venta.empresa)
+        if config.active_bill_range_id:
+            reference_code = build_reference_code(venta)
+            return build_factus_bill_payload(
+                venta,
+                config.active_bill_range.factus_id,
+                send_email=config.auto_enviar_email,
+                reference_code=reference_code,
+            )
+    except Exception:
+        logger.exception(
+            'No fue posible construir payload Factus pendiente para venta %s',
+            venta.id,
+        )
+
+    return {
+        'reference_code': f'PENDING-{venta.uuid}',
+        'venta_uuid': str(venta.uuid),
+        'numero_venta': venta.numero_venta,
+        'prefactura_numero': venta.prefactura_numero,
+        'cliente': venta.cliente_id,
+        'subtotal': str(venta.subtotal),
+        'impuestos': str(venta.impuestos),
+        'total': str(venta.total),
+        'detalles': [
+            {
+                'producto': detalle.producto_id,
+                'cantidad': str(detalle.cantidad),
+                'precio_unitario': str(detalle.precio_unitario),
+                'iva': str(detalle.iva),
+                'total': str(detalle.total),
+            }
+            for detalle in venta.detalles.select_related('producto').all()
+        ],
+    }
+
+
+def _crear_factura_pendiente_offline(venta: Venta) -> VentaFacturaElectronica:
+    from ventas.factus_transformers import build_reference_code
+
+    if not venta.prefactura_numero:
+        venta.prefactura_numero = f'PRE-{venta.numero_venta}'
+        venta.invoice_status = Venta.InvoiceStatus.PENDIENTE_FACTURACION
+        venta.save(
+            update_fields=[
+                'prefactura_numero',
+                'invoice_status',
+                'updated_at',
+            ],
+        )
+
+    documento, _ = VentaFacturaElectronica.objects.get_or_create(
+        venta=venta,
+        defaults={
+            'empresa': venta.empresa,
+            'status': VentaFacturaElectronica.Status.PENDIENTE_FACTURACION,
+            'reference_code': build_reference_code(venta),
+            'offline_reason': 'sin_conexion_local',
+            'request_payload': {},
+        },
+    )
+    documento.status = VentaFacturaElectronica.Status.PENDIENTE_FACTURACION
+    documento.offline_reason = 'sin_conexion_local'
+    documento.request_payload = _build_pending_invoice_payload(venta)
+    documento.last_error_code = ''
+    documento.last_error_message = ''
+    documento.save()
+    return documento
 
 
 class _VentaInventarioService:
@@ -325,6 +417,8 @@ class VentaService:
         return Venta.objects.filter(empresa=empresa).select_related(
             'cliente',
             'usuario_registro',
+            'terminal',
+            'caja_sesion',
             'factura_documento',
             'factura_documento__numbering_range',
         ).prefetch_related(
@@ -416,6 +510,57 @@ class VentaService:
         empresa = get_empresa_actual_or_default()
         allow_negative = EmpresaService.permite_stock_negativo_ventas(empresa)
         EmpresaService.validar_empresa_activa(empresa)
+        try:
+            from offline.models import CajaSesion, POSTerminal
+            from offline.services import OfflineService, is_local_mode
+        except Exception:
+            CajaSesion = None
+            POSTerminal = None
+            OfflineService = None
+
+            def is_local_mode():
+                return False
+
+        terminal = datos_venta.pop('terminal', None)
+        caja_sesion = datos_venta.pop('caja_sesion', None)
+        if is_local_mode():
+            if terminal is None:
+                raise VentaError(
+                    _('La venta local requiere una terminal POS.'),
+                    code='venta_terminal_requerida',
+                )
+            if not isinstance(terminal, POSTerminal):
+                terminal = POSTerminal.objects.filter(
+                    pk=terminal,
+                    empresa=empresa,
+                    is_active=True,
+                ).first()
+            if terminal is None:
+                raise VentaError(
+                    _('La terminal POS no existe o esta inactiva.'),
+                    code='venta_terminal_invalida',
+                )
+            if caja_sesion is None:
+                caja_sesion = OfflineService.get_open_session(terminal)
+            elif not isinstance(caja_sesion, CajaSesion):
+                caja_sesion = CajaSesion.objects.filter(
+                    pk=caja_sesion,
+                    terminal=terminal,
+                    estado=CajaSesion.Estado.ABIERTA,
+                ).first()
+            if caja_sesion is None:
+                raise VentaError(
+                    _('Debe abrir caja en esta terminal antes de vender.'),
+                    code='venta_caja_requerida',
+                )
+            datos_venta['terminal'] = terminal
+            datos_venta['caja_sesion'] = caja_sesion
+            datos_venta['sync_status'] = Venta.SyncStatus.PENDIENTE
+            datos_venta['invoice_status'] = (
+                Venta.InvoiceStatus.PENDIENTE_FACTURACION
+                if datos_venta.get('factura_electronica')
+                else Venta.InvoiceStatus.NO_REQUIERE
+            )
         cliente = _VentaInventarioService.obtener_cliente(
             datos_venta.pop('cliente', None),
         )
@@ -458,6 +603,8 @@ class VentaService:
             )
 
         _schedule_facturacion_electronica(venta)
+        if is_local_mode() and venta.estado == Venta.Estado.TERMINADA:
+            OfflineService.enqueue_sale(venta)
         return VentaService.obtener_venta(venta.id)
 
     @staticmethod

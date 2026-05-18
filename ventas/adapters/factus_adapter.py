@@ -331,3 +331,25 @@ class FactusAdapter(FacturacionPort):
     def consultar_nota_credito(self, note_number: str) -> Dict[str, Any]:
         response = self._request('GET', f'/v2/credit-notes/{note_number}')
         return response.json()
+
+    def listar_notas_credito(
+        self,
+        *,
+        reference_code: Optional[str] = None,
+        number: Optional[str] = None,
+        status: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        params = {}
+        if reference_code:
+            params['filter[reference_code]'] = reference_code
+        if number:
+            params['filter[number]'] = number
+        if status is not None and status != '':
+            params['filter[status]'] = status
+
+        response = self._request(
+            'GET',
+            '/v2/credit-notes',
+            params=params or None,
+        )
+        return response.json()

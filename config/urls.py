@@ -18,6 +18,9 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
+from django.views.static import serve
+
+from config.views import ReactAppView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -26,6 +29,7 @@ urlpatterns = [
     path('api/', include('empresa.urls')),
     path('api/', include('usuario.urls')),
     path('api/inventario/', include('inventario.urls')),
+    path('api/', include('offline.urls')),
     path('api/fabricante/', include('fabricante.urls')),
     path('api/informes/', include('informes.urls')),
     path('api/', include('ventas.urls')),
@@ -39,3 +43,14 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+if getattr(settings, 'MALLOR_LOCAL_SERVER', False):
+    urlpatterns += [
+        path(
+            'assets/<path:path>',
+            serve,
+            {'document_root': settings.FRONTEND_DIST_DIR / 'assets'},
+        ),
+        path('', ReactAppView.as_view(), name='local-react-app'),
+        path('<path:path>', ReactAppView.as_view(), name='local-react-app-path'),
+    ]

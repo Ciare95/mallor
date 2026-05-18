@@ -1,3 +1,5 @@
+import { normalizeMunicipioFields } from './municipios';
+
 export const DOCUMENTO_PROVEEDOR_LABELS = {
   NIT: 'NIT',
   CC: 'CC',
@@ -129,7 +131,10 @@ export const getFacturaCompraStatusMeta = (factura) => {
   };
 };
 
-export const buildProveedorPayload = (form) => ({
+export const buildProveedorPayload = (form) => {
+  const ubicacion = normalizeMunicipioFields(form);
+
+  return {
   tipo_documento: form.tipo_documento,
   numero_documento: form.numero_documento.trim(),
   razon_social: form.razon_social.trim(),
@@ -139,17 +144,19 @@ export const buildProveedorPayload = (form) => ({
   telefono: form.telefono.trim(),
   celular: form.celular.trim(),
   direccion: form.direccion.trim(),
-  ciudad: form.ciudad.trim(),
-  departamento: form.departamento.trim(),
+  ciudad: ubicacion.ciudad.trim(),
+  departamento: ubicacion.departamento.trim(),
   tipo_productos: form.tipo_productos.trim(),
   forma_pago: form.forma_pago,
   cuenta_bancaria: form.cuenta_bancaria.trim(),
   banco: form.banco.trim(),
   observaciones: form.observaciones.trim(),
   activo: Boolean(form.activo),
-});
+  };
+};
 
 export const createProveedorFormState = (proveedor) => ({
+  ...normalizeMunicipioFields(proveedor || {}),
   tipo_documento: proveedor?.tipo_documento || 'NIT',
   numero_documento: proveedor?.numero_documento || '',
   razon_social: proveedor?.razon_social || '',
@@ -159,8 +166,6 @@ export const createProveedorFormState = (proveedor) => ({
   telefono: proveedor?.telefono || '',
   celular: proveedor?.celular || '',
   direccion: proveedor?.direccion || '',
-  ciudad: proveedor?.ciudad || '',
-  departamento: proveedor?.departamento || '',
   tipo_productos: proveedor?.tipo_productos || '',
   forma_pago: proveedor?.forma_pago || 'CONTADO',
   cuenta_bancaria: proveedor?.cuenta_bancaria || '',
@@ -201,11 +206,7 @@ export const validateProveedorForm = ({
   }
 
   if (!form.ciudad.trim()) {
-    errors.ciudad = 'La ciudad es obligatoria.';
-  }
-
-  if (!form.departamento.trim()) {
-    errors.departamento = 'El departamento es obligatorio.';
+    errors.municipio_codigo = 'El municipio es obligatorio.';
   }
 
   if (!form.tipo_productos.trim()) {

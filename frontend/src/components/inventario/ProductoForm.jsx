@@ -26,6 +26,7 @@ const initialFormData = {
   marca: '',
   descripcion: '',
   existencias: '0',
+  stock_minimo: '10',
   invima: '',
   precio_compra: '',
   precio_venta: '',
@@ -35,6 +36,19 @@ const initialFormData = {
 };
 
 const getResults = (data) => data?.results || data || [];
+
+const normalizeIntegerInput = (value) => {
+  const stringValue = String(value ?? '');
+  const match = stringValue.match(/^\d+/);
+  return match ? match[0] : '';
+};
+
+const normalizeIntegerDisplay = (value, fallback = '0') => {
+  if (value === '' || value === null || value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return String(Math.trunc(parsed));
+};
 
 const getInitialFormData = (producto) => {
   if (!producto) return initialFormData;
@@ -47,17 +61,19 @@ const getInitialFormData = (producto) => {
     categoria_id: producto.categoria?.id || producto.categoria_id || '',
     marca: producto.marca || '',
     descripcion: producto.descripcion || '',
-    existencias: producto.existencias ?? '0',
+    existencias: normalizeIntegerDisplay(producto.existencias),
+    stock_minimo: normalizeIntegerDisplay(producto.stock_minimo, '10'),
     invima: producto.invima || '',
     precio_compra: producto.precio_compra || '',
     precio_venta: producto.precio_venta || '',
-    iva: producto.iva ?? '0',
+    iva: normalizeIntegerDisplay(producto.iva),
     imagen: null,
     fecha_caducidad: producto.fecha_caducidad || '',
   };
 };
 
 const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
+  const isCreateMode = !producto;
   const [formData, setFormData] = useState(() => getInitialFormData(producto));
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
@@ -91,6 +107,10 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
       Number(value) < 0 || value === ''
         ? 'Las existencias no pueden ser negativas'
         : null,
+    stock_minimo: (value) =>
+      Number(value) < 0 || value === ''
+        ? 'El stock minimo no puede ser negativo'
+        : null,
     precio_compra: (value) =>
       Number(value) <= 0
         ? 'El precio de compra debe ser mayor que cero'
@@ -120,7 +140,11 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
   const validateField = (name, value) => validators[name]?.(value) || null;
 
   const handleChange = (event) => {
-    const { name, value } = event.target;
+    const { name } = event.target;
+    let { value } = event.target;
+    if (isCreateMode && ['existencias', 'iva', 'stock_minimo'].includes(name)) {
+      value = normalizeIntegerInput(value);
+    }
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (touched[name]) {
       setErrors((prev) => ({ ...prev, [name]: validateField(name, value) }));
@@ -136,6 +160,16 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
   const handleImageChange = (event) => {
     const file = event.target.files?.[0] || null;
     setFormData((prev) => ({ ...prev, imagen: file }));
+  };
+
+  const handleIntegerFieldFocus = (event) => {
+    if (!isCreateMode) return;
+    const { name, value } = event.target;
+    if (!['existencias', 'iva', 'stock_minimo'].includes(name)) return;
+    const defaultValue = name === 'stock_minimo' ? '10' : '0';
+    if (normalizeIntegerDisplay(value, '') === defaultValue) {
+      setFormData((prev) => ({ ...prev, [name]: '' }));
+    }
   };
 
   const validateForm = () => {
@@ -210,7 +244,7 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
               value={formatCurrency(precioSugerido)}
               tone="text-[var(--accent)]"
             />
-            <Kpi label="IVA" value={`${iva.toFixed(2)}%`} tone="text-main" />
+            <Kpi label="IVA" value={`${Math.trunc(iva)}%`} tone="text-main" />
           </div>
         </div>
       </section>
@@ -333,11 +367,28 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
               name="existencias"
               type="number"
               min="0"
-              step="0.01"
+              step={isCreateMode ? '1' : '0.01'}
+              inputMode="numeric"
               value={formData.existencias}
               onChange={handleChange}
               onBlur={handleBlur}
+              onFocus={handleIntegerFieldFocus}
               error={touched.existencias && errors.existencias}
+              helper={isCreateMode ? 'Solo enteros para stock inicial.' : undefined}
+            />
+            <Field
+              label="Stock minimo"
+              name="stock_minimo"
+              type="number"
+              min="0"
+              step={isCreateMode ? '1' : '0.01'}
+              inputMode="numeric"
+              value={formData.stock_minimo}
+              onChange={handleChange}
+              onBlur={handleBlur}
+              onFocus={handleIntegerFieldFocus}
+              error={touched.stock_minimo && errors.stock_minimo}
+              helper={isCreateMode ? 'Umbral propio del producto para alertas.' : undefined}
             />
             <Field
               label="IVA %"
@@ -346,11 +397,14 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
               type="number"
               min="0"
               max="100"
-              step="0.01"
+              step={isCreateMode ? '1' : '0.01'}
+              inputMode="numeric"
               value={formData.iva}
               onChange={handleChange}
               onBlur={handleBlur}
+              onFocus={handleIntegerFieldFocus}
               error={touched.iva && errors.iva}
+              helper={isCreateMode ? 'Solo enteros entre 0 y 100.' : undefined}
             />
             <Field
               label="Precio compra"

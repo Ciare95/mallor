@@ -1,7 +1,12 @@
 import api from './api';
 
 const INVENTARIO_BASE = '/inventario';
-const BACKEND_ORIGIN = new URL(api.defaults.baseURL).origin;
+const resolveBackendOrigin = () => {
+  const browserOrigin = globalThis.window?.location?.origin || 'http://localhost:8000';
+  return new URL(api.defaults?.baseURL || '/api', browserOrigin).origin;
+};
+
+const BACKEND_ORIGIN = resolveBackendOrigin();
 
 const cleanParams = (params = {}) =>
   Object.fromEntries(
@@ -40,7 +45,9 @@ const normalizeProductResponse = (producto) => {
 
   return {
     ...producto,
-    imagen: normalizeImageUrl(producto.imagen),
+    ...(Object.prototype.hasOwnProperty.call(producto, 'imagen')
+      ? { imagen: normalizeImageUrl(producto.imagen) }
+      : {}),
   };
 };
 
@@ -193,10 +200,8 @@ export const obtenerValorTotalInventario = async () => {
   return response.data;
 };
 
-export const obtenerProductosBajoStock = async (minimo = 10) => {
-  const response = await api.get(`${INVENTARIO_BASE}/reportes/bajo-stock/`, {
-    params: { minimo },
-  });
+export const obtenerProductosBajoStock = async () => {
+  const response = await api.get(`${INVENTARIO_BASE}/reportes/bajo-stock/`);
   return response.data;
 };
 

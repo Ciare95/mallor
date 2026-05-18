@@ -20,10 +20,12 @@ import {
   validateClienteForm,
 } from '../../utils/clientes';
 import { formatCurrency } from '../../utils/formatters';
+import { getDepartamentoByMunicipioCode } from '../../utils/municipios';
 import {
   calculateNitVerificationDigit,
   sanitizeNumeric,
 } from '../../utils/nit';
+import MunicipioLookupField from '../forms/MunicipioLookupField';
 import { SectionShell } from './shared';
 
 const EMPTY_ERRORS = {};
@@ -111,6 +113,17 @@ export default function ClienteForm({
 
       return next;
     });
+  };
+
+  const setMunicipio = (municipio) => {
+    setForm((current) => ({
+      ...current,
+      ciudad: municipio?.name || '',
+      departamento: municipio
+        ? getDepartamentoByMunicipioCode(municipio.code)
+        : '',
+      municipio_codigo: municipio?.code || '',
+    }));
   };
 
   const handleBlur = (field) => {
@@ -274,29 +287,35 @@ export default function ClienteForm({
                 onBlur={() => handleBlur('direccion')}
                 error={visibleErrors.direccion}
               />
-              <div className="grid gap-4 lg:grid-cols-2">
-                <InputField
-                  label="Ciudad"
-                  value={form.ciudad}
-                  onChange={(value) => setField('ciudad', value)}
-                  onBlur={() => handleBlur('ciudad')}
-                  error={visibleErrors.ciudad}
-                />
-                <InputField
-                  label="Departamento"
-                  value={form.departamento}
-                  onChange={(value) => setField('departamento', value)}
-                  onBlur={() => handleBlur('departamento')}
-                  error={visibleErrors.departamento}
-                />
-                <InputField
-                  label="Codigo municipio DIAN"
-                  value={form.municipio_codigo}
-                  onChange={(value) => setField('municipio_codigo', value)}
-                  onBlur={() => handleBlur('municipio_codigo')}
+              <div className="grid gap-4">
+                <MunicipioLookupField
+                  label="Municipio DIAN"
+                  code={form.municipio_codigo}
+                  required
                   error={visibleErrors.municipio_codigo}
-                  helper="Ejemplo: 11001 para Bogota."
+                  helper="Selecciona el municipio y el sistema completa ciudad, departamento y codigo."
+                  onBlur={() => handleBlur('municipio_codigo')}
+                  onCodeChange={(value) => setField('municipio_codigo', value)}
+                  onMunicipioSelect={setMunicipio}
                 />
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <InputField
+                    label="Ciudad"
+                    value={form.ciudad}
+                    readOnly
+                    onBlur={() => handleBlur('ciudad')}
+                    error={visibleErrors.ciudad}
+                    helper="Se completa desde el municipio seleccionado."
+                  />
+                  <InputField
+                    label="Departamento"
+                    value={form.departamento}
+                    readOnly
+                    onBlur={() => handleBlur('departamento')}
+                    error={visibleErrors.departamento}
+                    helper="Se completa automaticamente."
+                  />
+                </div>
               </div>
             </div>
           </div>

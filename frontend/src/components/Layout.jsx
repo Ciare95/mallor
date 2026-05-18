@@ -13,10 +13,12 @@ import {
   PackageSearch,
   PieChart,
   ReceiptText,
+  Server,
   Sparkles,
   Settings,
   UserRound,
   Users,
+  WifiOff,
 } from 'lucide-react';
 import { useAppStore } from '../store/useStore';
 import { useAuth } from '../hooks/useAuth';
@@ -30,6 +32,7 @@ import {
   canAccessRoute,
   isAdminInterno,
 } from '../utils/roleAccess';
+import { obtenerEstadoOffline } from '../services/offline.service';
 
 export default function Layout() {
   const location = useLocation();
@@ -51,6 +54,16 @@ export default function Layout() {
 
   const empresas = empresasQuery.data?.results ?? [];
   const puedeCambiarEmpresa = empresas.length > 1;
+  const offlineStatusQuery = useQuery({
+    queryKey: ['offline', 'status', empresaActivaId],
+    queryFn: obtenerEstadoOffline,
+    enabled: Boolean(empresaActivaId),
+    refetchInterval: 15000,
+    retry: false,
+  });
+  const offlineStatus = offlineStatusQuery.data;
+  const isLocalMode = offlineStatus?.mode === 'local';
+  const isOffline = isLocalMode && !offlineStatus?.online;
 
   useEffect(() => {
     const empresasDisponibles = empresasQuery.data?.results ?? [];
@@ -233,6 +246,21 @@ export default function Layout() {
 
         <div className="relative flex min-h-screen flex-1 flex-col">
           <header className="sticky top-0 z-30 border-b border-app bg-app/90 backdrop-blur">
+            {isOffline && (
+              <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-amber-950">
+                <div className="mx-auto flex max-w-[1600px] items-center justify-between gap-3 text-[12px] font-semibold">
+                  <span className="flex items-center gap-2">
+                    <WifiOff className="h-4 w-4" />
+                    Sin conexión - vendiendo localmente
+                  </span>
+                  <span className="hidden items-center gap-2 md:flex">
+                    <Server className="h-4 w-4" />
+                    {offlineStatus?.terminal?.name || 'Terminal sin asignar'}
+                    {offlineStatus?.caja ? ' / caja abierta' : ' / caja cerrada'}
+                  </span>
+                </div>
+              </div>
+            )}
             <div className="mx-auto flex w-full max-w-[1600px] items-center justify-between gap-4 px-4 py-3 sm:px-6 xl:px-8">
               <div className="flex items-center gap-3">
                 <button

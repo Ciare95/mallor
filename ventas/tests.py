@@ -19,6 +19,7 @@ from core.exceptions import (
 from inventario.models import HistorialInventario, Producto
 from usuario.models import Usuario
 from ventas.factus_transformers import (
+    build_credit_note_payload,
     build_factus_bill_payload,
     build_reference_code,
 )
@@ -28,6 +29,7 @@ from ventas.models import (
     DetalleVenta,
     FacturacionElectronicaConfig,
     FacturaElectronicaEntrega,
+    FacturaElectronicaIntento,
     FacturaElectronicaSoporte,
     FactusNumberingRange,
     Venta,
@@ -38,6 +40,7 @@ from ventas.serializers import (
     DetalleVentaSerializer,
     VentaCreateSerializer,
     VentaSerializer,
+    VentaUpdateSerializer,
 )
 from ventas.services import AbonoService, VentaReporteService, VentaService
 
@@ -977,6 +980,41 @@ class FacturacionElectronicaTest(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn('cliente', serializer.errors)
 
+    def test_venta_create_serializer_requiere_empresa_con_municipio_para_facturar(self):
+        self.empresa.municipio_codigo = ''
+        self.empresa.save(update_fields=['municipio_codigo', 'updated_at'])
+
+        serializer = VentaCreateSerializer(data={
+            'cliente': self.cliente.id,
+            'estado': Venta.Estado.TERMINADA,
+            'metodo_pago': Venta.MetodoPago.EFECTIVO,
+            'factura_electronica': True,
+            'usuario_registro': self.usuario.id,
+            'detalles': [
+                {
+                    'producto': self.producto.id,
+                    'cantidad': '1.00',
+                }
+            ],
+        })
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('empresa', serializer.errors)
+
+    def test_venta_update_serializer_requiere_empresa_con_municipio_para_facturar(self):
+        venta = self._crear_venta_facturable()
+        self.empresa.municipio_codigo = ''
+        self.empresa.save(update_fields=['municipio_codigo', 'updated_at'])
+
+        serializer = VentaUpdateSerializer(
+            venta,
+            data={'observaciones': 'ajuste manual'},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('empresa', serializer.errors)
+
     def test_build_factus_bill_payload_incluye_mapeos_minimos(self):
         venta = self._crear_venta_facturable()
 
@@ -1044,6 +1082,10 @@ class FacturacionElectronicaTest(TestCase):
                     'number': 'SETP-11',
                     'cufe': 'CUFE-123',
                     'resolution_number': '18760000001',
+                    'links': {
+                        'qr': 'https://catalogo-vpfe-hab.dian.gov.co/document/searchqr?documentkey=CUFE-123',
+                        'public_url': 'https://app-sandbox.factus.com.co/documents/bills/demo',
+                    },
                 },
             },
             create=True,
@@ -1053,6 +1095,11 @@ class FacturacionElectronicaTest(TestCase):
         venta.refresh_from_db()
         self.assertEqual(documento.status, VentaFacturaElectronica.Status.EMITIDA)
         self.assertEqual(documento.bill_number, 'SETP-11')
+        self.assertEqual(
+            documento.qr_payload.get('source_url'),
+            'https://catalogo-vpfe-hab.dian.gov.co/document/searchqr?documentkey=CUFE-123',
+        )
+        self.assertEqual(documento.qr_payload.get('cufe'), 'CUFE-123')
         self.assertEqual(venta.numero_factura_electronica, 'SETP-11')
         self.assertTrue(
             VentaFacturaElectronica.objects.filter(venta=venta).exists(),
@@ -1061,6 +1108,259 @@ class FacturacionElectronicaTest(TestCase):
             documento.entregas.filter(
                 medio=FacturaElectronicaEntrega.Medio.SIN_MEDIO,
                 resultado=FacturaElectronicaEntrega.Resultado.PENDIENTE,
+            ).exists(),
+        )
+
+    def test_diagnostico_notas_credito_pendientes_relaciona_factura_local(self):
+        venta = self._crear_venta_facturable()
+        VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-11',
+            cufe='CUFE-123',
+        )
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        with patch.object(
+            service.adapter,
+            'listar_notas_credito',
+            return_value={
+                'data': {
+                    'data': [
+                        {
+                            'reference_code': 'NC-TEST-1',
+                            'number': 'CRTE95',
+                            'is_validated': False,
+                            'created_at': '14-05-2026 03:12:53 PM',
+                            'observation': 'Anulacion de prueba',
+                            'total': '119000.00',
+                            'customer': {
+                                'graphic_representation_name': 'Cliente Demo',
+                                'identification': '123456789',
+                            },
+                            'bill': {
+                                'number': 'SETP-11',
+                                'reference_code': 'MLR-DEMO',
+                            },
+                        },
+                    ],
+                },
+            },
+            create=True,
+        ):
+            payload = service.diagnostico_notas_credito_pendientes()
+
+        self.assertEqual(payload['count'], 1)
+        self.assertEqual(payload['environment'], self.config.environment)
+        self.assertEqual(payload['items'][0]['number'], 'CRTE95')
+        self.assertEqual(payload['items'][0]['bill_number'], 'SETP-11')
+        self.assertEqual(
+            payload['items'][0]['local_document']['venta_id'],
+            venta.id,
+        )
+
+    def test_diagnostico_detalle_nota_credito_relaciona_factura_local(self):
+        venta = self._crear_venta_facturable()
+        VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-12',
+            cufe='CUFE-456',
+        )
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        with patch.object(
+            service.adapter,
+            'consultar_nota_credito',
+            return_value={
+                'data': {
+                    'reference_code': 'NC-TEST-2',
+                    'number': 'CRTE96',
+                    'is_validated': False,
+                    'created_at': '14-05-2026 03:12:53 PM',
+                    'validated_at': None,
+                    'observation': 'Detalle de prueba',
+                    'cude': 'CUDE-999',
+                    'totals': {'total': '238000.00'},
+                    'customer': {
+                        'graphic_representation_name': 'Cliente Demo 2',
+                        'identification': '987654321',
+                    },
+                    'bill': {
+                        'number': 'SETP-12',
+                        'reference_code': 'MLR-DEMO-2',
+                        'cufe': 'CUFE-BILL-2',
+                    },
+                    'links': {
+                        'public_url': 'https://factus.test/public',
+                        'qr': 'https://factus.test/qr',
+                    },
+                },
+            },
+            create=True,
+        ):
+            payload = service.diagnostico_detalle_nota_credito('CRTE96')
+
+        self.assertEqual(payload['number'], 'CRTE96')
+        self.assertEqual(payload['bill_number'], 'SETP-12')
+        self.assertEqual(payload['public_url'], 'https://factus.test/public')
+        self.assertEqual(payload['local_document']['venta_id'], venta.id)
+
+    def test_build_credit_note_payload_reutiliza_payload_original(self):
+        venta = self._crear_venta_facturable()
+        documento = VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-11',
+            cufe='CUFE-123',
+            request_payload=build_factus_bill_payload(venta, self.rango.factus_id),
+        )
+
+        payload = build_credit_note_payload(
+            documento,
+            numbering_range_id=777,
+            concept_code='2',
+            reason='Anulacion por prueba',
+        )
+
+        self.assertEqual(payload['reference_code'], f'NC-{documento.reference_code}')
+        self.assertEqual(payload['correction_concept_code'], '2')
+        self.assertEqual(payload['bill_number'], 'SETP-11')
+        self.assertEqual(payload['numbering_range_id'], 777)
+        self.assertEqual(
+            payload['payment_details'][0]['reference_code'],
+            f'NC-{documento.reference_code}',
+        )
+        self.assertEqual(
+            payload['customer']['identification'],
+            documento.request_payload['customer']['identification'],
+        )
+        self.assertEqual(payload['items'], documento.request_payload['items'])
+
+    def test_build_credit_note_payload_falla_si_payload_original_esta_incompleto(self):
+        venta = self._crear_venta_facturable()
+        documento = VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-11',
+            cufe='CUFE-123',
+            request_payload={},
+        )
+
+        with self.assertRaises(FacturacionValidacionError) as exc:
+            build_credit_note_payload(
+                documento,
+                numbering_range_id=777,
+                concept_code='2',
+                reason='Anulacion por prueba',
+            )
+
+        self.assertEqual(exc.exception.code, 'factus_nota_payload_incompleto')
+
+    def test_crear_nota_credito_reintenta_con_nueva_referencia_si_factus_409_pendiente(self):
+        venta = self._crear_venta_facturable()
+        documento = VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-11',
+            cufe='CUFE-123',
+            request_payload=build_factus_bill_payload(venta, self.rango.factus_id),
+        )
+        self.config.active_credit_note_range = self.rango
+        self.config.save(update_fields=['active_credit_note_range', 'updated_at'])
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+        captured_payloads = []
+
+        def _side_effect(payload):
+            captured_payloads.append(payload)
+            if len(captured_payloads) == 1:
+                raise FacturacionOperacionError(
+                    'Factus respondio 409: Se encontró una nota crédito pendiente por enviar a la DIAN',
+                    code='factus_http_409',
+                )
+            return {
+                'data': {
+                    'number': 'NC-100',
+                },
+            }
+
+        with patch.object(
+            service.adapter,
+            'crear_nota_credito',
+            side_effect=_side_effect,
+            create=True,
+        ):
+            actualizado = service.crear_nota_credito(
+                venta.id,
+                reason='Anulacion por prueba',
+                concept_code='2',
+            )
+
+        self.assertEqual(len(captured_payloads), 2)
+        self.assertEqual(
+            captured_payloads[0]['reference_code'],
+            f'NC-{documento.reference_code}',
+        )
+        self.assertEqual(
+            captured_payloads[1]['reference_code'],
+            f'NC-{documento.reference_code}-R1',
+        )
+        self.assertEqual(actualizado.credit_note_number, 'NC-100')
+        self.assertEqual(
+            actualizado.credit_note_payload['request_payload']['reference_code'],
+            f'NC-{documento.reference_code}-R1',
+        )
+
+    def test_crear_nota_credito_persiste_error_e_intento_si_factus_falla(self):
+        venta = self._crear_venta_facturable()
+        documento = VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-11',
+            cufe='CUFE-123',
+            request_payload=build_factus_bill_payload(venta, self.rango.factus_id),
+        )
+        self.config.active_credit_note_range = self.rango
+        self.config.save(update_fields=['active_credit_note_range', 'updated_at'])
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        with patch.object(
+            service.adapter,
+            'crear_nota_credito',
+            side_effect=FacturacionOperacionError(
+                'Factus respondio 409: Se encontró una nota crédito pendiente por enviar a la DIAN',
+                code='factus_http_409',
+            ),
+            create=True,
+        ), self.assertRaises(FacturacionOperacionError) as excinfo:
+            service.crear_nota_credito(
+                venta.id,
+                reason='Anulacion por prueba',
+                concept_code='2',
+            )
+
+        self.assertEqual(
+            excinfo.exception.code,
+            'factus_nota_credito_pendiente_dian',
+        )
+
+        documento.refresh_from_db()
+        self.assertEqual(documento.last_error_code, 'factus_http_409')
+        self.assertIn('pendiente por enviar', documento.last_error_message.lower())
+        self.assertTrue(
+            documento.credit_note_payload.get('request_payload', {}).get('reference_code'),
+        )
+        self.assertTrue(
+            FacturaElectronicaIntento.objects.filter(
+                factura=documento,
+                action=FacturaElectronicaIntento.Action.NOTA_CREDITO,
+                is_success=False,
             ).exists(),
         )
 
@@ -1404,6 +1704,84 @@ class VentaTenantApiTest(TestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('Stock insuficiente', response.data['error'])
+
+    def test_nota_credito_pendiente_dian_responde_409_con_codigo_operativo(self):
+        with patch.object(
+            FacturacionElectronicaService,
+            'crear_nota_credito',
+            side_effect=FacturacionOperacionError(
+                (
+                    'Ya existe una nota credito pendiente en la DIAN para '
+                    'esta factura. Revisa el documento pendiente en Factus '
+                    'antes de volver a intentarlo.'
+                ),
+                code='factus_nota_credito_pendiente_dian',
+            ),
+        ):
+            response = self.client.post(
+                f'/api/ventas/{self.venta.id}/factura/nota-credito/',
+                data={'reason': 'Anulacion fiscal'},
+                format='json',
+                HTTP_X_EMPRESA_ID=str(self.empresa.id),
+            )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.data['code'],
+            'factus_nota_credito_pendiente_dian',
+        )
+        self.assertIn('nota credito pendiente', response.data['error'].lower())
+        self.assertIn('Factus', response.data['resolution'])
+
+    def test_facturacion_diagnostico_notas_credito_pendientes_responde_200(self):
+        with patch.object(
+            FacturacionElectronicaService,
+            'diagnostico_notas_credito_pendientes',
+            return_value={
+                'environment': 'SANDBOX',
+                'count': 1,
+                'items': [
+                    {
+                        'reference_code': 'NC-TEST-1',
+                        'number': 'CRTE95',
+                        'bill_number': 'SETP-11',
+                        'local_document': {
+                            'venta_id': self.venta.id,
+                            'numero_venta': self.venta.numero_venta,
+                        },
+                    },
+                ],
+                'fetched_at': '2026-05-17T18:00:00-05:00',
+            },
+        ):
+            response = self.client.get(
+                '/api/facturacion/diagnostico/notas-credito-pendientes/',
+                HTTP_X_EMPRESA_ID=str(self.empresa.id),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(response.data['items'][0]['number'], 'CRTE95')
+
+    def test_facturacion_diagnostico_detalle_nota_credito_responde_200(self):
+        with patch.object(
+            FacturacionElectronicaService,
+            'diagnostico_detalle_nota_credito',
+            return_value={
+                'reference_code': 'NC-TEST-2',
+                'number': 'CRTE96',
+                'bill_number': 'SETP-12',
+                'public_url': 'https://factus.test/public',
+            },
+        ):
+            response = self.client.get(
+                '/api/facturacion/diagnostico/notas-credito-pendientes/CRTE96/',
+                HTTP_X_EMPRESA_ID=str(self.empresa.id),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['number'], 'CRTE96')
+        self.assertEqual(response.data['bill_number'], 'SETP-12')
 
 
 class ContadorApiTest(TestCase):

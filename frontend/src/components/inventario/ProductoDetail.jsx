@@ -57,7 +57,7 @@ const ProductoDetail = ({
   }
 
   const margen = Number(producto.margen_ganancia || 0);
-  const stockBajo = Number(producto.existencias || 0) <= 10;
+  const stockBajo = Number(producto.existencias || 0) <= Number(producto.stock_minimo || 0);
 
   return (
     <div className="space-y-6">
@@ -116,12 +116,18 @@ const ProductoDetail = ({
                 </p>
               </div>
               <div className="rounded-xl border border-app bg-white/72 p-4">
+                <p className="eyebrow">Stock minimo</p>
+                <p className="mt-2 font-display text-[2rem] leading-none text-main">
+                  {Number(producto.stock_minimo || 0)}
+                </p>
+              </div>
+              <div className="rounded-xl border border-app bg-white/72 p-4">
                 <p className="eyebrow">Precio venta</p>
                 <p className="mt-2 font-display text-[1.85rem] leading-none text-main">
                   {formatCurrency(Number(producto.precio_venta || 0))}
                 </p>
               </div>
-              <div className="rounded-xl border border-app bg-white/72 p-4">
+              <div className="rounded-xl border border-app bg-white/72 p-4 sm:col-span-3 lg:col-span-1">
                 <p className="eyebrow">Margen</p>
                 <p
                   className={`mt-2 font-display text-[1.85rem] leading-none ${

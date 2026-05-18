@@ -36,6 +36,20 @@ export const listarRangosFacturacion = async () => {
   return response.data;
 };
 
+export const obtenerDiagnosticoNotasCreditoPendientes = async () => {
+  const response = await api.get(
+    '/facturacion/diagnostico/notas-credito-pendientes/',
+  );
+  return response.data;
+};
+
+export const obtenerDiagnosticoDetalleNotaCredito = async (number) => {
+  const response = await api.get(
+    `/facturacion/diagnostico/notas-credito-pendientes/${number}/`,
+  );
+  return response.data;
+};
+
 export const obtenerFacturaVenta = async (ventaId, { sync = false } = {}) => {
   const response = await api.get(`/ventas/${ventaId}/factura/`, {
     params: sync ? { sync: true } : undefined,
@@ -91,6 +105,8 @@ export default {
   validarConexionFacturacion,
   sincronizarRangosFacturacion,
   listarRangosFacturacion,
+  obtenerDiagnosticoNotasCreditoPendientes,
+  obtenerDiagnosticoDetalleNotaCredito,
   obtenerFacturaVenta,
   emitirFacturaVenta,
   reintentarFacturaVenta,

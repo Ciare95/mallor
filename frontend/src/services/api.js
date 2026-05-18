@@ -2,7 +2,7 @@ import axios from 'axios';
 import { useAppStore } from '../store/useStore';
 
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   withCredentials: true,
   xsrfCookieName: 'csrftoken',
   xsrfHeaderName: 'X-CSRFToken',
@@ -59,6 +59,10 @@ api.interceptors.request.use((config) => {
 
   if (empresaId) {
     config.headers['X-Empresa-Id'] = empresaId;
+  }
+  const terminalId = localStorage.getItem('mallor_terminal_id');
+  if (terminalId) {
+    config.headers['X-Terminal-Id'] = terminalId;
   }
   return config;
 });

@@ -51,7 +51,7 @@ const ProductosList = ({
     ordering: filtrosProductos.ordering,
     page: filtrosProductos.page,
     page_size: filtrosProductos.page_size,
-    stock_max: filtrosProductos.stock_bajo ? 10 : undefined,
+    stock_bajo: filtrosProductos.stock_bajo ? 'true' : undefined,
   };
 
   const productosQuery = useQuery({
@@ -69,7 +69,7 @@ const ProductosList = ({
   });
   const bajoStockQuery = useQuery({
     queryKey: ['inventario', 'reportes', 'bajo-stock'],
-    queryFn: () => obtenerProductosBajoStock(10),
+    queryFn: () => obtenerProductosBajoStock(),
   });
   const masVendidosQuery = useQuery({
     queryKey: ['inventario', 'reportes', 'mas-vendidos'],
@@ -223,7 +223,7 @@ const ProductosList = ({
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Valor compra" value={formatCurrency(Number(valorQuery.data?.valor_total_inventario || valorQuery.data?.valor_total || 0))} helper="Costo acumulado" />
         <StatCard label="Productos" value={totalProductos} helper="Registros filtrados" />
-        <StatCard label="Bajo stock" value={bajoStock.length} helper="Umbral <= 10" tone="amber" />
+        <StatCard label="Bajo stock" value={bajoStock.length} helper="Existencias <= minimo del producto" tone="amber" />
         <StatCard label="Mas vendidos" value={masVendidos.length} helper="Ranking disponible" tone="emerald" />
       </section>
 
@@ -297,6 +297,7 @@ const ProductosTable = ({ productos, filtros, onSort, onView, onEdit, onDelete, 
             ['categoria', 'Categoria'],
             ['marca', 'Marca'],
             ['existencias', 'Stock'],
+            ['stock_minimo', 'Minimo'],
             ['precio_compra', 'Compra'],
             ['precio_venta', 'Venta'],
             ['iva', 'IVA'],
@@ -313,7 +314,7 @@ const ProductosTable = ({ productos, filtros, onSort, onView, onEdit, onDelete, 
       <tbody className="divide-y divide-[var(--line)]">
         {productos.length === 0 ? (
           <tr>
-            <td colSpan="9" className="px-5 py-16 text-center text-soft">
+            <td colSpan="10" className="px-5 py-16 text-center text-soft">
               <Boxes className="mx-auto mb-3 h-12 w-12 text-muted" />
               No se encontraron productos con los filtros actuales.
             </td>
@@ -352,7 +353,7 @@ const RuleInput = ({ label, value, onChange }) => (
 );
 
 const ProductoRow = ({ producto, onView, onEdit, onDelete, onAdjustStock }) => {
-  const stockBajo = Number(producto.existencias || 0) <= 10;
+  const stockBajo = Number(producto.existencias || 0) <= Number(producto.stock_minimo || 0);
   return (
     <tr className="table-row">
       <td className="px-5 py-4 font-mono-ui text-[12px] font-semibold text-main">{producto.codigo_interno_formateado || producto.codigo_interno}<div className="text-[11px] font-normal text-muted">{producto.codigo_barras || 'Sin barras'}</div></td>
@@ -360,6 +361,7 @@ const ProductoRow = ({ producto, onView, onEdit, onDelete, onAdjustStock }) => {
       <td className="px-5 py-4 text-[12px] text-soft">{producto.categoria_nombre || producto.categoria?.nombre || 'Sin categoria'}</td>
       <td className="px-5 py-4 text-[12px] text-soft">{producto.marca || 'Sin marca'}</td>
       <td className="px-5 py-4"><span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${stockBajo ? 'bg-[var(--warning-soft)] text-[var(--warning-text)]' : 'bg-[var(--accent-soft)] text-[var(--accent)]'}`}>{Number(producto.existencias || 0)}</span></td>
+      <td className="px-5 py-4 text-[12px] text-soft">{Number(producto.stock_minimo || 0)}</td>
       <td className="px-5 py-4 text-[12px] font-semibold text-soft">{formatCurrency(Number(producto.precio_compra || 0))}</td>
       <td className="px-5 py-4 text-[13px] font-semibold text-main">{formatCurrency(Number(producto.precio_venta || 0))}</td>
       <td className="px-5 py-4 text-[12px] text-soft">{Number(producto.iva || 0).toFixed(2)}%</td>
@@ -373,7 +375,7 @@ const ProductosCards = ({ productos, onView, onEdit, onDelete, onAdjustStock }) 
     {productos.length === 0 ? (
       <div className="col-span-full rounded-xl border border-dashed border-app p-10 text-center text-soft">No hay productos para mostrar.</div>
     ) : productos.map((producto) => {
-      const stockBajo = Number(producto.existencias || 0) <= 10;
+      const stockBajo = Number(producto.existencias || 0) <= Number(producto.stock_minimo || 0);
       return (
         <article key={producto.id} className="surface p-5 transition hover:-translate-y-0.5 hover:border-[var(--accent-line)]">
           <div className="flex items-start justify-between gap-3">

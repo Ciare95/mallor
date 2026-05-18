@@ -1,5 +1,8 @@
 import { formatCurrency } from './formatters';
 
+export const FACTUS_NOTA_CREDITO_PENDIENTE_DIAN_CODE =
+  'factus_nota_credito_pendiente_dian';
+
 export const CONSUMIDOR_FINAL = {
   id: null,
   nombre_completo: 'Consumidor Final',
@@ -91,6 +94,32 @@ export const extractApiError = (error, fallback = 'Ocurrio un error') => {
 
   const firstValue = data[firstKey];
   return `${firstKey}: ${Array.isArray(firstValue) ? firstValue[0] : firstValue}`;
+};
+
+export const resolveFacturaErrorMessage = (factura) => {
+  if (!factura) {
+    return 'Sin errores registrados';
+  }
+
+  const errorCode = factura.last_error_code || '';
+  const errorMessage = factura.last_error_message || '';
+  const normalizedMessage = errorMessage.toLowerCase();
+
+  if (
+    errorCode === FACTUS_NOTA_CREDITO_PENDIENTE_DIAN_CODE
+    || (
+      errorCode === 'factus_http_409'
+      && normalizedMessage.includes('nota cr')
+      && normalizedMessage.includes('pendiente por enviar a la dian')
+    )
+  ) {
+    return (
+      'Ya existe una nota credito pendiente en la DIAN para esta factura. '
+      + 'Revisa el documento pendiente en Factus antes de volver a intentarlo.'
+    );
+  }
+
+  return errorMessage || 'Sin errores registrados';
 };
 
 export const calculateLine = (item) => {
@@ -219,6 +248,8 @@ export const buildVentaPayload = (draft) => {
     estado: draft?.estado || 'TERMINADA',
     metodo_pago: draft?.metodoPago || 'EFECTIVO',
     factura_electronica: Boolean(draft?.facturaElectronica),
+    terminal: draft?.terminalId || undefined,
+    caja_sesion: draft?.cajaSesionId || undefined,
     observaciones: observaciones.filter(Boolean).join('\n'),
     detalles: totals.lines.map((item) => ({
       producto: item.producto.id,
