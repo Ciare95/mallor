@@ -44,7 +44,7 @@ urlpatterns = [
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
-if getattr(settings, 'MALLOR_LOCAL_SERVER', False):
+if getattr(settings, 'MALLOR_SERVE_FRONTEND', False):
     urlpatterns += [
         path(
             'assets/<path:path>',
