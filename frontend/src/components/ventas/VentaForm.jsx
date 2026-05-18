@@ -35,6 +35,7 @@ export default function VentaForm({
   onCreateQuickClient,
   onReset,
   onSubmit,
+  disabled = false,
   focusSignal = 0,
   openCobroSignal = 0,
   submitSignal = 0,
@@ -93,6 +94,7 @@ export default function VentaForm({
     [productosQuery.data],
   );
   const canSubmit =
+    !disabled &&
     draft.items.length > 0 &&
     (
       draft.metodoPago !== 'EFECTIVO' ||
@@ -146,14 +148,14 @@ export default function VentaForm({
       return;
     }
     lastSubmitSignalRef.current = submitSignal;
-    if (showCobroModal || !canSubmit) {
+    if (disabled || showCobroModal || !canSubmit) {
       return;
     }
     onSubmit({
       ...draft,
       estado: draft.estado,
     });
-  }, [canSubmit, draft, onSubmit, showCobroModal, submitSignal]);
+  }, [canSubmit, disabled, draft, onSubmit, showCobroModal, submitSignal]);
 
   const submitLabel =
     draft.estado === 'PENDIENTE' ? 'Guardar como pendiente' : 'Registrar venta';
@@ -168,6 +170,9 @@ export default function VentaForm({
   };
 
   const submitWithState = (estado) => {
+    if (disabled) {
+      return;
+    }
     onSubmit({
       ...draft,
       estado,
@@ -572,7 +577,13 @@ export default function VentaForm({
             </div>
           )}
 
-          {!canSubmit && (
+          {disabled && (
+            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-[13px] text-amber-900">
+              Abre caja en esta terminal para registrar ventas locales.
+            </div>
+          )}
+
+          {!disabled && !canSubmit && (
             <div className="mt-5 rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-4 py-3 text-[13px] text-[var(--warning-text)]">
               Agrega al menos un producto y valida el efectivo recibido antes de
               cerrar una venta terminada.

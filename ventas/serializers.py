@@ -109,6 +109,7 @@ class DetalleVentaSerializer(serializers.ModelSerializer):
         model = DetalleVenta
         fields = [
             'id',
+            'uuid',
             'venta',
             'producto',
             'producto_id',
@@ -123,6 +124,7 @@ class DetalleVentaSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             'id',
+            'uuid',
             'venta',
             'subtotal',
             'iva',
@@ -217,7 +219,10 @@ class VentaListSerializer(serializers.ModelSerializer):
         model = Venta
         fields = [
             'id',
+            'uuid',
             'numero_venta',
+            'terminal',
+            'caja_sesion',
             'cliente',
             'cliente_nombre',
             'fecha_venta',
@@ -227,6 +232,9 @@ class VentaListSerializer(serializers.ModelSerializer):
             'saldo_pendiente',
             'metodo_pago',
             'factura_electronica',
+            'sync_status',
+            'invoice_status',
+            'prefactura_numero',
             'usuario_registro',
             'usuario_registro_nombre',
             'detalles_count',
@@ -253,7 +261,10 @@ class VentaSerializer(serializers.ModelSerializer):
         model = Venta
         fields = [
             'id',
+            'uuid',
             'numero_venta',
+            'terminal',
+            'caja_sesion',
             'cliente',
             'fecha_venta',
             'subtotal',
@@ -268,6 +279,10 @@ class VentaSerializer(serializers.ModelSerializer):
             'factura_electronica',
             'numero_factura_electronica',
             'fecha_facturacion',
+            'sync_status',
+            'invoice_status',
+            'cloud_id',
+            'prefactura_numero',
             'observaciones',
             'usuario_registro',
             'detalles',
@@ -309,6 +324,8 @@ class VentaCreateSerializer(serializers.ModelSerializer):
         model = Venta
         fields = [
             'cliente',
+            'terminal',
+            'caja_sesion',
             'descuento',
             'estado',
             'metodo_pago',
@@ -525,6 +542,7 @@ class AbonoListSerializer(serializers.ModelSerializer):
         model = Abono
         fields = [
             'id',
+            'uuid',
             'venta',
             'venta_numero',
             'monto_abonado',
@@ -549,6 +567,7 @@ class AbonoSerializer(serializers.ModelSerializer):
         model = Abono
         fields = [
             'id',
+            'uuid',
             'venta',
             'monto_abonado',
             'fecha_abono',
@@ -815,6 +834,7 @@ class VentaFacturaElectronicaSerializer(serializers.ModelSerializer):
             'email_last_sent_at',
             'last_error_code',
             'last_error_message',
+            'offline_reason',
             'request_payload',
             'response_payload',
             'qr_payload',

@@ -1,9 +1,11 @@
+import uuid
 from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Sum
+from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
 from empresa.services import EmpresaService
@@ -30,6 +32,19 @@ class Venta(models.Model):
         TRANSFERENCIA = 'TRANSFERENCIA', _('Transferencia')
         CREDITO = 'CREDITO', _('Credito')
 
+    class SyncStatus(models.TextChoices):
+        LOCAL_ONLY = 'LOCAL_ONLY', _('Local only')
+        PENDIENTE = 'PENDIENTE', _('Pendiente sincronizacion')
+        SINCRONIZADA = 'SINCRONIZADA', _('Sincronizada')
+        ERROR = 'ERROR', _('Error sincronizacion')
+
+    class InvoiceStatus(models.TextChoices):
+        NO_REQUIERE = 'NO_REQUIERE', _('No requiere')
+        PENDIENTE_FACTURACION = 'PENDIENTE_FACTURACION', _('Pendiente facturacion')
+        FACTURA_EMITIDA = 'FACTURA_EMITIDA', _('Factura emitida')
+        ERROR_FACTURACION = 'ERROR_FACTURACION', _('Error facturacion')
+
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     empresa = models.ForeignKey(
         'empresa.Empresa',
         on_delete=models.PROTECT,
@@ -44,6 +59,22 @@ class Venta(models.Model):
         blank=True,
         help_text=_('Numero unico de venta generado automaticamente.'),
     )
+    terminal = models.ForeignKey(
+        'offline.POSTerminal',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='ventas',
+        verbose_name=_('terminal POS'),
+    )
+    caja_sesion = models.ForeignKey(
+        'offline.CajaSesion',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='ventas',
+        verbose_name=_('sesion de caja'),
+    )
     cliente = models.ForeignKey(
         'cliente.Cliente',
         on_delete=models.SET_NULL,
@@ -57,6 +88,10 @@ class Venta(models.Model):
         _('fecha de venta'),
         auto_now_add=True,
         help_text=_('Fecha y hora de registro de la venta.'),
+    )
+    local_created_at = models.DateTimeField(
+        _('fecha local de creacion'),
+        default=timezone.now,
     )
     subtotal = models.DecimalField(
         _('subtotal'),
@@ -138,6 +173,28 @@ class Venta(models.Model):
         blank=True,
         help_text=_('Fecha y hora de emision de la factura electronica.'),
     )
+    sync_status = models.CharField(
+        _('estado de sincronizacion'),
+        max_length=30,
+        choices=SyncStatus.choices,
+        default=SyncStatus.LOCAL_ONLY,
+    )
+    invoice_status = models.CharField(
+        _('estado de facturacion offline'),
+        max_length=30,
+        choices=InvoiceStatus.choices,
+        default=InvoiceStatus.NO_REQUIERE,
+    )
+    cloud_id = models.CharField(
+        _('id en nube'),
+        max_length=80,
+        blank=True,
+    )
+    prefactura_numero = models.CharField(
+        _('numero de prefactura'),
+        max_length=60,
+        blank=True,
+    )
     observaciones = models.TextField(
         _('observaciones'),
         blank=True,
@@ -167,11 +224,16 @@ class Venta(models.Model):
         verbose_name = _('venta')
         verbose_name_plural = _('ventas')
         indexes = [
+            models.Index(fields=['uuid'], name='ventas_uuid_idx'),
             models.Index(fields=['empresa']),
             models.Index(fields=['numero_venta']),
+            models.Index(fields=['terminal'], name='ventas_terminal_idx'),
+            models.Index(fields=['caja_sesion'], name='ventas_caja_idx'),
             models.Index(fields=['fecha_venta']),
             models.Index(fields=['estado']),
             models.Index(fields=['estado_pago']),
+            models.Index(fields=['sync_status'], name='ventas_sync_idx'),
+            models.Index(fields=['invoice_status'], name='ventas_invoice_idx'),
             models.Index(fields=['metodo_pago']),
             models.Index(fields=['cliente']),
             models.Index(fields=['usuario_registro']),
@@ -396,6 +458,7 @@ class DetalleVenta(models.Model):
     Modelo que representa un producto incluido en una venta.
     """
 
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     venta = models.ForeignKey(
         Venta,
         on_delete=models.CASCADE,
@@ -467,6 +530,7 @@ class DetalleVenta(models.Model):
         verbose_name = _('detalle de venta')
         verbose_name_plural = _('detalles de venta')
         indexes = [
+            models.Index(fields=['uuid'], name='det_venta_uuid_idx'),
             models.Index(fields=['venta']),
             models.Index(fields=['producto']),
             models.Index(fields=['created_at']),
@@ -560,6 +624,8 @@ class Abono(models.Model):
     Modelo que representa un pago parcial aplicado a una venta.
     """
 
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+
     class MetodoPago(models.TextChoices):
         EFECTIVO = 'EFECTIVO', _('Efectivo')
         TARJETA = 'TARJETA', _('Tarjeta')
@@ -619,6 +685,7 @@ class Abono(models.Model):
         verbose_name = _('abono')
         verbose_name_plural = _('abonos')
         indexes = [
+            models.Index(fields=['uuid'], name='abonos_uuid_idx'),
             models.Index(fields=['venta']),
             models.Index(fields=['fecha_abono']),
             models.Index(fields=['metodo_pago']),
@@ -903,6 +970,10 @@ class VentaFacturaElectronica(models.Model):
     """
 
     class Status(models.TextChoices):
+        PENDIENTE_FACTURACION = (
+            'PENDIENTE_FACTURACION',
+            _('Pendiente facturacion'),
+        )
         PENDIENTE_ENVIO = 'PENDIENTE_ENVIO', _('Pendiente de envio')
         EMITIDA = 'EMITIDA', _('Emitida')
         ERROR = 'ERROR', _('Error')
@@ -941,6 +1012,7 @@ class VentaFacturaElectronica(models.Model):
     email_last_sent_at = models.DateTimeField(null=True, blank=True)
     last_error_code = models.CharField(max_length=100, blank=True)
     last_error_message = models.TextField(blank=True)
+    offline_reason = models.CharField(max_length=120, blank=True)
     request_payload = models.JSONField(default=dict, blank=True)
     response_payload = models.JSONField(default=dict, blank=True)
     qr_payload = models.JSONField(default=dict, blank=True)

@@ -49,7 +49,7 @@ describe('api service', () => {
 
     expect(axios.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        baseURL: 'http://localhost:8000/api',
+        baseURL: '/api',
         withCredentials: true,
         xsrfCookieName: 'csrftoken',
         xsrfHeaderName: 'X-CSRFToken',
@@ -57,14 +57,16 @@ describe('api service', () => {
     );
   });
 
-  it('inyecta Authorization Bearer y X-Empresa-Id', () => {
+  it('inyecta Authorization Bearer, X-Empresa-Id y X-Terminal-Id', () => {
     useAppStore.getState().setToken('access-token');
     localStorage.setItem('mallor_empresa_activa_id', '7');
+    localStorage.setItem('mallor_terminal_id', '3');
 
     const config = requestInterceptor({ headers: {} });
 
     expect(config.headers.Authorization).toBe('Bearer access-token');
     expect(config.headers['X-Empresa-Id']).toBe('7');
+    expect(config.headers['X-Terminal-Id']).toBe('3');
   });
 
   it('no envia Authorization al endpoint de refresh', () => {

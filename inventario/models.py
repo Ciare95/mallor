@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
@@ -90,7 +92,7 @@ class Producto(models.Model):
     incluyendo precios, stock, categorización y soporte para importación
     desde el sistema antiguo.
     """
-    
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
     empresa = models.ForeignKey(
         'empresa.Empresa',
         on_delete=models.PROTECT,
@@ -238,13 +240,14 @@ class Producto(models.Model):
         verbose_name = _('producto')
         verbose_name_plural = _('productos')
         indexes = [
+            models.Index(fields=['uuid'], name='productos_uuid_idx'),
             models.Index(fields=['empresa']),
             models.Index(fields=['codigo_interno']),
             models.Index(fields=['codigo_barras']),
             models.Index(fields=['nombre']),
             models.Index(fields=['categoria']),
             models.Index(fields=['existencias']),
-            models.Index(fields=['stock_minimo']),
+            models.Index(fields=['stock_minimo'], name='productos_stock_m_8a5f6e_idx'),
             models.Index(fields=['fecha_caducidad']),
             models.Index(fields=['created_at']),
         ]
@@ -885,7 +888,8 @@ class HistorialInventario(models.Model):
     Cada vez que cambia el stock de un producto, se crea un registro en este historial
     para mantener trazabilidad completa de los movimientos.
     """
-    
+    uuid = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    idempotency_key = models.CharField(max_length=160, blank=True, unique=True, null=True)
     # Tipos de movimiento
     TIPO_ENTRADA = 'ENTRADA'
     TIPO_SALIDA = 'SALIDA'
@@ -998,6 +1002,7 @@ class HistorialInventario(models.Model):
         verbose_name = _('registro de historial de inventario')
         verbose_name_plural = _('registros de historial de inventario')
         indexes = [
+            models.Index(fields=['uuid'], name='hist_inv_uuid_idx'),
             models.Index(fields=['empresa']),
             models.Index(fields=['producto']),
             models.Index(fields=['tipo_movimiento']),

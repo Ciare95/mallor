@@ -248,6 +248,8 @@ export const buildVentaPayload = (draft) => {
     estado: draft?.estado || 'TERMINADA',
     metodo_pago: draft?.metodoPago || 'EFECTIVO',
     factura_electronica: Boolean(draft?.facturaElectronica),
+    terminal: draft?.terminalId || undefined,
+    caja_sesion: draft?.cajaSesionId || undefined,
     observaciones: observaciones.filter(Boolean).join('\n'),
     detalles: totals.lines.map((item) => ({
       producto: item.producto.id,

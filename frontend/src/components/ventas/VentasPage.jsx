@@ -1,6 +1,14 @@
 import { startTransition, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { BarChart3, CreditCard, ListOrdered, Plus, Wallet } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  AlertTriangle,
+  BarChart3,
+  CreditCard,
+  ListOrdered,
+  Plus,
+  RefreshCw,
+  Wallet,
+} from 'lucide-react';
 import useToast from '../../hooks/useToast';
 import { useVentasKeyboardShortcuts } from '../../hooks/useVentasKeyboardShortcuts';
 import {
@@ -19,6 +27,12 @@ import {
   obtenerVenta,
   actualizarVenta,
 } from '../../services/ventas.service';
+import {
+  abrirCaja,
+  obtenerEstadoOffline,
+  reintentarFacturacionOffline,
+  reintentarSync,
+} from '../../services/offline.service';
 import { registrarAbonoVenta } from '../../services/abonos.service';
 import {
   VENTAS_VISTAS,
@@ -84,6 +98,16 @@ export default function VentasPage() {
     (state) => state.configuracionOperativa,
   );
   const user = useAppStore((state) => state.user);
+  const offlineStatusQuery = useQuery({
+    queryKey: ['offline', 'status', empresaActiva?.id],
+    queryFn: obtenerEstadoOffline,
+    enabled: Boolean(empresaActiva?.id),
+    refetchInterval: 12000,
+    retry: false,
+  });
+  const offlineStatus = offlineStatusQuery.data;
+  const isLocalMode = offlineStatus?.mode === 'local';
+  const cajaAbierta = Boolean(offlineStatus?.caja?.id);
 
   useVentasKeyboardShortcuts({
     enabled:
@@ -106,7 +130,41 @@ export default function VentasPage() {
     queryClient.invalidateQueries({ queryKey: ['abonos'] });
     queryClient.invalidateQueries({ queryKey: ['inventario'] });
     queryClient.invalidateQueries({ queryKey: ['facturacion'] });
+    queryClient.invalidateQueries({ queryKey: ['offline'] });
   };
+
+  const abrirCajaMutation = useMutation({
+    mutationFn: () => abrirCaja({ efectivoInicial: '0.00' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['offline'] });
+      toast.success('Caja abierta para esta terminal');
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error, 'No fue posible abrir la caja'));
+    },
+  });
+
+  const retrySyncMutation = useMutation({
+    mutationFn: reintentarSync,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['offline'] });
+      toast.success('Pendientes de sincronizacion reactivados');
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error, 'No fue posible reintentar sync'));
+    },
+  });
+
+  const retryInvoicesMutation = useMutation({
+    mutationFn: reintentarFacturacionOffline,
+    onSuccess: () => {
+      invalidateVentas();
+      toast.success('Reintento de facturacion iniciado');
+    },
+    onError: (error) => {
+      toast.error(extractApiError(error, 'No fue posible reintentar facturas'));
+    },
+  });
 
   const getPreferredTicketSettings = () =>
     resolveTicketPreferences({
@@ -312,8 +370,21 @@ export default function VentasPage() {
   });
 
   const handleSubmitVenta = (payload) => {
+    if (isLocalMode && !cajaAbierta) {
+      toast.error('Debes abrir caja en esta terminal antes de vender.');
+      return;
+    }
+
+    const localPayload = isLocalMode
+      ? {
+          ...payload,
+          terminalId: offlineStatus?.terminal?.id,
+          cajaSesionId: offlineStatus?.caja?.id,
+        }
+      : payload;
+
     if (payload.ventaId) {
-      const body = buildVentaPayload(payload);
+      const body = buildVentaPayload(localPayload);
       actualizarVentaMutation.mutate({
         id: payload.ventaId,
         datos: body,
@@ -321,7 +392,7 @@ export default function VentasPage() {
       return;
     }
 
-    crearVentaMutation.mutate(payload);
+    crearVentaMutation.mutate(localPayload);
   };
 
   const handleOpenPos = () => {
@@ -510,6 +581,19 @@ export default function VentasPage() {
 
       {vistaActual === VENTAS_VISTAS.POS && (
         <>
+          {isLocalMode && (
+            <LocalPosStatusPanel
+              status={offlineStatus}
+              isLoading={offlineStatusQuery.isLoading}
+              onOpenCash={() => abrirCajaMutation.mutate()}
+              openCashLoading={abrirCajaMutation.isPending}
+              onRetrySync={() => retrySyncMutation.mutate()}
+              onRetryInvoices={() => retryInvoicesMutation.mutate()}
+              retryLoading={
+                retrySyncMutation.isPending || retryInvoicesMutation.isPending
+              }
+            />
+          )}
           <PrecuentasBar
             precuentas={precuentas}
             activeId={precuentaActivaId}
@@ -548,6 +632,7 @@ export default function VentasPage() {
                 precuentaId: precuentaActivaId,
               })
             }
+            disabled={isLocalMode && !cajaAbierta}
             focusSignal={posFocusSignal}
             openCobroSignal={cobroShortcutSignal}
             submitSignal={submitShortcutSignal}
@@ -633,6 +718,93 @@ export default function VentasPage() {
           }));
         }}
       />
+    </div>
+  );
+}
+
+function LocalPosStatusPanel({
+  status,
+  isLoading,
+  onOpenCash,
+  openCashLoading,
+  onRetrySync,
+  onRetryInvoices,
+  retryLoading,
+}) {
+  const counts = status?.counts || {};
+  const offline = status?.mode === 'local' && !status?.online;
+  const caja = status?.caja;
+
+  return (
+    <section className="surface border-amber-200 bg-amber-50/60 px-4 py-3">
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-amber-200 bg-white text-amber-700">
+            <AlertTriangle className="h-5 w-5" />
+          </span>
+          <div>
+            <div className="text-[12px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+              Modo local LAN
+            </div>
+            <div className="mt-1 text-sm font-semibold text-main">
+              {offline
+                ? 'Sin conexión - vendiendo localmente'
+                : 'Servidor local operativo'}
+            </div>
+            <div className="mt-1 text-xs text-soft">
+              {status?.terminal?.name || 'Configura una terminal POS'} ·{' '}
+              {caja ? `Caja abierta desde ${new Date(caja.opened_at).toLocaleTimeString('es-CO')}` : 'Caja cerrada'}
+            </div>
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[520px]">
+          <LocalStatusMetric label="Sync" value={counts.sync_pending || 0} />
+          <LocalStatusMetric label="Facturas" value={counts.invoice_pending || 0} />
+          <LocalStatusMetric label="Errores" value={(counts.sync_errors || 0) + (counts.invoice_errors || 0)} />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {!caja && (
+            <button
+              type="button"
+              onClick={onOpenCash}
+              disabled={isLoading || openCashLoading || !status?.terminal}
+              className="app-button-primary min-h-10"
+            >
+              {openCashLoading ? 'Abriendo...' : 'Abrir caja'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onRetrySync}
+            disabled={retryLoading}
+            className="app-button-secondary min-h-10"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Sync
+          </button>
+          <button
+            type="button"
+            onClick={onRetryInvoices}
+            disabled={retryLoading}
+            className="app-button-secondary min-h-10"
+          >
+            Facturas
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function LocalStatusMetric({ label, value }) {
+  return (
+    <div className="rounded-md border border-amber-200 bg-white/80 px-3 py-2">
+      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-amber-700">
+        {label}
+      </div>
+      <div className="mt-1 text-lg font-semibold text-main">{value}</div>
     </div>
   );
 }

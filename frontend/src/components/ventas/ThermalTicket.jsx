@@ -295,6 +295,14 @@ export function buildThermalTicketData({
   const normalizedSettings = normalizeSettings(settings);
   const factura = venta.factura_documento || null;
   const isElectronic = Boolean(venta.factura_electronica);
+  const isPendingElectronic =
+    isElectronic &&
+    (
+      venta.invoice_status === 'PENDIENTE_FACTURACION' ||
+      factura?.status === 'PENDIENTE_FACTURACION' ||
+      factura?.status === 'PENDIENTE_ENVIO'
+    ) &&
+    factura?.status !== 'EMITIDA';
   const cliente = getSafeClient(venta.cliente);
   const detalles = venta.detalles || [];
   const lineDiscounts = detalles.reduce(
@@ -353,9 +361,14 @@ export function buildThermalTicketData({
       phone: empresa?.telefono || '',
     },
     invoice: {
-      title: isElectronic ? 'Factura electronica de venta' : 'Factura de venta',
+      title: isPendingElectronic
+        ? 'Prefactura interna'
+        : isElectronic
+          ? 'Factura electronica de venta'
+          : 'Factura de venta',
       number:
-        factura?.bill_number
+        (isPendingElectronic ? venta.prefactura_numero : '')
+        || factura?.bill_number
         || venta.numero_factura_electronica
         || venta.numero_venta,
       dateTime: venta.fecha_facturacion || venta.fecha_venta,
@@ -398,11 +411,16 @@ export function buildThermalTicketData({
     totals,
     paymentInfo,
     isElectronic,
+    isPendingElectronic,
     electronicBilling: {
-      cufe: factura?.cufe || 'Pendiente de emision',
+      cufe: isPendingElectronic
+        ? 'Pendiente de emision con Factus'
+        : factura?.cufe || 'Pendiente de emision',
       qrSrc: extractQrSource(factura),
     },
-    legalText: isElectronic ? LEGAL_TEXT_ELECTRONIC : LEGAL_TEXT_STANDARD,
+    legalText: isPendingElectronic
+      ? 'Documento interno pendiente de emision electronica. No reemplaza factura electronica validada por DIAN.'
+      : isElectronic ? LEGAL_TEXT_ELECTRONIC : LEGAL_TEXT_STANDARD,
     resolution: buildResolutionSection(factura),
     softwareFooter: SOFTWARE_FOOTER,
     observations: venta.observaciones || '',
@@ -482,7 +500,7 @@ export function ThermalTicket({
   copyIndex = 0,
   totalCopies = 1,
 }) {
-  const { company, invoice, customer, items, taxes, totals, paymentInfo, electronicBilling, isElectronic } =
+  const { company, invoice, customer, items, taxes, totals, paymentInfo, electronicBilling, isElectronic, isPendingElectronic } =
     ticket;
 
   return (
@@ -652,6 +670,11 @@ export function ThermalTicket({
 
       {isElectronic ? (
         <TicketSection title="Facturacion electronica">
+          {isPendingElectronic && (
+            <div className="thermal-ticket__legal">
+              Pendiente de emision oficial cuando vuelva la conexion.
+            </div>
+          )}
           <div className="thermal-ticket__text-block thermal-ticket__cufe-section">
             <div className="thermal-ticket__label">CUFE</div>
             <div className="thermal-ticket__cufe-value">

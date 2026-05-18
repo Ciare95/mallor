@@ -42,7 +42,22 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-txm643xxb+-75c0_vvpb4e87t8
 DEBUG = _get_bool_env('DEBUG', True)
 TESTING = 'test' in sys.argv
 
-ALLOWED_HOSTS = []
+MALLOR_MODE = os.getenv('MALLOR_MODE', 'cloud').strip().lower()
+MALLOR_LOCAL_SERVER = _get_bool_env('MALLOR_LOCAL_SERVER', MALLOR_MODE == 'local')
+MALLOR_LAN_HOST = os.getenv('MALLOR_LAN_HOST', '').strip()
+
+ALLOWED_HOSTS = [
+    host
+    for host in [
+        'localhost',
+        '127.0.0.1',
+        '[::1]',
+        MALLOR_LAN_HOST,
+    ]
+    if host
+]
+if DEBUG and not ALLOWED_HOSTS:
+    ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -51,6 +66,7 @@ INSTALLED_APPS = [
     'django.contrib.admin',
     'empresa',
     'usuario',
+    'offline',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -156,6 +172,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+FRONTEND_DIST_DIR = BASE_DIR / 'frontend' / 'dist'
+if FRONTEND_DIST_DIR.exists():
+    STATICFILES_DIRS = [FRONTEND_DIST_DIR]
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR
 
@@ -263,6 +283,11 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
+if MALLOR_LAN_HOST:
+    CORS_ALLOWED_ORIGINS.extend([
+        f"http://{MALLOR_LAN_HOST}:3000",
+        f"http://{MALLOR_LAN_HOST}:5173",
+    ])
 
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
@@ -270,6 +295,12 @@ CSRF_TRUSTED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
 ]
+if MALLOR_LAN_HOST:
+    CSRF_TRUSTED_ORIGINS.extend([
+        f"http://{MALLOR_LAN_HOST}",
+        f"http://{MALLOR_LAN_HOST}:3000",
+        f"http://{MALLOR_LAN_HOST}:5173",
+    ])
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Solo en desarrollo

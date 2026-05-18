@@ -744,6 +744,10 @@ class FacturacionElectronicaService:
             )
             documento.save()
             documento.sync_venta_fields()
+            documento.venta.invoice_status = Venta.InvoiceStatus.FACTURA_EMITIDA
+            documento.venta.save(
+                update_fields=['invoice_status', 'updated_at'],
+            )
             self._registrar_intento(
                 factura=documento,
                 action=FacturaElectronicaIntento.Action.EMITIR,
@@ -768,6 +772,10 @@ class FacturacionElectronicaService:
             ):
                 documento.reference_code = self._next_retry_reference_code(documento)
             documento.save()
+            documento.venta.invoice_status = Venta.InvoiceStatus.ERROR_FACTURACION
+            documento.venta.save(
+                update_fields=['invoice_status', 'updated_at'],
+            )
             self._registrar_intento(
                 factura=documento,
                 action=FacturaElectronicaIntento.Action.EMITIR,
