@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 import sys
 from datetime import timedelta
+from importlib.util import find_spec
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -32,6 +33,13 @@ def _get_bool_env(name: str, default: bool = False) -> bool:
     return str(value).strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
+def _get_csv_env(name: str, default=None) -> list[str]:
+    raw = os.getenv(name)
+    if raw is None:
+        return list(default or [])
+    return [item.strip() for item in raw.split(',') if item.strip()]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -45,14 +53,21 @@ TESTING = 'test' in sys.argv
 MALLOR_MODE = os.getenv('MALLOR_MODE', 'cloud').strip().lower()
 MALLOR_LOCAL_SERVER = _get_bool_env('MALLOR_LOCAL_SERVER', MALLOR_MODE == 'local')
 MALLOR_LAN_HOST = os.getenv('MALLOR_LAN_HOST', '').strip()
+MALLOR_SERVE_FRONTEND = _get_bool_env(
+    'MALLOR_SERVE_FRONTEND',
+    MALLOR_LOCAL_SERVER,
+)
+RENDER_EXTERNAL_HOSTNAME = os.getenv('RENDER_EXTERNAL_HOSTNAME', '').strip()
+HAS_WHITENOISE = find_spec('whitenoise') is not None
 
-ALLOWED_HOSTS = [
+ALLOWED_HOSTS = _get_csv_env('ALLOWED_HOSTS') or [
     host
     for host in [
         'localhost',
         '127.0.0.1',
         '[::1]',
         MALLOR_LAN_HOST,
+        RENDER_EXTERNAL_HOSTNAME,
     ]
     if host
 ]
@@ -101,6 +116,8 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
+if HAS_WHITENOISE:
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 
 ROOT_URLCONF = 'config.urls'
 
@@ -135,6 +152,21 @@ DATABASES = {
         'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
+
+DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
+if DATABASE_URL:
+    try:
+        import dj_database_url
+    except ImportError as exc:
+        raise ImportError(
+            'DATABASE_URL requiere instalar dj-database-url.',
+        ) from exc
+
+    DATABASES['default'] = dj_database_url.parse(
+        DATABASE_URL,
+        conn_max_age=int(os.getenv('DB_CONN_MAX_AGE', '600')),
+        ssl_require=_get_bool_env('DB_SSL_REQUIRE', not DEBUG),
+    )
 
 
 # Password validation
@@ -173,11 +205,23 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+    },
+}
+if HAS_WHITENOISE:
+    STORAGES['staticfiles'] = {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    }
 FRONTEND_DIST_DIR = BASE_DIR / 'frontend' / 'dist'
 if FRONTEND_DIST_DIR.exists():
     STATICFILES_DIRS = [FRONTEND_DIST_DIR]
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR
+MEDIA_ROOT = Path(os.getenv('MEDIA_ROOT', BASE_DIR / 'media'))
 
 ENABLE_BASIC_AUTH = _get_bool_env(
     'MALLOR_ENABLE_BASIC_AUTH',
@@ -277,30 +321,34 @@ LOGGING = {
 }
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = [
+CORS_ALLOWED_ORIGINS = _get_csv_env('CORS_ALLOWED_ORIGINS', [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-]
+])
 if MALLOR_LAN_HOST:
     CORS_ALLOWED_ORIGINS.extend([
         f"http://{MALLOR_LAN_HOST}:3000",
         f"http://{MALLOR_LAN_HOST}:5173",
     ])
+if RENDER_EXTERNAL_HOSTNAME:
+    CORS_ALLOWED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
 
-CSRF_TRUSTED_ORIGINS = [
+CSRF_TRUSTED_ORIGINS = _get_csv_env('CSRF_TRUSTED_ORIGINS', [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-]
+])
 if MALLOR_LAN_HOST:
     CSRF_TRUSTED_ORIGINS.extend([
         f"http://{MALLOR_LAN_HOST}",
         f"http://{MALLOR_LAN_HOST}:3000",
         f"http://{MALLOR_LAN_HOST}:5173",
     ])
+if RENDER_EXTERNAL_HOSTNAME:
+    CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
 
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Solo en desarrollo
@@ -316,6 +364,7 @@ CORS_ALLOW_HEADERS = [
     'user-agent',
     'x-csrftoken',
     'x-empresa-id',
+    'x-terminal-id',
     'x-requested-with',
 ]
 
@@ -328,3 +377,14 @@ CORS_ALLOW_METHODS = [
     'POST',
     'PUT',
 ]
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = _get_bool_env('SECURE_SSL_REDIRECT', not DEBUG)
+SESSION_COOKIE_SECURE = _get_bool_env('SESSION_COOKIE_SECURE', not DEBUG)
+CSRF_COOKIE_SECURE = _get_bool_env('CSRF_COOKIE_SECURE', not DEBUG)
+SECURE_HSTS_SECONDS = int(os.getenv('SECURE_HSTS_SECONDS', '0'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = _get_bool_env(
+    'SECURE_HSTS_INCLUDE_SUBDOMAINS',
+    False,
+)
+SECURE_HSTS_PRELOAD = _get_bool_env('SECURE_HSTS_PRELOAD', False)
