@@ -9,6 +9,7 @@ const HomePage = lazy(() => import('../pages/HomePage'));
 const AboutPage = lazy(() => import('../pages/AboutPage'));
 const UsuariosPage = lazy(() => import('../pages/usuarios/UsuariosPage'));
 const MiEmpresaPage = lazy(() => import('../pages/MiEmpresaPage'));
+const MiEmpresaConfiguracionPage = lazy(() => import('../pages/MiEmpresaConfiguracionPage'));
 const EmpresasAdminPage = lazy(() => import('../pages/EmpresasAdminPage'));
 const ProductosPage = lazy(() => import('../pages/inventario/ProductosPage'));
 const VentasPage = lazy(() => import('../pages/ventas/VentasPage'));
@@ -68,6 +69,10 @@ export const router = createBrowserRouter([
             ),
           },
           { path: 'mi-empresa', element: withSuspense(MiEmpresaPage) },
+          {
+            path: 'mi-empresa/configuracion',
+            element: withSuspense(MiEmpresaConfiguracionPage),
+          },
           { path: 'empresas-admin', element: withSuspense(EmpresasAdminPage) },
           { path: 'inventario', element: withSuspense(ProductosPage) },
           { path: 'ventas', element: withSuspense(VentasPage) },

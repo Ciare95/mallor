@@ -272,10 +272,60 @@ class EmpresaService:
         usuario_solicitante=None,
     ) -> Empresa:
         EmpresaService.validar_admin_interno(usuario_solicitante)
+        next_environment = data.get('ambiente_facturacion')
+        if next_environment == Empresa.AmbienteFacturacion.PRODUCCION:
+            EmpresaService._validar_factus_produccion_lista(empresa)
         for field, value in data.items():
             setattr(empresa, field, value)
         empresa.save()
         return empresa
+
+    @staticmethod
+    def _validar_factus_produccion_lista(empresa: Empresa) -> None:
+        from ventas.models import (
+            FacturacionElectronicaConfig,
+            FactusCredential,
+            FactusEnvironment,
+            FactusNumberingRange,
+        )
+
+        config = FacturacionElectronicaConfig.get_solo(empresa)
+        has_credential = FactusCredential.objects.filter(
+            empresa=empresa,
+            environment=FactusEnvironment.PRODUCCION,
+            activo=True,
+        ).exists()
+        has_bill_range = FactusNumberingRange.objects.filter(
+            empresa=empresa,
+            is_active=True,
+            is_credit_note_range=False,
+        ).exists()
+        has_credit_note_range = FactusNumberingRange.objects.filter(
+            empresa=empresa,
+            is_active=True,
+            is_credit_note_range=True,
+        ).exists()
+
+        if not has_credential:
+            raise ValueError(
+                _('Debe configurar credenciales Factus de produccion antes '
+                  'de activar este ambiente.'),
+            )
+        if config.environment != FactusEnvironment.PRODUCCION:
+            raise ValueError(
+                _('Debe validar y sincronizar Factus usando el ambiente de '
+                  'produccion antes de activar este ambiente.'),
+            )
+        if config.last_connection_status != 'ok':
+            raise ValueError(
+                _('Debe validar la conexion productiva con Factus antes de '
+                  'activar este ambiente.'),
+            )
+        if not has_bill_range or not has_credit_note_range:
+            raise ValueError(
+                _('Debe sincronizar rangos DIAN productivos de factura y '
+                  'nota credito antes de activar produccion.'),
+            )
 
     @staticmethod
     def membresias_empresa(empresa: Empresa):

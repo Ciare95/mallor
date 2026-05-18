@@ -20,6 +20,8 @@ from ventas.models import (
     FacturaElectronicaEntrega,
     FacturaElectronicaIntento,
     FacturaElectronicaSoporte,
+    FactusCredential,
+    FactusEnvironment,
     FactusNumberingRange,
     Venta,
     VentaFacturaElectronica,
@@ -689,6 +691,57 @@ class FacturacionElectronicaConfigSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+
+    def validate(self, attrs):
+        environment = attrs.get(
+            'environment',
+            getattr(self.instance, 'environment', FactusEnvironment.SANDBOX),
+        )
+        if environment != FactusEnvironment.PRODUCCION:
+            return attrs
+
+        empresa = getattr(self.instance, 'empresa', None)
+        if empresa is None:
+            request = self.context.get('request') if self.context else None
+            empresa = getattr(request, 'empresa', None)
+
+        if empresa is None:
+            return attrs
+
+        active_bill_range = attrs.get(
+            'active_bill_range',
+            getattr(self.instance, 'active_bill_range', None),
+        )
+        active_credit_note_range = attrs.get(
+            'active_credit_note_range',
+            getattr(self.instance, 'active_credit_note_range', None),
+        )
+        has_credential = FactusCredential.objects.filter(
+            empresa=empresa,
+            environment=FactusEnvironment.PRODUCCION,
+            activo=True,
+        ).exists()
+
+        errors = {}
+        if not has_credential:
+            errors['environment'] = (
+                'Debe configurar credenciales Factus de produccion.'
+            )
+        if getattr(self.instance, 'last_connection_status', '') != 'ok':
+            errors['last_connection_status'] = (
+                'Debe validar la conexion productiva con Factus.'
+            )
+        if active_bill_range is None:
+            errors['active_bill_range_id'] = (
+                'Debe sincronizar y seleccionar un rango productivo de factura.'
+            )
+        if active_credit_note_range is None:
+            errors['active_credit_note_range_id'] = (
+                'Debe sincronizar y seleccionar un rango productivo de nota credito.'
+            )
+        if errors:
+            raise serializers.ValidationError(errors)
+        return attrs
 
 
 class FacturaElectronicaIntentoSerializer(serializers.ModelSerializer):

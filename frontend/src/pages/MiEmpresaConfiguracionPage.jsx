@@ -1,6 +1,6 @@
-import { Building2, Keyboard, MoonStar, Warehouse } from 'lucide-react';
+import { Keyboard, MoonStar, Settings2, Warehouse } from 'lucide-react';
 import {
-  EmpresaInfoSection,
+  EmpresaConfigSection,
   EmpresaModuleToasts,
   MetricCard,
   MiEmpresaModuleShell,
@@ -8,20 +8,19 @@ import {
   useMiEmpresaModule,
 } from './mi-empresa/shared';
 
-export default function MiEmpresaPage() {
+export default function MiEmpresaConfiguracionPage() {
   const {
     empresaActiva,
-    empresaForm,
     configForm,
-    logoPreview,
     rol,
     puedeEditar,
-    puedeEditarNit,
     toasts,
     closeToast,
-    guardarEmpresaMutation,
-    handleEmpresaSubmit,
-    setEmpresaField,
+    guardarConfiguracionMutation,
+    handleConfigSubmit,
+    setConfigField,
+    setTemaField,
+    setShortcut,
   } = useMiEmpresaModule();
 
   if (!empresaActiva) {
@@ -32,31 +31,25 @@ export default function MiEmpresaPage() {
     <>
       <MiEmpresaModuleShell
         eyebrow="Mi empresa"
-        title="Informacion y edicion"
-        description="Gestiona la identidad legal y comercial de la empresa activa en un modulo separado de la operacion."
+        title="Configuracion operativa"
+        description="Separo apariencia, reglas del POS y atajos para que no compitan con la edicion de informacion legal."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <span className="app-pill border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]">
               {rol || 'Sin rol'}
             </span>
             <span className="app-pill">
-              {puedeEditar ? 'Edicion disponible' : 'Solo lectura'}
+              {configForm.tema === 'DARK' ? 'Modo oscuro' : 'Modo claro'}
             </span>
           </div>
         }
       >
         <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard
-            icon={Building2}
-            title="Razon social"
-            value={empresaActiva.razon_social || 'Sin definir'}
-            helper="Base fiscal de la empresa."
-          />
-          <MetricCard
             icon={MoonStar}
-            title="Tema activo"
+            title="Tema"
             value={configForm.tema === 'DARK' ? 'Oscuro' : 'Claro'}
-            helper="Se configura en el modulo operativo."
+            helper="Afecta toda la aplicacion."
           />
           <MetricCard
             icon={Warehouse}
@@ -66,25 +59,31 @@ export default function MiEmpresaPage() {
                 ? 'Permitido'
                 : 'Bloqueado'
             }
-            helper="Regla operativa actual."
+            helper="Control sobre ventas sin existencias."
           />
           <MetricCard
             icon={Keyboard}
             title="Atajos POS"
             value={configForm.atajos_ventas_activos ? 'Activos' : 'Pausados'}
-            helper="Contexto rapido del modulo de configuracion."
+            helper="Caja prioriza teclado."
+          />
+          <MetricCard
+            icon={Settings2}
+            title="Copias ticket"
+            value={configForm.ticket_copies}
+            helper="Default por empresa activa."
           />
         </section>
 
-        <EmpresaInfoSection
+        <EmpresaConfigSection
+          configForm={configForm}
           empresaActiva={empresaActiva}
-          empresaForm={empresaForm}
-          logoPreview={logoPreview}
           puedeEditar={puedeEditar}
-          puedeEditarNit={puedeEditarNit}
-          isSaving={guardarEmpresaMutation.isPending}
-          onSubmit={handleEmpresaSubmit}
-          setEmpresaField={setEmpresaField}
+          isSaving={guardarConfiguracionMutation.isPending}
+          onSubmit={handleConfigSubmit}
+          setConfigField={setConfigField}
+          setTemaField={setTemaField}
+          setShortcut={setShortcut}
         />
       </MiEmpresaModuleShell>
       <EmpresaModuleToasts toasts={toasts} closeToast={closeToast} />

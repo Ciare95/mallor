@@ -249,15 +249,15 @@ class FacturacionElectronicaService:
         factura: Optional[VentaFacturaElectronica],
         action: str,
         is_success: bool,
+        empresa=None,
         request_payload: Optional[Dict[str, Any]] = None,
         response_payload: Optional[Dict[str, Any]] = None,
         error_message: str = '',
         response_status_code: Optional[int] = None,
     ) -> None:
-        empresa = None
         if factura is not None:
             empresa = factura.empresa or factura.venta.empresa
-        else:
+        elif empresa is None:
             empresa = get_empresa_actual_or_default()
         FacturaElectronicaIntento.objects.create(
             factura=factura,
@@ -453,10 +453,18 @@ class FacturacionElectronicaService:
 
         return f'{retry_prefix}{next_retry}'
 
-    def validar_conexion(self) -> Dict[str, Any]:
-        empresa = get_empresa_actual_or_default()
+    def validar_conexion(
+        self,
+        empresa=None,
+        *,
+        environment: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        empresa = empresa or get_empresa_actual_or_default()
         EmpresaService.validar_empresa_activa(empresa)
         config = self.get_config(empresa)
+        if environment:
+            config.environment = environment
+            config.save(update_fields=['environment', 'updated_at'])
         payload = self._adapter_for_empresa(empresa).validar_conexion()
         config.company_snapshot = payload
         config.last_connection_status = 'ok'
@@ -473,15 +481,24 @@ class FacturacionElectronicaService:
             factura=None,
             action=FacturaElectronicaIntento.Action.VALIDAR_CONEXION,
             is_success=True,
+            empresa=empresa,
             response_payload=payload,
         )
         return payload
 
     @transaction.atomic
-    def sincronizar_rangos(self) -> Dict[str, Any]:
-        empresa = get_empresa_actual_or_default()
+    def sincronizar_rangos(
+        self,
+        empresa=None,
+        *,
+        environment: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        empresa = empresa or get_empresa_actual_or_default()
         EmpresaService.validar_empresa_activa(empresa)
         config = self.get_config(empresa)
+        if environment:
+            config.environment = environment
+            config.save(update_fields=['environment', 'updated_at'])
         adapter = self._adapter_for_empresa(empresa)
         rangos_response = adapter.listar_rangos()
         empresa_response = adapter.ver_empresa()
@@ -530,6 +547,10 @@ class FacturacionElectronicaService:
             if config.active_credit_note_range_id is None and range_obj.is_credit_note_range:
                 config.active_credit_note_range = range_obj
 
+        FactusNumberingRange.objects.filter(empresa=empresa).exclude(
+            factus_id__in=synced_ids,
+        ).update(is_active=False)
+
         config.company_snapshot = empresa_response
         config.last_connection_status = 'ok'
         config.last_connection_checked_at = timezone.now()
@@ -539,6 +560,7 @@ class FacturacionElectronicaService:
             factura=None,
             action=FacturaElectronicaIntento.Action.SINCRONIZAR_RANGOS,
             is_success=True,
+            empresa=empresa,
             response_payload={
                 'rangos': rangos_response,
                 'empresa': empresa_response,

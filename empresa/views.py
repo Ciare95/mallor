@@ -17,8 +17,13 @@ from empresa.serializers import (
     EmpresaUsuarioUpdateSerializer,
 )
 from empresa.services import EmpresaService
-from ventas.models import FactusCredential
-from ventas.serializers import FacturacionElectronicaConfigSerializer
+from core.exceptions import FacturacionError
+from ventas.facturacion_services import FacturacionElectronicaService
+from ventas.models import FactusCredential, FactusNumberingRange
+from ventas.serializers import (
+    FacturacionElectronicaConfigSerializer,
+    FactusNumberingRangeSerializer,
+)
 
 
 class EmpresaViewSet(viewsets.ViewSet):
@@ -143,11 +148,14 @@ class EmpresaViewSet(viewsets.ViewSet):
             context={'request': request},
         )
         serializer.is_valid(raise_exception=True)
-        empresa = EmpresaService.actualizar_empresa_admin(
-            empresa,
-            serializer.validated_data,
-            usuario_solicitante=request.user,
-        )
+        try:
+            empresa = EmpresaService.actualizar_empresa_admin(
+                empresa,
+                serializer.validated_data,
+                usuario_solicitante=request.user,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(
             EmpresaAdminSerializer(
                 empresa,
@@ -334,9 +342,11 @@ class EmpresaViewSet(viewsets.ViewSet):
                 {'error': 'Empresa no encontrada.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        if not self._can_admin_empresa(request, empresa):
+        try:
+            EmpresaService.validar_admin_interno(request.user)
+        except PermissionDenied as exc:
             return Response(
-                {'error': 'No tiene permisos para configurar credenciales.'},
+                {'error': str(exc)},
                 status=status.HTTP_403_FORBIDDEN,
             )
 
@@ -364,6 +374,81 @@ class EmpresaViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save(empresa=empresa)
         return Response(serializer.data)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='facturacion/validar-conexion',
+    )
+    def facturacion_validar_conexion(
+        self,
+        request: Request,
+        pk: int = None,
+    ) -> Response:
+        empresa = self._get_empresa_permitida(request, pk)
+        if empresa is None:
+            return Response(
+                {'error': 'Empresa no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        try:
+            EmpresaService.validar_admin_interno(request.user)
+            payload = FacturacionElectronicaService().validar_conexion(
+                empresa,
+                environment=request.data.get('environment'),
+            )
+            return Response(payload)
+        except PermissionDenied as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except FacturacionError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        url_path='facturacion/sincronizar-rangos',
+    )
+    def facturacion_sincronizar_rangos(
+        self,
+        request: Request,
+        pk: int = None,
+    ) -> Response:
+        empresa = self._get_empresa_permitida(request, pk)
+        if empresa is None:
+            return Response(
+                {'error': 'Empresa no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        try:
+            EmpresaService.validar_admin_interno(request.user)
+            payload = FacturacionElectronicaService().sincronizar_rangos(
+                empresa,
+                environment=request.data.get('environment'),
+            )
+            return Response(payload)
+        except PermissionDenied as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+        except FacturacionError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'], url_path='facturacion/rangos')
+    def facturacion_rangos(self, request: Request, pk: int = None) -> Response:
+        empresa = self._get_empresa_permitida(request, pk)
+        if empresa is None:
+            return Response(
+                {'error': 'Empresa no encontrada.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if not self._can_admin_empresa(request, empresa):
+            return Response(
+                {'error': 'No tiene permisos para ver rangos Factus.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        queryset = FactusNumberingRange.objects.filter(empresa=empresa).order_by(
+            'is_credit_note_range',
+            'prefix',
+        )
+        return Response(FactusNumberingRangeSerializer(queryset, many=True).data)
 
     @action(detail=False, methods=['post'], url_path='seleccionar')
     def seleccionar(self, request: Request) -> Response:

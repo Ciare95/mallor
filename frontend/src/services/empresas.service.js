@@ -85,6 +85,50 @@ export const actualizarEmpresaAdmin = async (empresaId, payload) => {
   return normalizeEmpresaResponse(response.data);
 };
 
+export const obtenerCredencialesFactusEmpresa = async (
+  empresaId,
+  environment = 'SANDBOX',
+) => {
+  const response = await api.get(
+    `/empresas/${empresaId}/facturacion/credenciales/`,
+    { params: { environment } },
+  );
+  return response.data;
+};
+
+export const guardarCredencialesFactusEmpresa = async (
+  empresaId,
+  payload,
+) => {
+  const method = payload?.id ? 'patch' : 'post';
+  const response = await api[method](
+    `/empresas/${empresaId}/facturacion/credenciales/`,
+    payload,
+  );
+  return response.data;
+};
+
+export const validarConexionFactusEmpresa = async (empresaId, environment) => {
+  const response = await api.post(
+    `/empresas/${empresaId}/facturacion/validar-conexion/`,
+    { environment },
+  );
+  return response.data;
+};
+
+export const sincronizarRangosFactusEmpresa = async (empresaId, environment) => {
+  const response = await api.post(
+    `/empresas/${empresaId}/facturacion/sincronizar-rangos/`,
+    { environment },
+  );
+  return response.data;
+};
+
+export const listarRangosFactusEmpresa = async (empresaId) => {
+  const response = await api.get(`/empresas/${empresaId}/facturacion/rangos/`);
+  return response.data;
+};
+
 export const obtenerEmpresa = async (empresaId) => {
   const response = await api.get(`/empresas/${empresaId}/`);
   return normalizeEmpresaResponse(response.data);
@@ -147,6 +191,11 @@ export default {
   listarEmpresasAdmin,
   crearEmpresaAdmin,
   actualizarEmpresaAdmin,
+  obtenerCredencialesFactusEmpresa,
+  guardarCredencialesFactusEmpresa,
+  validarConexionFactusEmpresa,
+  sincronizarRangosFactusEmpresa,
+  listarRangosFactusEmpresa,
   obtenerEmpresa,
   seleccionarEmpresa,
   actualizarEmpresa,
