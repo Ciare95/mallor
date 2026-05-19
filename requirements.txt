@@ -23,10 +23,3 @@ pytest==7.4.3
 pytest-cov==4.1.0
 pytest-django==4.7.0
 ruff==0.8.6
-
-PYTHON_VERSION=3.12.8
-NODE_VERSION=22.16.0
-DEBUG=False
-MALLOR_MODE=cloud
-MALLOR_LOCAL_SERVER=False
-MALLOR_SERVE_FRONTEND=True
