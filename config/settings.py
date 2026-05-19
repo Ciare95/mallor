@@ -16,6 +16,8 @@ from datetime import timedelta
 from importlib.util import find_spec
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -166,6 +168,11 @@ if DATABASE_URL:
         DATABASE_URL,
         conn_max_age=int(os.getenv('DB_CONN_MAX_AGE', '600')),
         ssl_require=_get_bool_env('DB_SSL_REQUIRE', not DEBUG),
+    )
+elif not DEBUG and MALLOR_MODE == 'cloud':
+    raise ImproperlyConfigured(
+        'DATABASE_URL es obligatorio en producción cloud. '
+        'Configura la Internal Database URL de Render PostgreSQL.',
     )
 
 
