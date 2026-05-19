@@ -46,6 +46,9 @@ export default function VentaForm({
   const [showCobroModal, setShowCobroModal] = useState(false);
   const [cashManualOverride, setCashManualOverride] = useState(false);
   const [activeProductIndex, setActiveProductIndex] = useState(-1);
+  const [pendingSpecialProduct, setPendingSpecialProduct] = useState(null);
+  const [specialPrice, setSpecialPrice] = useState('');
+  const [specialPriceError, setSpecialPriceError] = useState('');
   const productSearchRef = useRef(null);
   const lastCobroSignalRef = useRef(0);
   const lastSubmitSignalRef = useRef(0);
@@ -160,13 +163,50 @@ export default function VentaForm({
   const submitLabel =
     draft.estado === 'PENDIENTE' ? 'Guardar como pendiente' : 'Registrar venta';
 
-  const addProductAndClear = (producto) => {
-    onAddProduct(producto);
+  const clearProductSearch = () => {
     setProductQuery('');
     setActiveProductIndex(-1);
     requestAnimationFrame(() => {
       productSearchRef.current?.focus();
     });
+  };
+
+  const addProductAndClear = (producto) => {
+    if (producto.es_producto_especial) {
+      setPendingSpecialProduct(producto);
+      setSpecialPrice(
+        Number(producto.precio_venta || 0) > 0
+          ? String(Math.round(Number(producto.precio_venta)))
+          : '',
+      );
+      setSpecialPriceError('');
+      return;
+    }
+
+    onAddProduct(producto);
+    clearProductSearch();
+  };
+
+  const closeSpecialPriceModal = () => {
+    setPendingSpecialProduct(null);
+    setSpecialPrice('');
+    setSpecialPriceError('');
+    requestAnimationFrame(() => {
+      productSearchRef.current?.focus();
+    });
+  };
+
+  const submitSpecialProduct = (event) => {
+    event.preventDefault();
+    const price = Math.round(Number(specialPrice || 0));
+    if (!Number.isFinite(price) || price <= 0) {
+      setSpecialPriceError('El precio debe ser mayor que cero.');
+      return;
+    }
+
+    onAddProduct(pendingSpecialProduct, { precio_unitario: price });
+    closeSpecialPriceModal();
+    clearProductSearch();
   };
 
   const submitWithState = (estado) => {
@@ -330,9 +370,16 @@ export default function VentaForm({
                           <Plus className="h-4 w-4 text-[var(--accent)]" />
                         </div>
                         <div className="mt-3 flex items-center justify-between text-[12px] text-soft">
-                          <span>IVA {producto.iva}%</span>
+                          <span>
+                            {producto.es_producto_especial
+                              ? 'Precio variable'
+                              : `IVA ${producto.iva}%`}
+                          </span>
                           <span className="font-display text-base text-main">
-                            {formatCurrency(producto.precio_venta)}
+                            {producto.es_producto_especial &&
+                            Number(producto.precio_venta || 0) <= 0
+                              ? 'Variable'
+                              : formatCurrency(producto.precio_venta)}
                           </span>
                         </div>
                       </button>
@@ -373,6 +420,9 @@ export default function VentaForm({
                       </div>
                       <div className="mt-1 text-[10px] uppercase tracking-[0.2em] text-muted">
                         IVA {item.producto.iva}% · {item.producto.codigo_interno}
+                        {item.producto.es_producto_especial
+                          ? ' · Precio variable'
+                          : ''}
                       </div>
                     </div>
                     <MiniField
@@ -387,7 +437,11 @@ export default function VentaForm({
                       }
                     />
                     <MiniField
-                      label="Precio"
+                      label={
+                        item.producto.es_producto_especial
+                          ? 'Precio'
+                          : 'Precio fijo'
+                      }
                       type="number"
                       min="0"
                       step="1"
@@ -396,6 +450,7 @@ export default function VentaForm({
                       onChange={(value) =>
                         onUpdateItem(item.id, { precio_unitario: value })
                       }
+                      disabled={!item.producto.es_producto_especial}
                     />
                     <div className="space-y-1">
                       <div className="text-[10px] uppercase tracking-[0.2em] text-muted">
@@ -658,6 +713,57 @@ export default function VentaForm({
         applyCashSuggestion={applyCashSuggestion}
         setCashManualOverride={setCashManualOverride}
       />
+
+      {pendingSpecialProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/42 px-4">
+          <form
+            onSubmit={submitSpecialProduct}
+            className="w-full max-w-sm rounded-xl border border-app bg-white p-5 shadow-2xl"
+          >
+            <div className="eyebrow">Producto especial</div>
+            <h3 className="mt-2 text-lg font-semibold text-main">
+              {pendingSpecialProduct.nombre}
+            </h3>
+            <p className="mt-1 text-[12px] leading-5 text-soft">
+              Define el precio para esta linea de venta.
+            </p>
+            <label className="mt-4 block space-y-1">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-muted">
+                Precio
+              </span>
+              <input
+                autoFocus
+                type="number"
+                min="1"
+                step="1"
+                value={specialPrice}
+                onChange={(event) => {
+                  setSpecialPrice(event.target.value);
+                  setSpecialPriceError('');
+                }}
+                className="app-input min-h-11"
+              />
+            </label>
+            {specialPriceError && (
+              <p className="mt-2 text-[12px] font-semibold text-[var(--danger-text)]">
+                {specialPriceError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeSpecialPriceModal}
+                className="app-button-secondary min-h-10"
+              >
+                Cancelar
+              </button>
+              <button type="submit" className="app-button-primary min-h-10">
+                Agregar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </div>
   );
 }

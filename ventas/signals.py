@@ -70,6 +70,10 @@ def actualizar_stock_y_venta_al_guardar_detalle(
     """
     Actualiza el stock del producto y recalcula la venta.
     """
+    if instance.producto.es_producto_especial:
+        _recalcular_totales_venta(instance.venta_id)
+        return
+
     detalle_anterior = getattr(instance, '_stock_snapshot', None)
     allow_negative = instance.venta.permite_stock_negativo_ventas()
 
@@ -100,7 +104,8 @@ def restaurar_stock_y_venta_al_eliminar_detalle(sender, instance, **kwargs):
     """
     Restaura el stock del producto y recalcula la venta.
     """
-    instance.producto.actualizar_stock(instance.cantidad)
+    if not instance.producto.es_producto_especial:
+        instance.producto.actualizar_stock(instance.cantidad)
     _recalcular_totales_venta(instance.venta_id)
 
 

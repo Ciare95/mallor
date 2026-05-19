@@ -250,8 +250,18 @@ export const useVentasStore = create((set) => ({
         clienteSeleccionado,
       }),
     ),
-  addProductoAlDraft: (producto) =>
+  addProductoAlDraft: (producto, overrides = {}) =>
     set((state) => {
+      if (producto.es_producto_especial) {
+        return updateActivePrecuentaDraft(state, {
+          ...state.draft,
+          items: [
+            ...state.draft.items,
+            createLineItem(producto, overrides),
+          ],
+        });
+      }
+
       const existing = state.draft.items.find(
         (item) => item.producto.id === producto.id,
       );
@@ -272,7 +282,7 @@ export const useVentasStore = create((set) => ({
 
       return updateActivePrecuentaDraft(state, {
         ...state.draft,
-        items: [...state.draft.items, createLineItem(producto)],
+        items: [...state.draft.items, createLineItem(producto, overrides)],
       });
     }),
   actualizarItemDraft: (lineId, changes) =>

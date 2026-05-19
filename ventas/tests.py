@@ -14,6 +14,7 @@ from core.exceptions import (
     FacturacionOperacionError,
     FacturacionValidacionError,
     StockInsuficienteError,
+    VentaError,
     VentaNoCancelableError,
 )
 from inventario.models import HistorialInventario, Producto
@@ -566,6 +567,83 @@ class VentaServiceTest(TestCase):
             HistorialInventario.TIPO_SALIDA,
         )
         self.assertEqual(historial.cantidad, Decimal('-3.00'))
+
+    def test_crear_venta_rechaza_precio_editado_en_producto_normal(self):
+        with self.assertRaises(VentaError):
+            VentaService.crear_venta(
+                data={
+                    'cliente': self.cliente,
+                    'estado': Venta.Estado.TERMINADA,
+                    'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                    'detalles': [
+                        {
+                            'producto': self.producto,
+                            'cantidad': Decimal('1.00'),
+                            'precio_unitario': Decimal('120.00'),
+                        }
+                    ],
+                },
+                usuario=self.usuario,
+            )
+
+    def test_producto_especial_no_descuenta_stock_ni_crea_historial(self):
+        producto_especial = Producto.objects.create(
+            nombre='Producto variable',
+            existencias=Decimal('0.00'),
+            precio_compra=Decimal('0.00'),
+            precio_venta=Decimal('0.00'),
+            iva=Decimal('0.00'),
+            es_producto_especial=True,
+        )
+
+        venta = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'detalles': [
+                    {
+                        'producto': producto_especial,
+                        'cantidad': Decimal('2.00'),
+                        'precio_unitario': Decimal('250.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        producto_especial.refresh_from_db()
+        self.assertEqual(venta.total, Decimal('500.00'))
+        self.assertEqual(producto_especial.existencias, Decimal('0.00'))
+        self.assertFalse(
+            HistorialInventario.objects.filter(venta=venta).exists(),
+        )
+
+    def test_producto_especial_requiere_precio_en_venta(self):
+        producto_especial = Producto.objects.create(
+            nombre='Producto variable sin precio',
+            existencias=Decimal('0.00'),
+            precio_compra=Decimal('0.00'),
+            precio_venta=Decimal('0.00'),
+            iva=Decimal('0.00'),
+            es_producto_especial=True,
+        )
+
+        with self.assertRaises(VentaError):
+            VentaService.crear_venta(
+                data={
+                    'cliente': self.cliente,
+                    'estado': Venta.Estado.TERMINADA,
+                    'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                    'detalles': [
+                        {
+                            'producto': producto_especial,
+                            'cantidad': Decimal('1.00'),
+                        }
+                    ],
+                },
+                usuario=self.usuario,
+            )
 
     def test_crear_venta_service_permite_stock_negativo_si_empresa_lo_activa(self):
         self.config.permitir_stock_negativo_ventas = True
