@@ -94,7 +94,7 @@ class ProductoSerializer(serializers.ModelSerializer):
             'id', 'codigo_interno', 'codigo_interno_formateado',
             'codigo_barras', 'nombre', 'categoria', 'categoria_id',
             'marca', 'descripcion', 'existencias', 'stock_minimo', 'invima',
-            'precio_compra', 'precio_venta', 'iva',
+            'precio_compra', 'precio_venta', 'es_producto_especial', 'iva',
             'unidad_medida_codigo', 'estandar_codigo',
             'imagen', 'fecha_ingreso', 'fecha_caducidad',
             'valor_inventario', 'valor_venta_total', 'margen_ganancia',
@@ -146,8 +146,8 @@ class ProductoListSerializer(serializers.ModelSerializer):
             'id', 'codigo_interno', 'codigo_interno_formateado',
             'codigo_barras', 'nombre', 'categoria_nombre',
             'marca', 'existencias', 'precio_compra', 'precio_venta',
-            'iva', 'stock_minimo', 'unidad_medida_codigo', 'estandar_codigo',
-            'valor_inventario',
+            'es_producto_especial', 'iva', 'stock_minimo',
+            'unidad_medida_codigo', 'estandar_codigo', 'valor_inventario',
         ]
 
     def get_valor_inventario(self, obj):
@@ -161,7 +161,7 @@ class ProductoCreateSerializer(serializers.ModelSerializer):
             'codigo_interno', 'codigo_barras', 'nombre',
             'categoria', 'marca', 'descripcion',
             'existencias', 'stock_minimo', 'invima',
-            'precio_compra', 'precio_venta', 'iva',
+            'precio_compra', 'precio_venta', 'es_producto_especial', 'iva',
             'unidad_medida_codigo', 'estandar_codigo',
             'imagen', 'fecha_caducidad',
         ]
@@ -238,6 +238,20 @@ class ProductoCreateSerializer(serializers.ModelSerializer):
     def validate(self, data):
         precio_compra = data.get('precio_compra')
         precio_venta = data.get('precio_venta')
+        es_especial = data.get('es_producto_especial', False)
+        if not es_especial:
+            if precio_compra is None or precio_compra <= Decimal('0.00'):
+                raise serializers.ValidationError({
+                    'precio_compra': (
+                        'El precio de compra debe ser mayor que cero'
+                    ),
+                })
+            if precio_venta is None or precio_venta <= Decimal('0.00'):
+                raise serializers.ValidationError({
+                    'precio_venta': (
+                        'El precio de venta debe ser mayor que cero'
+                    ),
+                })
         if precio_compra and precio_venta and precio_venta < precio_compra:
             raise serializers.ValidationError(
                 {'precio_venta': 'Advertencia: El precio de venta es menor '
@@ -261,7 +275,7 @@ class ProductoUpdateSerializer(serializers.ModelSerializer):
             'codigo_interno', 'codigo_barras', 'nombre',
             'categoria', 'marca', 'descripcion',
             'existencias', 'stock_minimo', 'invima',
-            'precio_compra', 'precio_venta', 'iva',
+            'precio_compra', 'precio_venta', 'es_producto_especial', 'iva',
             'unidad_medida_codigo', 'estandar_codigo',
             'imagen', 'fecha_caducidad',
         ]
@@ -330,8 +344,32 @@ class ProductoUpdateSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        precio_compra = data.get('precio_compra')
-        precio_venta = data.get('precio_venta')
+        instance = getattr(self, 'instance', None)
+        precio_compra = data.get(
+            'precio_compra',
+            getattr(instance, 'precio_compra', None),
+        )
+        precio_venta = data.get(
+            'precio_venta',
+            getattr(instance, 'precio_venta', None),
+        )
+        es_especial = data.get(
+            'es_producto_especial',
+            getattr(instance, 'es_producto_especial', False),
+        )
+        if not es_especial:
+            if precio_compra is None or precio_compra <= Decimal('0.00'):
+                raise serializers.ValidationError({
+                    'precio_compra': (
+                        'El precio de compra debe ser mayor que cero'
+                    ),
+                })
+            if precio_venta is None or precio_venta <= Decimal('0.00'):
+                raise serializers.ValidationError({
+                    'precio_venta': (
+                        'El precio de venta debe ser mayor que cero'
+                    ),
+                })
         if precio_compra and precio_venta and precio_venta < precio_compra:
             raise serializers.ValidationError(
                 {'precio_venta': 'Advertencia: El precio de venta es menor '

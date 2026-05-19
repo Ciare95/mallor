@@ -603,7 +603,8 @@ class DetalleVenta(models.Model):
                 cantidad_requerida = self.cantidad - detalle_anterior.cantidad
 
         if (
-            cantidad_requerida > 0
+            not self.producto.es_producto_especial
+            and cantidad_requerida > 0
             and not self.venta.permite_stock_negativo_ventas()
             and not self.producto.validar_stock(cantidad_requerida)
         ):

@@ -8,6 +8,14 @@ const producto = {
   iva: 0,
 };
 
+const productoEspecial = {
+  id: 11,
+  nombre: 'Producto variable',
+  precio_venta: 0,
+  iva: 0,
+  es_producto_especial: true,
+};
+
 describe('useVentasStore precuentas', () => {
   beforeEach(() => {
     useVentasStore.setState(useVentasStore.getInitialState(), true);
@@ -57,5 +65,18 @@ describe('useVentasStore precuentas', () => {
 
     expect(useVentasStore.getState().precuentas).toHaveLength(1);
     expect(useVentasStore.getState().precuentaActivaId).toBe(primeraId);
+  });
+
+  it('agrega productos especiales como lineas separadas con precio propio', () => {
+    const store = useVentasStore.getState();
+
+    store.addProductoAlDraft(productoEspecial, { precio_unitario: 9000 });
+    useVentasStore
+      .getState()
+      .addProductoAlDraft(productoEspecial, { precio_unitario: 14000 });
+
+    const items = useVentasStore.getState().draft.items;
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.precio_unitario)).toEqual([9000, 14000]);
   });
 });

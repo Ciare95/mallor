@@ -100,6 +100,33 @@ class ProductoModelTest(TestCase):
         self.assertIsNotNone(producto.created_at)
         self.assertIsNotNone(producto.updated_at)
         self.assertEqual(str(producto), 'Paracetamol 500mg (00001001)')
+
+    def test_producto_normal_requiere_precios_mayores_a_cero(self):
+        producto = Producto(
+            codigo_interno=1101,
+            nombre='Producto sin precio',
+            existencias=0,
+            precio_compra=Decimal('0.00'),
+            precio_venta=Decimal('0.00'),
+        )
+
+        with self.assertRaises(ValidationError):
+            producto.full_clean()
+
+    def test_producto_especial_permite_precios_y_stock_en_cero(self):
+        producto = Producto.objects.create(
+            codigo_interno=1102,
+            nombre='Producto variable',
+            existencias=Decimal('0.00'),
+            stock_minimo=Decimal('0.00'),
+            precio_compra=Decimal('0.00'),
+            precio_venta=Decimal('0.00'),
+            es_producto_especial=True,
+        )
+
+        self.assertTrue(producto.es_producto_especial)
+        self.assertEqual(producto.existencias, Decimal('0.00'))
+        self.assertEqual(producto.precio_venta, Decimal('0.00'))
     
     def test_codigo_interno_unico(self):
         """

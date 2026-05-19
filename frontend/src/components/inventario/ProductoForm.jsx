@@ -30,6 +30,7 @@ const initialFormData = {
   invima: '',
   precio_compra: '',
   precio_venta: '',
+  es_producto_especial: false,
   iva: '0',
   imagen: null,
   fecha_caducidad: '',
@@ -66,6 +67,7 @@ const getInitialFormData = (producto) => {
     invima: producto.invima || '',
     precio_compra: producto.precio_compra || '',
     precio_venta: producto.precio_venta || '',
+    es_producto_especial: Boolean(producto.es_producto_especial),
     iva: normalizeIntegerDisplay(producto.iva),
     imagen: null,
     fecha_caducidad: producto.fecha_caducidad || '',
@@ -96,6 +98,7 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
   const precioCompra = Number(formData.precio_compra || 0);
   const precioVenta = Number(formData.precio_venta || 0);
   const iva = Number(formData.iva || 0);
+  const isSpecialProduct = Boolean(formData.es_producto_especial);
   const margen =
     precioCompra > 0 ? ((precioVenta - precioCompra) / precioCompra) * 100 : 0;
   const precioSugerido =
@@ -112,11 +115,11 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
         ? 'El stock minimo no puede ser negativo'
         : null,
     precio_compra: (value) =>
-      Number(value) <= 0
+      !isSpecialProduct && Number(value) <= 0
         ? 'El precio de compra debe ser mayor que cero'
         : null,
     precio_venta: (value) =>
-      Number(value) <= 0
+      !isSpecialProduct && Number(value) <= 0
         ? 'El precio de venta debe ser mayor que cero'
         : null,
     iva: (value) =>
@@ -140,8 +143,11 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
   const validateField = (name, value) => validators[name]?.(value) || null;
 
   const handleChange = (event) => {
-    const { name } = event.target;
+    const { name, type, checked } = event.target;
     let { value } = event.target;
+    if (type === 'checkbox') {
+      value = checked;
+    }
     if (isCreateMode && ['existencias', 'iva', 'stock_minimo'].includes(name)) {
       value = normalizeIntegerInput(value);
     }
@@ -180,7 +186,7 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
       const fieldError = validateField(field, value);
       if (fieldError) nextErrors[field] = fieldError;
     });
-    if (precioVenta < precioCompra) {
+    if (!isSpecialProduct && precioVenta < precioCompra) {
       nextErrors.precio_venta =
         'El precio de venta no debe ser menor al precio de compra';
     }
@@ -194,6 +200,12 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
     if (!validateForm()) return;
 
     const payload = { ...formData };
+    if (payload.es_producto_especial) {
+      payload.existencias = '0';
+      payload.stock_minimo = '0';
+      payload.precio_compra = payload.precio_compra || '0';
+      payload.precio_venta = payload.precio_venta || '0';
+    }
     if (!payload.codigo_interno) delete payload.codigo_interno;
     if (!payload.fecha_caducidad) payload.fecha_caducidad = null;
     if (!payload.categoria_id) payload.categoria_id = null;
@@ -206,6 +218,30 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
       precio_venta: Math.ceil(precioSugerido).toString(),
     }));
     setErrors((prev) => ({ ...prev, precio_venta: null }));
+  };
+
+  const setProductType = (isSpecial) => {
+    setFormData((prev) => ({
+      ...prev,
+      es_producto_especial: isSpecial,
+      ...(isSpecial
+        ? {
+            existencias: '0',
+            stock_minimo: '0',
+            precio_compra: prev.precio_compra || '0',
+            precio_venta: prev.precio_venta || '0',
+          }
+        : {
+            stock_minimo: prev.stock_minimo === '0' ? '10' : prev.stock_minimo,
+          }),
+    }));
+    setErrors((prev) => ({
+      ...prev,
+      existencias: null,
+      stock_minimo: null,
+      precio_compra: null,
+      precio_venta: null,
+    }));
   };
 
   const categorias = getResults(categoriasData);
@@ -268,6 +304,35 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
                 Campos base y validacion en tiempo real.
               </p>
             </div>
+          </div>
+
+          <div className="mb-5 grid gap-3 rounded-xl border border-app bg-white/72 p-3 sm:grid-cols-2">
+            {[
+              ['normal', 'Producto normal', false],
+              ['especial', 'Producto especial', true],
+            ].map(([key, label, isSpecial]) => {
+              const active = isSpecialProduct === isSpecial;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setProductType(isSpecial)}
+                  className={`rounded-lg border px-4 py-3 text-left text-[13px] font-semibold transition ${
+                    active
+                      ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                      : 'border-app bg-white/70 text-main hover:bg-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+            {isSpecialProduct && (
+              <div className="rounded-lg border border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] px-4 py-3 text-[12px] leading-5 text-[var(--info-text)] sm:col-span-2">
+                El precio se define en el POS y este producto no descuenta
+                inventario.
+              </div>
+            )}
           </div>
 
           <div className="grid gap-5 md:grid-cols-2">
@@ -374,7 +439,14 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
               onBlur={handleBlur}
               onFocus={handleIntegerFieldFocus}
               error={touched.existencias && errors.existencias}
-              helper={isCreateMode ? 'Solo enteros para stock inicial.' : undefined}
+              disabled={isSpecialProduct}
+              helper={
+                isSpecialProduct
+                  ? 'No aplica para productos especiales.'
+                  : isCreateMode
+                    ? 'Solo enteros para stock inicial.'
+                    : undefined
+              }
             />
             <Field
               label="Stock minimo"
@@ -388,7 +460,14 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
               onBlur={handleBlur}
               onFocus={handleIntegerFieldFocus}
               error={touched.stock_minimo && errors.stock_minimo}
-              helper={isCreateMode ? 'Umbral propio del producto para alertas.' : undefined}
+              disabled={isSpecialProduct}
+              helper={
+                isSpecialProduct
+                  ? 'No aplica para productos especiales.'
+                  : isCreateMode
+                    ? 'Umbral propio del producto para alertas.'
+                    : undefined
+              }
             />
             <Field
               label="IVA %"
@@ -416,6 +495,7 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
               onChange={handleChange}
               onBlur={handleBlur}
               error={touched.precio_compra && errors.precio_compra}
+              helper={isSpecialProduct ? 'Opcional para producto especial.' : undefined}
             />
             <div>
               <Field
@@ -428,8 +508,9 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
                 onChange={handleChange}
                 onBlur={handleBlur}
                 error={touched.precio_venta && errors.precio_venta}
+                helper={isSpecialProduct ? 'Opcional; se define en POS.' : undefined}
               />
-              {precioSugerido > 0 && (
+              {!isSpecialProduct && precioSugerido > 0 && (
                 <button
                   type="button"
                   onClick={applySuggestedPrice}
@@ -489,9 +570,15 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
             <div className="text-sm font-semibold text-main">Revision rapida</div>
             <div className="mt-4 space-y-3 text-sm">
               <CheckItem valid={!!formData.nombre.trim()} label="Nombre completo" />
-              <CheckItem valid={precioCompra > 0} label="Precio de compra valido" />
               <CheckItem
-                valid={precioVenta >= precioCompra && precioVenta > 0}
+                valid={isSpecialProduct || precioCompra > 0}
+                label="Precio de compra valido"
+              />
+              <CheckItem
+                valid={
+                  isSpecialProduct ||
+                  (precioVenta >= precioCompra && precioVenta > 0)
+                }
                 label="Margen no negativo"
               />
               <CheckItem

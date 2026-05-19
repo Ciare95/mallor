@@ -247,9 +247,10 @@ class _VentaInventarioService:
                 raise ProductoNoEncontradoError(producto_id) from exc
 
             cantidad = detalle.get('cantidad')
-            precio_unitario = (
-                detalle.get('precio_unitario') or producto_obj.precio_venta
-            )
+            precio_unitario = detalle.get('precio_unitario')
+            precio_definido = precio_unitario is not None
+            if not precio_definido:
+                precio_unitario = producto_obj.precio_venta
             descuento = detalle.get('descuento', Decimal('0.00'))
 
             if cantidad is None or cantidad <= Decimal('0.00'):
@@ -272,6 +273,22 @@ class _VentaInventarioService:
                         'producto': producto_obj.nombre,
                     },
                     code='detalle_precio_invalido',
+                )
+
+            if (
+                not producto_obj.es_producto_especial
+                and precio_definido
+                and precio_unitario.quantize(QUANTIZER)
+                != producto_obj.precio_venta.quantize(QUANTIZER)
+            ):
+                raise VentaError(
+                    _(
+                        'El precio de %(producto)s no se puede cambiar '
+                        'porque no es un producto especial.'
+                    ) % {
+                        'producto': producto_obj.nombre,
+                    },
+                    code='detalle_precio_no_editable',
                 )
 
             if descuento < Decimal('0.00'):
@@ -320,6 +337,8 @@ class _VentaInventarioService:
                 stock_actual[detalle.producto_id] += detalle.cantidad
 
         for detalle in detalles_data:
+            if detalle['producto'].es_producto_especial:
+                continue
             stock_requerido[detalle['producto'].id] += detalle['cantidad']
 
         productos = Producto.objects.select_for_update().filter(
@@ -591,6 +610,8 @@ class VentaService:
                 venta=venta,
                 **detalle_creacion,
             )
+            if detalle.producto.es_producto_especial:
+                continue
             _VentaInventarioService.registrar_historial_salida(
                 detalle=detalle,
                 usuario=usuario_registro,
@@ -753,6 +774,9 @@ class VentaService:
 
         if detalles_data is not None:
             for detalle in detalles_actuales:
+                if detalle.producto.es_producto_especial:
+                    detalle.delete()
+                    continue
                 _VentaInventarioService.registrar_historial_entrada(
                     producto=detalle.producto,
                     cantidad=detalle.cantidad,
@@ -779,6 +803,8 @@ class VentaService:
                     venta=venta,
                     **detalle_creacion,
                 )
+                if detalle.producto.es_producto_especial:
+                    continue
                 _VentaInventarioService.registrar_historial_salida(
                     detalle=detalle,
                     usuario=usuario_accion,
@@ -814,6 +840,8 @@ class VentaService:
                 pk=detalle.producto_id,
                 empresa=venta.empresa,
             )
+            if producto.es_producto_especial:
+                continue
             producto.actualizar_stock(detalle.cantidad)
             _VentaInventarioService.registrar_historial_entrada(
                 producto=producto,
@@ -873,6 +901,8 @@ class VentaService:
         detalles = list(venta.detalles.select_related('producto'))
 
         for detalle in detalles:
+            if detalle.producto.es_producto_especial:
+                continue
             _VentaInventarioService.registrar_historial_entrada(
                 producto=detalle.producto,
                 cantidad=detalle.cantidad,

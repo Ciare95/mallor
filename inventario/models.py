@@ -180,6 +180,14 @@ class Producto(models.Model):
         decimal_places=2,
         help_text=_('Precio al que se vende el producto')
     )
+
+    es_producto_especial = models.BooleanField(
+        _('producto especial'),
+        default=False,
+        help_text=_(
+            'Permite vender el producto con precio variable sin afectar stock.'
+        )
+    )
     
     iva = models.DecimalField(
         _('IVA'),
@@ -248,6 +256,10 @@ class Producto(models.Model):
             models.Index(fields=['categoria']),
             models.Index(fields=['existencias']),
             models.Index(fields=['stock_minimo'], name='productos_stock_m_8a5f6e_idx'),
+            models.Index(
+                fields=['es_producto_especial'],
+                name='productos_es_prod_5b0d43_idx',
+            ),
             models.Index(fields=['fecha_caducidad']),
             models.Index(fields=['created_at']),
         ]
@@ -364,7 +376,6 @@ class Producto(models.Model):
                 'stock_minimo': _('El stock minimo no puede ser negativo')
             })
         
-        # Validar que precio_compra sea positivo (solo si tiene valor)
         if self.precio_compra is not None and self.precio_compra < 0:
             raise ValidationError({
                 'precio_compra': _(
@@ -372,13 +383,32 @@ class Producto(models.Model):
                 )
             })
 
-        # Validar que precio_venta sea positivo (solo si tiene valor)
         if self.precio_venta is not None and self.precio_venta < 0:
             raise ValidationError({
                 'precio_venta': _(
                     'El precio de venta no puede ser negativo'
                 )
             })
+
+        if not self.es_producto_especial:
+            if (
+                self.precio_compra is not None
+                and self.precio_compra <= Decimal('0')
+            ):
+                raise ValidationError({
+                    'precio_compra': _(
+                        'El precio de compra debe ser mayor que cero'
+                    )
+                })
+            if (
+                self.precio_venta is not None
+                and self.precio_venta <= Decimal('0')
+            ):
+                raise ValidationError({
+                    'precio_venta': _(
+                        'El precio de venta debe ser mayor que cero'
+                    )
+                })
         
         # Advertencia: precio_venta menor que precio_compra (solo si ambos tienen valor)
         if (self.precio_venta is not None and self.precio_compra is not None and 

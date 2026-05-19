@@ -353,17 +353,21 @@ const RuleInput = ({ label, value, onChange }) => (
 );
 
 const ProductoRow = ({ producto, onView, onEdit, onDelete, onAdjustStock }) => {
-  const stockBajo = Number(producto.existencias || 0) <= Number(producto.stock_minimo || 0);
+  const stockBajo =
+    !producto.es_producto_especial &&
+    Number(producto.existencias || 0) <= Number(producto.stock_minimo || 0);
+  const precioVariable =
+    producto.es_producto_especial && Number(producto.precio_venta || 0) <= 0;
   return (
     <tr className="table-row">
       <td className="px-5 py-4 font-mono-ui text-[12px] font-semibold text-main">{producto.codigo_interno_formateado || producto.codigo_interno}<div className="text-[11px] font-normal text-muted">{producto.codigo_barras || 'Sin barras'}</div></td>
-      <td className="px-5 py-4"><div className="text-[13px] font-semibold text-main">{producto.nombre}</div><div className="text-[12px] text-soft">{producto.invima || 'Sin INVIMA'}</div></td>
+      <td className="px-5 py-4"><div className="flex flex-wrap items-center gap-2"><span className="text-[13px] font-semibold text-main">{producto.nombre}</span>{producto.es_producto_especial && <span className="rounded-full bg-[var(--info-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--info-text)]">Especial</span>}</div><div className="text-[12px] text-soft">{producto.invima || 'Sin INVIMA'}</div></td>
       <td className="px-5 py-4 text-[12px] text-soft">{producto.categoria_nombre || producto.categoria?.nombre || 'Sin categoria'}</td>
       <td className="px-5 py-4 text-[12px] text-soft">{producto.marca || 'Sin marca'}</td>
       <td className="px-5 py-4"><span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${stockBajo ? 'bg-[var(--warning-soft)] text-[var(--warning-text)]' : 'bg-[var(--accent-soft)] text-[var(--accent)]'}`}>{Number(producto.existencias || 0)}</span></td>
       <td className="px-5 py-4 text-[12px] text-soft">{Number(producto.stock_minimo || 0)}</td>
       <td className="px-5 py-4 text-[12px] font-semibold text-soft">{formatCurrency(Number(producto.precio_compra || 0))}</td>
-      <td className="px-5 py-4 text-[13px] font-semibold text-main">{formatCurrency(Number(producto.precio_venta || 0))}</td>
+      <td className="px-5 py-4 text-[13px] font-semibold text-main">{precioVariable ? 'Variable' : formatCurrency(Number(producto.precio_venta || 0))}</td>
       <td className="px-5 py-4 text-[12px] text-soft">{Number(producto.iva || 0).toFixed(2)}%</td>
       <td className="px-5 py-4"><Actions producto={producto} onView={onView} onEdit={onEdit} onDelete={onDelete} onAdjustStock={onAdjustStock} /></td>
     </tr>
@@ -375,20 +379,24 @@ const ProductosCards = ({ productos, onView, onEdit, onDelete, onAdjustStock }) 
     {productos.length === 0 ? (
       <div className="col-span-full rounded-xl border border-dashed border-app p-10 text-center text-soft">No hay productos para mostrar.</div>
     ) : productos.map((producto) => {
-      const stockBajo = Number(producto.existencias || 0) <= Number(producto.stock_minimo || 0);
+      const stockBajo =
+        !producto.es_producto_especial &&
+        Number(producto.existencias || 0) <= Number(producto.stock_minimo || 0);
+      const precioVariable =
+        producto.es_producto_especial && Number(producto.precio_venta || 0) <= 0;
       return (
         <article key={producto.id} className="surface p-5 transition hover:-translate-y-0.5 hover:border-[var(--accent-line)]">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="font-mono-ui text-[11px] font-semibold text-[var(--accent)]">{producto.codigo_interno_formateado || producto.codigo_interno}</p>
-              <h3 className="mt-2 text-[15px] font-semibold text-main">{producto.nombre}</h3>
+              <div className="mt-2 flex flex-wrap items-center gap-2"><h3 className="text-[15px] font-semibold text-main">{producto.nombre}</h3>{producto.es_producto_especial && <span className="rounded-full bg-[var(--info-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--info-text)]">Especial</span>}</div>
               <p className="mt-1 text-[12px] text-soft">{producto.categoria_nombre || 'Sin categoria'} · {producto.marca || 'Sin marca'}</p>
             </div>
             <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${stockBajo ? 'bg-[var(--warning-soft)] text-[var(--warning-text)]' : 'bg-[var(--accent-soft)] text-[var(--accent)]'}`}>{Number(producto.existencias || 0)}</span>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-3 rounded-lg border border-app bg-[var(--panel-soft)] p-4">
             <div><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Compra</p><p className="mt-1 text-[13px] font-semibold text-soft">{formatCurrency(Number(producto.precio_compra || 0))}</p></div>
-            <div><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Venta</p><p className="mt-1 text-[13px] font-semibold text-main">{formatCurrency(Number(producto.precio_venta || 0))}</p></div>
+            <div><p className="text-[10px] uppercase tracking-[0.2em] text-muted">Venta</p><p className="mt-1 text-[13px] font-semibold text-main">{precioVariable ? 'Variable' : formatCurrency(Number(producto.precio_venta || 0))}</p></div>
           </div>
           <div className="mt-5"><Actions producto={producto} onView={onView} onEdit={onEdit} onDelete={onDelete} onAdjustStock={onAdjustStock} /></div>
         </article>
@@ -401,7 +409,7 @@ const Actions = ({ producto, onView, onEdit, onDelete, onAdjustStock }) => (
   <div className="flex flex-wrap items-center gap-2">
     <IconButton label="Ver" onClick={() => onView(producto)} icon={<Eye className="h-4 w-4" />} />
     <IconButton label="Editar" onClick={() => onEdit(producto)} icon={<Pencil className="h-4 w-4" />} />
-    <IconButton label="Stock" onClick={() => onAdjustStock(producto)} icon={<SlidersHorizontal className="h-4 w-4" />} />
+    {!producto.es_producto_especial && <IconButton label="Stock" onClick={() => onAdjustStock(producto)} icon={<SlidersHorizontal className="h-4 w-4" />} />}
     <IconButton label="Eliminar" onClick={() => onDelete(producto)} icon={<Trash2 className="h-4 w-4" />} danger />
   </div>
 );

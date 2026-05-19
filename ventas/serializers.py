@@ -45,6 +45,7 @@ class ProductoVentaInfoSerializer(serializers.ModelSerializer):
             'nombre',
             'marca',
             'precio_venta',
+            'es_producto_especial',
             'iva',
             'unidad_medida_codigo',
             'estandar_codigo',
@@ -180,10 +181,23 @@ class DetalleVentaCreateSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         producto = attrs['producto']
+        precio_definido = 'precio_unitario' in attrs
         precio_unitario = attrs.get('precio_unitario', producto.precio_venta)
         cantidad = attrs['cantidad']
         descuento = attrs.get('descuento', Decimal('0.00'))
         subtotal = cantidad * precio_unitario
+
+        if (
+            not producto.es_producto_especial
+            and precio_definido
+            and precio_unitario.quantize(Decimal('0.01'))
+            != producto.precio_venta.quantize(Decimal('0.01'))
+        ):
+            raise serializers.ValidationError({
+                'precio_unitario': _(
+                    'El precio solo se puede cambiar en productos especiales.'
+                ),
+            })
 
         if descuento > subtotal:
             raise serializers.ValidationError({
@@ -361,6 +375,9 @@ class VentaCreateSerializer(serializers.ModelSerializer):
 
         for detalle in detalles:
             producto = detalle['producto']
+            if producto.es_producto_especial:
+                subtotal += detalle['cantidad'] * detalle['precio_unitario']
+                continue
             stock_requerido[producto.pk] += detalle['cantidad']
             subtotal += detalle['cantidad'] * detalle['precio_unitario']
 

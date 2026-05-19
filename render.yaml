@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: mallor-cloud
+    runtime: python
+    plan: starter
+    buildCommand: bash build.sh
+    preDeployCommand: python manage.py migrate
+    startCommand: gunicorn config.wsgi:application
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: DEBUG
+        value: "False"
+      - key: MALLOR_MODE
+        value: cloud
+      - key: MALLOR_LOCAL_SERVER
+        value: "False"
+      - key: MALLOR_SERVE_FRONTEND
+        value: "True"
+      - key: JWT_REFRESH_COOKIE_SECURE
+        value: "True"
+      - key: JWT_REFRESH_COOKIE_SAMESITE
+        value: Lax
+      - key: SECURE_SSL_REDIRECT
+        value: "True"
+      - key: SESSION_COOKIE_SECURE
+        value: "True"
+      - key: CSRF_COOKIE_SECURE
+        value: "True"

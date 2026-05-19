@@ -57,7 +57,11 @@ const ProductoDetail = ({
   }
 
   const margen = Number(producto.margen_ganancia || 0);
-  const stockBajo = Number(producto.existencias || 0) <= Number(producto.stock_minimo || 0);
+  const stockBajo =
+    !producto.es_producto_especial &&
+    Number(producto.existencias || 0) <= Number(producto.stock_minimo || 0);
+  const precioVariable =
+    producto.es_producto_especial && Number(producto.precio_venta || 0) <= 0;
 
   return (
     <div className="space-y-6">
@@ -98,6 +102,11 @@ const ProductoDetail = ({
                     Stock bajo
                   </span>
                 )}
+                {producto.es_producto_especial && (
+                  <span className="inline-flex items-center rounded-full border border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--info-text)]">
+                    Especial
+                  </span>
+                )}
               </div>
 
               <h1 className="font-display text-[2rem] leading-[0.96] text-main md:text-[2.6rem] mt-3 max-w-4xl">
@@ -124,7 +133,9 @@ const ProductoDetail = ({
               <div className="rounded-xl border border-app bg-white/72 p-4">
                 <p className="eyebrow">Precio venta</p>
                 <p className="mt-2 font-display text-[1.85rem] leading-none text-main">
-                  {formatCurrency(Number(producto.precio_venta || 0))}
+                  {precioVariable
+                    ? 'Variable'
+                    : formatCurrency(Number(producto.precio_venta || 0))}
                 </p>
               </div>
               <div className="rounded-xl border border-app bg-white/72 p-4 sm:col-span-3 lg:col-span-1">
@@ -148,14 +159,16 @@ const ProductoDetail = ({
                 <Edit className="h-4 w-4" />
                 Editar producto
               </button>
-              <button
-                type="button"
-                onClick={() => onAdjustStock(producto)}
-                className="app-button-secondary min-h-11"
-              >
-                <SlidersHorizontal className="h-4 w-4" />
-                Ajustar stock
-              </button>
+              {!producto.es_producto_especial && (
+                <button
+                  type="button"
+                  onClick={() => onAdjustStock(producto)}
+                  className="app-button-secondary min-h-11"
+                >
+                  <SlidersHorizontal className="h-4 w-4" />
+                  Ajustar stock
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => onDelete(producto)}
