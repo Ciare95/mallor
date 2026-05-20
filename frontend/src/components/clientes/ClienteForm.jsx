@@ -1,5 +1,5 @@
 import { createElement, useDeferredValue, useMemo, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Building2,
@@ -90,38 +90,22 @@ export default function ClienteForm({
   const canSubmit = Object.keys(validationErrors).length === 0;
   const showVerificationDigit = form.tipo_documento === 'NIT';
 
-  const autocompleteMutation = useMutation({
-    mutationFn: autocompletarCliente,
-    onSuccess: (data) => {
-      if (!data?.found) {
-        setAutocompleteMessage(
-          data?.message ||
-          'Factus no encontro datos. Puedes crear el cliente manualmente.',
-        );
-        return;
-      }
-
-      setForm((current) => ({
-        ...current,
-        tipo_cliente: data.tipo_cliente || current.tipo_cliente,
-        tipo_documento: data.tipo_documento || current.tipo_documento,
-        numero_documento: data.numero_documento || current.numero_documento,
-        digito_verificacion:
-          data.digito_verificacion || current.digito_verificacion,
-        nombre: data.nombre || current.nombre,
-        razon_social: data.razon_social || current.razon_social,
-        email: data.email || current.email,
-      }));
-      setAutocompleteMessage('Datos encontrados en Factus. Revisa antes de guardar.');
-    },
-    onError: (error) => {
-      const message = (
-        error?.response?.data?.error ||
-        'No fue posible consultar Factus. Puedes crear el cliente manualmente.'
-      );
-      setAutocompleteMessage(message);
-    },
+  const autocompleteQuery = useQuery({
+    queryKey: [
+      'clientes',
+      'autocompletar',
+      form.tipo_documento,
+      deferredDocumento,
+    ],
+    queryFn: () =>
+      autocompletarCliente({
+        tipoDocumento: form.tipo_documento,
+        numeroDocumento: deferredDocumento,
+      }),
+    enabled: deferredDocumento.length >= 3,
+    retry: false,
   });
+  const autocompleteAvailable = Boolean(autocompleteQuery.data?.found);
 
   const setField = (field, value) => {
     setForm((current) => {
@@ -190,20 +174,22 @@ export default function ClienteForm({
   };
 
   const handleAutocomplete = () => {
-    const numeroDocumento = form.numero_documento.trim();
-    if (!numeroDocumento) {
-      setTouched((current) => ({
-        ...current,
-        numero_documento: true,
-      }));
-      setAutocompleteMessage('Ingresa el documento antes de autocompletar.');
+    if (!autocompleteAvailable) {
       return;
     }
-
-    autocompleteMutation.mutate({
-      tipoDocumento: form.tipo_documento,
-      numeroDocumento,
-    });
+    const data = autocompleteQuery.data;
+    setForm((current) => ({
+      ...current,
+      tipo_cliente: data.tipo_cliente || current.tipo_cliente,
+      tipo_documento: data.tipo_documento || current.tipo_documento,
+      numero_documento: data.numero_documento || current.numero_documento,
+      digito_verificacion:
+        data.digito_verificacion || current.digito_verificacion,
+      nombre: data.nombre || current.nombre,
+      razon_social: data.razon_social || current.razon_social,
+      email: data.email || current.email,
+    }));
+    setAutocompleteMessage('Datos cargados. Revisa antes de guardar.');
   };
 
   const title = isEdit
@@ -256,14 +242,22 @@ export default function ClienteForm({
                     ? 'Verificando disponibilidad...'
                     : 'Documento unico por tipo.'
                 }
+                statusBadge={
+                  deferredDocumento.length >= 3 && !autocompleteQuery.isFetching
+                    ? {
+                        label: autocompleteAvailable ? 'Disponible' : 'No disponible',
+                        tone: autocompleteAvailable ? 'available' : 'unavailable',
+                      }
+                    : null
+                }
               />
               <button
                 type="button"
                 onClick={handleAutocomplete}
-                disabled={autocompleteMutation.isPending || !form.numero_documento.trim()}
+                disabled={autocompleteQuery.isFetching || !autocompleteAvailable}
                 className="app-button-secondary min-h-11 justify-center"
               >
-                {autocompleteMutation.isPending ? (
+                {autocompleteQuery.isFetching ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Sparkles className="h-4 w-4" />
@@ -308,6 +302,41 @@ export default function ClienteForm({
               {autocompleteMessage}
             </div>
           )}
+
+          {!autocompleteMessage
+            && deferredDocumento.length >= 3
+            && autocompleteQuery.isFetching && (
+              <div className="rounded-xl border border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] px-4 py-3 text-sm text-[var(--info-text)]">
+                Consultando si el documento existe.
+              </div>
+            )}
+
+          {!autocompleteMessage
+            && deferredDocumento.length >= 3
+            && !autocompleteQuery.isFetching
+            && autocompleteAvailable && (
+              <div className="rounded-xl border border-[var(--accent-line)] bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--accent)]">
+                Documento encontrado. Ya puedes usar autocompletar.
+              </div>
+            )}
+
+          {!autocompleteMessage
+            && deferredDocumento.length >= 3
+            && !autocompleteQuery.isFetching
+            && !autocompleteAvailable
+            && !autocompleteQuery.isError && (
+              <div className="rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-4 py-3 text-sm text-[var(--warning-text)]">
+                Documento no encontrado. El boton queda bloqueado y puedes continuar manualmente.
+              </div>
+            )}
+
+          {!autocompleteMessage
+            && deferredDocumento.length >= 3
+            && autocompleteQuery.isError && (
+              <div className="rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-4 py-3 text-sm text-[var(--warning-text)]">
+                No fue posible validar el documento. Puedes crear el cliente manualmente.
+              </div>
+            )}
 
           {form.tipo_cliente === 'JURIDICO' && (
             <div className="grid gap-4 lg:grid-cols-2">
@@ -535,6 +564,7 @@ function InputField({
   onBlur,
   error,
   helper,
+  statusBadge,
   icon,
   type = 'text',
   min,
@@ -550,7 +580,20 @@ function InputField({
 
   return (
     <label className="app-field">
-      <span className="app-field-label">{label}</span>
+      <div className="flex items-center justify-between gap-3">
+        <span className="app-field-label">{label}</span>
+        {statusBadge && (
+          <span
+            className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+              statusBadge.tone === 'available'
+                ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                : 'border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] text-[var(--warning-text)]'
+            }`}
+          >
+            {statusBadge.label}
+          </span>
+        )}
+      </div>
       <div className="relative">
         {iconNode}
         <input

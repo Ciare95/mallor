@@ -1,25 +1,49 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createElement,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   BadgePercent,
+  Building2,
   CreditCard,
   Loader2,
   Plus,
   ScanLine,
+  Sparkles,
   Trash2,
   UserPlus,
+  UserRound,
 } from 'lucide-react';
 import { buscarProductos } from '../../services/inventario.service';
 import {
+  autocompletarClientePos,
   buscarClientesVenta,
-  crearClienteTemporal,
+  crearClientePosRapido,
 } from '../../services/ventas.service';
+import MunicipioLookupField from '../forms/MunicipioLookupField';
 import {
   calculateVentaTotals,
   CONSUMIDOR_FINAL,
   getSuggestedCashAmounts,
 } from '../../utils/ventas';
+import {
+  buildClientePayload,
+  createClienteFormState,
+  DOCUMENTO_LABELS,
+  TIPO_CLIENTE_LABELS,
+  validateClienteForm,
+} from '../../utils/clientes';
 import { formatCurrency } from '../../utils/formatters';
+import { getDepartamentoByMunicipioCode } from '../../utils/municipios';
+import {
+  calculateNitVerificationDigit,
+  sanitizeNumeric,
+} from '../../utils/nit';
 import { EmptyState, SectionShell, StatusBadge } from './shared';
 
 export default function VentaForm({
@@ -492,7 +516,7 @@ export default function VentaForm({
                   className="app-button-secondary min-h-10"
                 >
                   <UserPlus className="h-4 w-4" />
-                  Cliente rapido
+                  Crear cliente
                 </button>
               </div>
 
@@ -694,10 +718,11 @@ export default function VentaForm({
         open={showClientModal}
         onClose={() => setShowClientModal(false)}
         onCreate={async (payload) => {
-          const cliente = await crearClienteTemporal(payload);
+          const cliente = await crearClientePosRapido(payload);
           onCreateQuickClient(cliente);
           setShowClientModal(false);
         }}
+        facturaElectronica={draft.facturaElectronica}
       />
 
       <CobroModal
@@ -1098,41 +1123,160 @@ function CobroModal({
   );
 }
 
-function QuickClientModal({ open, onClose, onCreate }) {
-  const [form, setForm] = useState({
-    nombre_completo: '',
-    numero_documento: '',
-    telefono: '',
-    email: '',
+function QuickClientModal({ open, onClose, onCreate, facturaElectronica }) {
+  const [form, setForm] = useState(() => createClienteFormState());
+  const [errors, setErrors] = useState({});
+  const [submitError, setSubmitError] = useState('');
+  const [helperMessage, setHelperMessage] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const deferredDocumento = useDeferredValue(form.numero_documento.trim());
+
+  useEffect(() => {
+    if (!open) {
+      setForm(createClienteFormState());
+      setErrors({});
+      setSubmitError('');
+      setHelperMessage('');
+      setIsSaving(false);
+    }
+  }, [open]);
+
+  const autocompleteQuery = useQuery({
+    queryKey: [
+      'ventas',
+      'pos',
+      'cliente-autocompletar',
+      form.tipo_documento,
+      deferredDocumento,
+    ],
+    queryFn: () =>
+      autocompletarClientePos({
+        tipoDocumento: form.tipo_documento,
+        numeroDocumento: deferredDocumento,
+      }),
+    enabled: open && deferredDocumento.length >= 3,
+    retry: false,
   });
 
   if (!open) {
     return null;
   }
 
-  const canSubmit =
-    form.nombre_completo.trim().length >= 3 &&
-    form.numero_documento.trim().length >= 3;
+  const validationErrors = validateClienteForm({
+    form,
+    duplicateDocument: false,
+  });
+  const canSubmit = Object.keys(validationErrors).length === 0 && !isSaving;
+  const autocompleteAvailable = Boolean(autocompleteQuery.data?.found);
 
-  const handleChange = (field, value) => {
+  const setField = (field, value) => {
+    setForm((current) => {
+      const isNitDocument = current.tipo_documento === 'NIT';
+      const normalizedValue =
+        field === 'numero_documento' && isNitDocument
+          ? sanitizeNumeric(value)
+          : value;
+      const next = {
+        ...current,
+        [field]: normalizedValue,
+      };
+
+      if (field === 'tipo_documento') {
+        next.tipo_cliente = value === 'NIT' ? 'JURIDICO' : current.tipo_cliente;
+        next.digito_verificacion =
+          value === 'NIT'
+            ? calculateNitVerificationDigit(next.numero_documento)
+            : '';
+      }
+
+      if (field === 'numero_documento') {
+        next.digito_verificacion =
+          current.tipo_documento === 'NIT'
+            ? calculateNitVerificationDigit(normalizedValue)
+            : '';
+      }
+
+      return next;
+    });
+    setErrors((current) => ({ ...current, [field]: undefined }));
+    if (field === 'tipo_documento' || field === 'numero_documento') {
+      setHelperMessage('');
+    }
+    setSubmitError('');
+  };
+
+  const setMunicipio = (municipio) => {
     setForm((current) => ({
       ...current,
-      [field]: value,
+      ciudad: municipio?.name || '',
+      departamento: municipio
+        ? getDepartamentoByMunicipioCode(municipio.code)
+        : '',
+      municipio_codigo: municipio?.code || '',
     }));
+    setErrors((current) => ({
+      ...current,
+      municipio_codigo: undefined,
+      ciudad: undefined,
+      departamento: undefined,
+    }));
+  };
+
+  const markValidationErrors = () => {
+    setErrors(validationErrors);
+    return validationErrors;
+  };
+
+  const handleAutocomplete = () => {
+    if (!autocompleteAvailable) {
+      return;
+    }
+
+    const data = autocompleteQuery.data;
+    setForm((current) => ({
+      ...current,
+      tipo_cliente: data.tipo_cliente || current.tipo_cliente,
+      tipo_documento: data.tipo_documento || current.tipo_documento,
+      numero_documento: data.numero_documento || current.numero_documento,
+      digito_verificacion:
+        data.digito_verificacion || current.digito_verificacion,
+      nombre: data.nombre || current.nombre,
+      razon_social: data.razon_social || current.razon_social,
+      email: data.email || current.email,
+    }));
+    setHelperMessage('Datos cargados. Revisa y completa el resto.');
+  };
+
+  const handleSubmit = async () => {
+    const currentErrors = markValidationErrors();
+    if (Object.keys(currentErrors).length > 0) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSubmitError('');
+    try {
+      await onCreate(buildClientePayload(form));
+    } catch (error) {
+      setSubmitError(
+        error?.response?.data?.error ||
+        'No fue posible crear el cliente desde POS.',
+      );
+      setIsSaving(false);
+    }
   };
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/40 px-4 py-8 backdrop-blur-sm">
-      <div className="surface w-full max-w-xl p-6">
+      <div className="surface w-full max-w-3xl p-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="eyebrow">Cliente rapido</div>
+            <div className="eyebrow">Cliente POS</div>
             <h3 className="mt-2 font-display text-2xl text-main">
-              Registro temporal
+              Crear cliente rapido
             </h3>
             <p className="mt-2 text-[13px] leading-6 text-soft">
-              Se usa para operar la venta aun cuando el modulo de clientes no
-              este expuesto en la API.
+              Registra el cliente sin salir de la venta. Queda disponible de inmediato para POS y facturacion.
             </p>
           </div>
           <button
@@ -1144,54 +1288,200 @@ function QuickClientModal({ open, onClose, onCreate }) {
           </button>
         </div>
 
-        <div className="mt-6 grid gap-4 md:grid-cols-2">
-          <label className="space-y-2 md:col-span-2">
-            <span className="text-[13px] font-semibold text-main">
-              Nombre o razon social
-            </span>
-            <input
-              type="text"
-              value={form.nombre_completo}
-              onChange={(event) =>
-                handleChange('nombre_completo', event.target.value)
-              }
-              className="app-input min-h-10"
-            />
+        {facturaElectronica && (
+          <div className="mt-4 rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-4 py-3 text-[12px] text-[var(--warning-text)]">
+            Esta venta solicita factura electronica. Completa municipio, direccion y telefono para evitar rechazo al emitir.
+          </div>
+        )}
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-2">
+          <label className="app-field">
+            <span className="app-field-label">Tipo de cliente</span>
+            <select
+              value={form.tipo_cliente}
+              onChange={(event) => setField('tipo_cliente', event.target.value)}
+              className="app-select min-h-11"
+            >
+              {Object.entries(TIPO_CLIENTE_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
           </label>
-          <label className="space-y-2">
-            <span className="text-[13px] font-semibold text-main">
-              Documento
-            </span>
+          <label className="app-field">
+            <span className="app-field-label">Tipo de documento</span>
+            <select
+              value={form.tipo_documento}
+              onChange={(event) => setField('tipo_documento', event.target.value)}
+              className="app-select min-h-11"
+            >
+              {Object.entries(DOCUMENTO_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="app-field">
+            <div className="flex items-center justify-between gap-3">
+              <span className="app-field-label">Numero de documento</span>
+              {deferredDocumento.length >= 3 && !autocompleteQuery.isFetching && (
+                <span
+                  className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+                    autocompleteAvailable
+                      ? 'border-[var(--accent-line)] bg-[var(--accent-soft)] text-[var(--accent)]'
+                      : 'border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] text-[var(--warning-text)]'
+                  }`}
+                >
+                  {autocompleteAvailable ? 'Disponible' : 'No disponible'}
+                </span>
+              )}
+            </div>
             <input
               type="text"
               value={form.numero_documento}
-              onChange={(event) =>
-                handleChange('numero_documento', event.target.value)
-              }
-              className="app-input min-h-10"
+              onChange={(event) => setField('numero_documento', event.target.value)}
+              className={`app-input min-h-11 ${errors.numero_documento ? 'border-[var(--danger)]' : ''}`}
             />
+            {errors.numero_documento && (
+              <span className="text-[12px] text-[var(--danger)]">
+                {errors.numero_documento}
+              </span>
+            )}
           </label>
-          <label className="space-y-2">
-            <span className="text-[13px] font-semibold text-main">
-              Telefono
-            </span>
-            <input
-              type="text"
-              value={form.telefono}
-              onChange={(event) => handleChange('telefono', event.target.value)}
-              className="app-input min-h-10"
+          <div className="grid gap-2">
+            {form.tipo_documento === 'NIT' ? (
+              <label className="app-field">
+                <span className="app-field-label">Digito de verificacion</span>
+                <input
+                  type="text"
+                  readOnly
+                  value={form.digito_verificacion}
+                  className="app-input min-h-11 bg-[var(--panel-soft)] text-soft"
+                />
+              </label>
+            ) : (
+              <div />
+            )}
+            <button
+              type="button"
+              onClick={handleAutocomplete}
+              disabled={autocompleteQuery.isFetching || !autocompleteAvailable}
+              className="app-button-secondary min-h-11 justify-center"
+            >
+              {autocompleteQuery.isFetching ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Sparkles className="h-4 w-4" />
+              )}
+              Autocompletar datos
+            </button>
+          </div>
+          {form.tipo_cliente === 'NATURAL' ? (
+            <QuickClientInput
+              label="Nombre completo"
+              value={form.nombre}
+              error={errors.nombre}
+              icon={UserRound}
+              onChange={(value) => setField('nombre', value)}
+              className="lg:col-span-2"
             />
-          </label>
-          <label className="space-y-2 md:col-span-2">
-            <span className="text-[13px] font-semibold text-main">Email</span>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(event) => handleChange('email', event.target.value)}
-              className="app-input min-h-10"
+          ) : (
+            <QuickClientInput
+              label="Razon social"
+              value={form.razon_social}
+              error={errors.razon_social}
+              icon={Building2}
+              onChange={(value) => setField('razon_social', value)}
+              className="lg:col-span-2"
             />
-          </label>
+          )}
+          {form.tipo_cliente === 'JURIDICO' && (
+            <QuickClientInput
+              label="Nombre comercial"
+              value={form.nombre_comercial}
+              onChange={(value) => setField('nombre_comercial', value)}
+              className="lg:col-span-2"
+            />
+          )}
+          <QuickClientInput
+            label="Telefono"
+            value={form.telefono}
+            error={errors.telefono}
+            onChange={(value) => setField('telefono', value)}
+          />
+          <QuickClientInput
+            label="Correo"
+            type="email"
+            value={form.email}
+            error={errors.email}
+            onChange={(value) => setField('email', value)}
+          />
+          <QuickClientInput
+            label="Direccion"
+            value={form.direccion}
+            error={errors.direccion}
+            onChange={(value) => setField('direccion', value)}
+            className="lg:col-span-2"
+          />
+          <div className="lg:col-span-2">
+            <MunicipioLookupField
+              label="Municipio DIAN"
+              code={form.municipio_codigo}
+              required
+              error={errors.municipio_codigo}
+              helper="Selecciona el municipio para completar ciudad y departamento."
+              onCodeChange={(value) => setField('municipio_codigo', value)}
+              onMunicipioSelect={setMunicipio}
+            />
+          </div>
         </div>
+
+        {helperMessage && (
+          <div className="mt-4 rounded-xl border border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] px-4 py-3 text-[12px] text-[var(--info-text)]">
+            {helperMessage}
+          </div>
+        )}
+
+        {!helperMessage && deferredDocumento.length >= 3 && autocompleteQuery.isFetching && (
+          <div className="mt-4 rounded-xl border border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] px-4 py-3 text-[12px] text-[var(--info-text)]">
+            Consultando si el documento existe.
+          </div>
+        )}
+
+        {!helperMessage
+          && deferredDocumento.length >= 3
+          && !autocompleteQuery.isFetching
+          && autocompleteAvailable && (
+            <div className="mt-4 rounded-xl border border-[var(--accent-line)] bg-[var(--accent-soft)] px-4 py-3 text-[12px] text-[var(--accent)]">
+              Documento encontrado. Ya puedes usar autocompletar.
+            </div>
+          )}
+
+        {!helperMessage
+          && deferredDocumento.length >= 3
+          && !autocompleteQuery.isFetching
+          && !autocompleteAvailable
+          && !autocompleteQuery.isError && (
+            <div className="mt-4 rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-4 py-3 text-[12px] text-[var(--warning-text)]">
+              Documento no encontrado. El boton queda bloqueado y puedes continuar manualmente.
+            </div>
+          )}
+
+        {!helperMessage
+          && deferredDocumento.length >= 3
+          && autocompleteQuery.isError && (
+            <div className="mt-4 rounded-xl border border-[rgba(149,100,0,0.18)] bg-[var(--warning-soft)] px-4 py-3 text-[12px] text-[var(--warning-text)]">
+              No fue posible validar el documento. Puedes completar el cliente manualmente.
+            </div>
+          )}
+
+        {submitError && (
+          <div className="mt-4 rounded-xl border border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] px-4 py-3 text-[12px] text-[var(--danger-text)]">
+            {submitError}
+          </div>
+        )}
 
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
           <button
@@ -1204,14 +1494,51 @@ function QuickClientModal({ open, onClose, onCreate }) {
           <button
             type="button"
             disabled={!canSubmit}
-            onClick={() => onCreate(form)}
+            onClick={handleSubmit}
             className="app-button-primary min-h-10 disabled:opacity-50"
           >
-            <UserPlus className="h-4 w-4" />
-            Usar cliente temporal
+            {isSaving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <UserPlus className="h-4 w-4" />
+            )}
+            Crear y usar cliente
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+function QuickClientInput({
+  label,
+  value,
+  onChange,
+  error,
+  icon,
+  type = 'text',
+  className = '',
+}) {
+  const iconNode = icon
+    ? createElement(icon, {
+        className:
+          'pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted',
+      })
+    : null;
+
+  return (
+    <label className={`app-field ${className}`.trim()}>
+      <span className="app-field-label">{label}</span>
+      <div className="relative">
+        {iconNode}
+        <input
+          type={type}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className={`app-input min-h-11 ${icon ? 'pl-10' : ''} ${error ? 'border-[var(--danger)]' : ''}`}
+        />
+      </div>
+      {error && <span className="text-[12px] text-[var(--danger)]">{error}</span>}
+    </label>
   );
 }

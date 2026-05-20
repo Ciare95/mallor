@@ -2,6 +2,10 @@ import api from './api';
 import { obtenerProductosMasVendidos } from './inventario.service';
 import { registrarAbonoVenta } from './abonos.service';
 import {
+  autocompletarCliente,
+  crearCliente,
+} from './clientes.service';
+import {
   calculateVentaTotals,
   CONSUMIDOR_FINAL,
   buildVentaPayload,
@@ -243,6 +247,20 @@ export const buscarClientesVenta = async (query = '', temporales = []) => {
 
 export const crearClienteTemporal = async (data) => createTemporaryClient(data);
 
+export const crearClientePosRapido = async (data) => {
+  const cliente = await crearCliente(data);
+  return {
+    ...cliente,
+    persisted: true,
+    esTemporal: false,
+  };
+};
+
+export const autocompletarClientePos = async ({
+  tipoDocumento,
+  numeroDocumento,
+}) => autocompletarCliente({ tipoDocumento, numeroDocumento });
+
 export default {
   listarVentas,
   buscarVentas,
@@ -262,4 +280,6 @@ export default {
   obtenerProductosTopVentas,
   buscarClientesVenta,
   crearClienteTemporal,
+  crearClientePosRapido,
+  autocompletarClientePos,
 };

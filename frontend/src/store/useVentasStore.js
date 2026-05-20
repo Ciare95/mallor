@@ -303,9 +303,15 @@ export const useVentasStore = create((set) => ({
     ),
   registrarClienteTemporal: (payload) =>
     set((state) => {
-      const cliente = payload.esTemporal
-        ? payload
-        : createTemporaryClient(payload);
+      const cliente = payload?.id && !payload?.esTemporal
+        ? {
+            ...payload,
+            persisted: true,
+            esTemporal: false,
+          }
+        : payload.esTemporal
+          ? payload
+          : createTemporaryClient(payload);
       const nextDraft = {
         ...state.draft,
         clienteSeleccionado: cliente,

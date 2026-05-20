@@ -6,7 +6,8 @@ import VentaForm from './VentaForm';
 const serviceMocks = vi.hoisted(() => ({
   buscarProductos: vi.fn(),
   buscarClientesVenta: vi.fn(),
-  crearClienteTemporal: vi.fn(),
+  crearClientePosRapido: vi.fn(),
+  autocompletarClientePos: vi.fn(),
 }));
 
 vi.mock('../../services/inventario.service', () => ({
@@ -15,7 +16,8 @@ vi.mock('../../services/inventario.service', () => ({
 
 vi.mock('../../services/ventas.service', () => ({
   buscarClientesVenta: serviceMocks.buscarClientesVenta,
-  crearClienteTemporal: serviceMocks.crearClienteTemporal,
+  crearClientePosRapido: serviceMocks.crearClientePosRapido,
+  autocompletarClientePos: serviceMocks.autocompletarClientePos,
 }));
 
 const baseProps = {
@@ -53,7 +55,8 @@ const baseProps = {
 describe('VentaForm keyboard search', () => {
   beforeEach(() => {
     serviceMocks.buscarClientesVenta.mockResolvedValue([]);
-    serviceMocks.crearClienteTemporal.mockResolvedValue({});
+    serviceMocks.crearClientePosRapido.mockResolvedValue({});
+    serviceMocks.autocompletarClientePos.mockResolvedValue({ found: false });
     Object.values(baseProps).forEach((value) => {
       if (typeof value?.mockReset === 'function') {
         value.mockReset();
@@ -183,5 +186,66 @@ describe('VentaForm keyboard search', () => {
     );
 
     expect(screen.getByLabelText(/precio fijo/i)).toBeDisabled();
+  });
+
+  it('crea un cliente real desde POS y lo selecciona', async () => {
+    serviceMocks.crearClientePosRapido.mockResolvedValue({
+      id: 77,
+      nombre_completo: 'Cliente POS SAS',
+      numero_documento: '900373913',
+      persisted: true,
+      esTemporal: false,
+    });
+
+    renderWithProviders(
+      <VentaForm
+        {...baseProps}
+        draft={{
+          ...baseProps.draft,
+          facturaElectronica: true,
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /crear cliente/i }));
+    fireEvent.change(screen.getByLabelText(/tipo de documento/i), {
+      target: { value: 'NIT' },
+    });
+    fireEvent.change(screen.getByLabelText(/numero de documento/i), {
+      target: { value: '900373913' },
+    });
+    fireEvent.change(screen.getByLabelText(/razon social/i), {
+      target: { value: 'Cliente POS SAS' },
+    });
+    fireEvent.change(screen.getByLabelText(/^telefono$/i), {
+      target: { value: '3001234567' },
+    });
+    fireEvent.change(screen.getByLabelText(/^direccion$/i), {
+      target: { value: 'Calle 1 # 2-3' },
+    });
+    fireEvent.change(screen.getByLabelText(/municipio dian/i), {
+      target: { value: '11001' },
+    });
+
+    fireEvent.click(
+      screen.getByRole('button', { name: /crear y usar cliente/i }),
+    );
+
+    await waitFor(() =>
+      expect(serviceMocks.crearClientePosRapido).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tipo_documento: 'NIT',
+          numero_documento: '900373913',
+          razon_social: 'Cliente POS SAS',
+          telefono: '3001234567',
+          direccion: 'Calle 1 # 2-3',
+          municipio_codigo: '11001',
+        }),
+      ),
+    );
+
+    expect(baseProps.onCreateQuickClient).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 77, persisted: true }),
+    );
   });
 });
