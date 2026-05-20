@@ -17,6 +17,7 @@ export const DEFAULT_TICKET_SETTINGS = {
   paperWidth: '80',
   showLogo: true,
   copies: 1,
+  footerText: '',
 };
 
 export const PAPER_OPTIONS = [
@@ -52,6 +53,7 @@ function normalizeSettings(settings = {}) {
     paperWidth: settings.paperWidth === '58' ? '58' : '80',
     showLogo: settings.showLogo !== false,
     copies: clampCopies(settings.copies),
+    footerText: String(settings.footerText ?? settings.ticket_footer_text ?? ''),
   };
 }
 
@@ -423,6 +425,7 @@ export function buildThermalTicketData({
       : isElectronic ? LEGAL_TEXT_ELECTRONIC : LEGAL_TEXT_STANDARD,
     resolution: buildResolutionSection(factura),
     softwareFooter: SOFTWARE_FOOTER,
+    footerText: normalizedSettings.footerText,
     observations: venta.observaciones || '',
   };
 }
@@ -726,6 +729,14 @@ export function ThermalTicket({
       {ticket.observations && (
         <TicketSection title="Observaciones">
           <div className="thermal-ticket__legal">{ticket.observations}</div>
+        </TicketSection>
+      )}
+
+      {ticket.footerText && (
+        <TicketSection>
+          <div className="thermal-ticket__custom-footer">
+            {ticket.footerText}
+          </div>
         </TicketSection>
       )}
 

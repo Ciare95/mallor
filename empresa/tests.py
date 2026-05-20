@@ -307,6 +307,10 @@ class EmpresaApiTest(TestCase):
             empresa['configuracion_operativa']['atajos_ventas'],
             EmpresaConfiguracion.get_default_atajos_ventas(),
         )
+        self.assertEqual(
+            empresa['configuracion_operativa']['ticket_footer_text'],
+            '',
+        )
 
     def test_admin_puede_consultar_y_actualizar_configuracion_operativa(self):
         response = self.client.get(
@@ -331,6 +335,9 @@ class EmpresaApiTest(TestCase):
                     'nueva_precuenta': 'Ctrl+Shift+N',
                     'quitar_ultimo_producto': 'Supr',
                 },
+                'ticket_footer_text': (
+                    'No se aceptan devoluciones despues de 24 horas.'
+                ),
             },
             format='json',
         )
@@ -349,6 +356,10 @@ class EmpresaApiTest(TestCase):
                 'nueva_precuenta': 'Ctrl+Shift+N',
                 'quitar_ultimo_producto': 'Delete',
             },
+        )
+        self.assertEqual(
+            patch_response.data['ticket_footer_text'],
+            'No se aceptan devoluciones despues de 24 horas.',
         )
 
     def test_empleado_no_puede_ver_ni_editar_configuracion_operativa(self):

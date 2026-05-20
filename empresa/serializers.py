@@ -92,6 +92,7 @@ class EmpresaConfiguracionSerializer(serializers.ModelSerializer):
             'ticket_paper_width',
             'ticket_show_logo',
             'ticket_copies',
+            'ticket_footer_text',
         ]
 
     def validate_ticket_paper_width(self, value):
@@ -108,6 +109,14 @@ class EmpresaConfiguracionSerializer(serializers.ModelSerializer):
         if value < 1 or value > 5:
             raise serializers.ValidationError(
                 'Las copias deben estar entre 1 y 5.',
+            )
+        return value
+
+    def validate_ticket_footer_text(self, value):
+        value = str(value or '').strip()
+        if len(value) > 500:
+            raise serializers.ValidationError(
+                'El texto de la tirilla no puede superar 500 caracteres.',
             )
         return value
 

@@ -46,6 +46,7 @@ describe('MiEmpresa modules', () => {
           ticket_paper_width: '80',
           ticket_show_logo: true,
           ticket_copies: 1,
+          ticket_footer_text: '',
         },
       },
       empresaActivaId: '12',
@@ -62,6 +63,7 @@ describe('MiEmpresa modules', () => {
         ticket_paper_width: '80',
         ticket_show_logo: true,
         ticket_copies: 1,
+        ticket_footer_text: '',
       },
       temaActual: 'LIGHT',
     });
@@ -119,6 +121,7 @@ describe('MiEmpresa modules', () => {
       ticket_paper_width: '58',
       ticket_show_logo: false,
       ticket_copies: 2,
+      ticket_footer_text: 'No se aceptan devoluciones despues de 24 horas.',
     });
 
     renderWithProviders(<MiEmpresaConfiguracionPage />, {
@@ -140,6 +143,10 @@ describe('MiEmpresa modules', () => {
     await user.click(
       screen.getByRole('button', { name: /mostrar logo en tirilla/i }),
     );
+    await user.type(
+      screen.getByRole('textbox', { name: /añadir texto a tirilla/i }),
+      'No se aceptan devoluciones despues de 24 horas.',
+    );
 
     const shortcutInput = screen.getByDisplayValue('Ctrl+V');
     shortcutInput.focus();
@@ -156,6 +163,9 @@ describe('MiEmpresa modules', () => {
           ticket_paper_width: '58',
           ticket_show_logo: false,
           ticket_copies: 2,
+          ticket_footer_text: (
+            'No se aceptan devoluciones despues de 24 horas.'
+          ),
           atajos_ventas: expect.objectContaining({
             registrar_venta: 'Ctrl+Shift+R',
           }),

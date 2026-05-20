@@ -15,6 +15,7 @@ export const DEFAULT_TICKET_PREFERENCES = {
   paperWidth: '80',
   showLogo: true,
   copies: 1,
+  footerText: '',
 };
 
 export const DEFAULT_CONFIGURACION_OPERATIVA = {
@@ -25,6 +26,7 @@ export const DEFAULT_CONFIGURACION_OPERATIVA = {
   ticket_paper_width: DEFAULT_TICKET_PREFERENCES.paperWidth,
   ticket_show_logo: DEFAULT_TICKET_PREFERENCES.showLogo,
   ticket_copies: DEFAULT_TICKET_PREFERENCES.copies,
+  ticket_footer_text: DEFAULT_TICKET_PREFERENCES.footerText,
 };
 
 const storedUser = sessionStorage.getItem('mallor_user');
@@ -70,6 +72,7 @@ export const normalizeTicketPreferences = (settings = {}) => ({
     ),
     5,
   ),
+  footerText: String(settings.footerText ?? settings.ticket_footer_text ?? ''),
 });
 
 export const loadLastTicketPreferences = (empresaId, userId) => {
@@ -98,7 +101,11 @@ export const persistLastTicketPreferences = (empresaId, userId, settings) => {
 
   localStorage.setItem(
     getTicketPreferencesStorageKey(empresaId, userId),
-    JSON.stringify(normalizeTicketPreferences(settings)),
+    JSON.stringify({
+      paperWidth: normalizeTicketPreferences(settings).paperWidth,
+      showLogo: normalizeTicketPreferences(settings).showLogo,
+      copies: normalizeTicketPreferences(settings).copies,
+    }),
   );
 };
 
@@ -110,7 +117,10 @@ export const resolveTicketPreferences = ({
 } = {}) => {
   const lastUsed = loadLastTicketPreferences(empresaId, userId);
   if (lastUsed) {
-    return lastUsed;
+    return normalizeTicketPreferences({
+      ...lastUsed,
+      footerText: config?.ticket_footer_text || '',
+    });
   }
 
   return normalizeTicketPreferences({
@@ -129,6 +139,7 @@ const normalizeConfiguracionOperativa = (config = {}) => ({
   ticket_paper_width: normalizeTicketPreferences(config).paperWidth,
   ticket_show_logo: normalizeTicketPreferences(config).showLogo,
   ticket_copies: normalizeTicketPreferences(config).copies,
+  ticket_footer_text: normalizeTicketPreferences(config).footerText,
 });
 
 const normalizeEmpresaMedia = (empresa) => {

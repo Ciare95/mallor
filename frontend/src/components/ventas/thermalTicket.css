@@ -345,6 +345,16 @@
   color: rgba(17, 17, 17, 0.9);
 }
 
+.thermal-ticket__custom-footer {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: center;
+  font-size: 0.9em;
+  font-weight: 700;
+  line-height: 1.42;
+  color: #111;
+}
+
 .thermal-ticket__qr {
   display: flex;
   align-items: center;

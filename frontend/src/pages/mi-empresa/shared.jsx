@@ -61,6 +61,7 @@ export const buildConfigPayload = (config) => ({
   ticket_paper_width: config.ticket_paper_width,
   ticket_show_logo: config.ticket_show_logo,
   ticket_copies: config.ticket_copies,
+  ticket_footer_text: config.ticket_footer_text || '',
 });
 
 export function useMiEmpresaModule() {
@@ -741,6 +742,24 @@ export function EmpresaConfigSection({
               disabled={!puedeEditar}
               onChange={(checked) => setConfigField('ticket_show_logo', checked)}
             />
+          </div>
+
+          <div className="mt-5">
+            <label className="app-field">
+              <span className="app-field-label">
+                Añadir texto a tirilla
+              </span>
+              <textarea
+                value={configForm.ticket_footer_text || ''}
+                disabled={!puedeEditar}
+                maxLength={500}
+                onChange={(event) =>
+                  setConfigField('ticket_footer_text', event.target.value)
+                }
+                className="app-textarea min-h-24"
+                placeholder="No se aceptan devoluciones despues de 24 horas."
+              />
+            </label>
           </div>
         </div>
 

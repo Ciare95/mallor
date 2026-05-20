@@ -27,6 +27,7 @@ const resetStore = () => {
       ticket_paper_width: '80',
       ticket_show_logo: true,
       ticket_copies: 1,
+      ticket_footer_text: '',
     },
     temaActual: 'LIGHT',
     iaSesionActivaId: null,
@@ -59,6 +60,7 @@ describe('useAppStore', () => {
         ticket_paper_width: '58',
         ticket_show_logo: false,
         ticket_copies: 2,
+        ticket_footer_text: 'No se aceptan devoluciones.',
       },
     });
 
@@ -95,6 +97,7 @@ describe('useAppStore', () => {
       ticket_paper_width: '58',
       ticket_show_logo: false,
       ticket_copies: 3,
+      ticket_footer_text: 'Gracias por su compra.',
     });
 
     expect(useAppStore.getState().temaActual).toBe('DARK');
@@ -109,6 +112,9 @@ describe('useAppStore', () => {
       false,
     );
     expect(useAppStore.getState().configuracionOperativa.ticket_copies).toBe(3);
+    expect(
+      useAppStore.getState().configuracionOperativa.ticket_footer_text,
+    ).toBe('Gracias por su compra.');
     expect(localStorage.getItem('mallor_theme')).toBe('DARK');
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
   });
@@ -127,6 +133,7 @@ describe('useAppStore', () => {
         ticket_paper_width: '80',
         ticket_show_logo: true,
         ticket_copies: 1,
+        ticket_footer_text: 'No se aceptan devoluciones.',
       },
     });
 
@@ -134,6 +141,7 @@ describe('useAppStore', () => {
       paperWidth: '58',
       showLogo: false,
       copies: 4,
+      footerText: 'No se aceptan devoluciones.',
     });
   });
 });

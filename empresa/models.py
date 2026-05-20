@@ -147,6 +147,11 @@ class EmpresaConfiguracion(models.Model):
         _('copias de tirilla'),
         default=1,
     )
+    ticket_footer_text = models.TextField(
+        _('texto final de tirilla'),
+        blank=True,
+        default='',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
