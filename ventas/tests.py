@@ -16,7 +16,6 @@ from core.exceptions import (
     FacturacionValidacionError,
     StockInsuficienteError,
     VentaError,
-    VentaNoCancelableError,
 )
 from inventario.models import HistorialInventario, Producto
 from usuario.models import Usuario
@@ -826,7 +825,51 @@ class VentaServiceTest(TestCase):
             2,
         )
 
-    def test_cancelar_venta_service_rechaza_ventas_con_abonos(self):
+    def test_actualizar_venta_permite_total_menor_a_abonos_por_devolucion(self):
+        venta = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('2.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+        AbonoService.registrar_abono(
+            venta_id=venta.id,
+            data={
+                'monto_abonado': Decimal('238.00'),
+                'metodo_pago': Abono.MetodoPago.EFECTIVO,
+            },
+            usuario=self.usuario,
+        )
+
+        venta = VentaService.actualizar_venta(
+            venta_id=venta.id,
+            data={
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('1.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        self.producto.refresh_from_db()
+        self.assertEqual(venta.total, Decimal('119.00'))
+        self.assertEqual(venta.total_abonado, Decimal('238.00'))
+        self.assertEqual(venta.saldo_pendiente, Decimal('0.00'))
+        self.assertEqual(venta.estado_pago, Venta.EstadoPago.PAGADA)
+        self.assertEqual(self.producto.existencias, Decimal('9.00'))
+
+    def test_cancelar_venta_service_permite_ventas_con_abonos(self):
         venta = Venta.objects.create(
             cliente=self.cliente,
             subtotal=Decimal('100.00'),
@@ -842,12 +885,14 @@ class VentaServiceTest(TestCase):
             usuario_registro=self.usuario,
         )
 
-        with self.assertRaises(VentaNoCancelableError):
-            VentaService.cancelar_venta(
-                venta_id=venta.id,
-                motivo='No debe cancelar',
-                usuario=self.usuario,
-            )
+        venta = VentaService.cancelar_venta(
+            venta_id=venta.id,
+            motivo='Cliente devolvio la compra',
+            usuario=self.usuario,
+        )
+
+        self.assertEqual(venta.estado, Venta.Estado.CANCELADA)
+        self.assertEqual(venta.total_abonado, Decimal('20.00'))
 
     def test_registrar_abono_service_actualiza_cartera(self):
         venta = Venta.objects.create(
@@ -1360,6 +1405,31 @@ class FacturacionElectronicaTest(TestCase):
         )
         self.assertEqual(payload['items'], documento.request_payload['items'])
 
+    def test_build_credit_note_payload_permite_items_parciales(self):
+        venta = self._crear_venta_facturable()
+        documento = VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-11',
+            cufe='CUFE-123',
+            request_payload=build_factus_bill_payload(venta, self.rango.factus_id),
+        )
+        partial_item = dict(documento.request_payload['items'][0])
+        partial_item['quantity'] = '0.50'
+
+        payload = build_credit_note_payload(
+            documento,
+            numbering_range_id=777,
+            concept_code='1',
+            reason='Devolucion parcial',
+            items=[partial_item],
+        )
+
+        self.assertEqual(payload['correction_concept_code'], '1')
+        self.assertEqual(payload['items'][0]['quantity'], '0.50')
+        self.assertEqual(payload['payment_details'][0]['amount'], '59.50')
+
     def test_build_credit_note_payload_falla_si_payload_original_esta_incompleto(self):
         venta = self._crear_venta_facturable()
         documento = VentaFacturaElectronica.objects.create(
@@ -1483,6 +1553,121 @@ class FacturacionElectronicaTest(TestCase):
                 is_success=False,
             ).exists(),
         )
+
+    def test_cancelar_venta_facturada_genera_nota_credito_y_restaura_stock(self):
+        venta = self._crear_venta_facturable()
+        documento = VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-11',
+            cufe='CUFE-123',
+            request_payload=build_factus_bill_payload(venta, self.rango.factus_id),
+        )
+        documento.sync_venta_fields()
+        rango_nota = FactusNumberingRange.objects.create(
+            factus_id=202,
+            document_code='22',
+            prefix='NC',
+            from_number=1,
+            to_number=5000,
+            current_number=1,
+            resolution_number='18760000002',
+            is_active=True,
+            is_credit_note_range=True,
+        )
+        self.config.active_credit_note_range = rango_nota
+        self.config.save(update_fields=['active_credit_note_range', 'updated_at'])
+
+        class DummyAdapter:
+            def crear_nota_credito(self, payload):
+                return {
+                    'data': {
+                        'number': 'NC-1',
+                        'cufe': 'CUDE-1',
+                        'resolution_number': '18760000002',
+                    },
+                }
+
+        with patch.object(
+            FacturacionElectronicaService,
+            '_adapter_for_empresa',
+            return_value=DummyAdapter(),
+        ):
+            venta = VentaService.cancelar_venta(
+                venta_id=venta.id,
+                motivo='Cliente devolvio todos los productos',
+                usuario=self.usuario,
+            )
+
+        documento.refresh_from_db()
+        self.producto.refresh_from_db()
+        self.assertEqual(venta.estado, Venta.Estado.CANCELADA)
+        self.assertEqual(self.producto.existencias, Decimal('20.00'))
+        self.assertEqual(documento.status, VentaFacturaElectronica.Status.ANULADA)
+        self.assertEqual(documento.credit_note_number, 'NC-1')
+        self.assertEqual(
+            documento.credit_note_payload['request_payload'][
+                'correction_concept_code'
+            ],
+            '2',
+        )
+
+    def test_crear_nota_credito_parcial_no_anula_factura_y_envia_items(self):
+        venta = self._crear_venta_facturable()
+        detalle = venta.detalles.first()
+        documento = VentaFacturaElectronica.objects.create(
+            venta=venta,
+            status=VentaFacturaElectronica.Status.EMITIDA,
+            reference_code=build_reference_code(venta),
+            bill_number='SETP-11',
+            cufe='CUFE-123',
+            request_payload=build_factus_bill_payload(venta, self.rango.factus_id),
+        )
+        rango_nota = FactusNumberingRange.objects.create(
+            factus_id=203,
+            document_code='22',
+            prefix='NC',
+            from_number=1,
+            to_number=5000,
+            current_number=1,
+            resolution_number='18760000002',
+            is_active=True,
+            is_credit_note_range=True,
+        )
+        self.config.active_credit_note_range = rango_nota
+        self.config.save(update_fields=['active_credit_note_range', 'updated_at'])
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+        captured_payloads = []
+
+        def _crear_nota(payload):
+            captured_payloads.append(payload)
+            return {
+                'data': {
+                    'number': 'NC-PARCIAL-1',
+                    'cufe': 'CUDE-1',
+                    'resolution_number': '18760000002',
+                },
+            }
+
+        with patch.object(
+            service.adapter,
+            'crear_nota_credito',
+            side_effect=_crear_nota,
+            create=True,
+        ):
+            documento = service.crear_nota_credito(
+                venta.id,
+                reason='Devolucion parcial',
+                concept_code='1',
+                items=[{'detalle_id': detalle.id, 'cantidad': '0.50'}],
+            )
+
+        self.assertEqual(documento.status, VentaFacturaElectronica.Status.EMITIDA)
+        self.assertEqual(documento.credit_note_number, 'NC-PARCIAL-1')
+        self.assertEqual(documento.credit_note_payload['type'], 'partial')
+        self.assertEqual(captured_payloads[0]['items'][0]['quantity'], '0.50')
+        self.assertEqual(captured_payloads[0]['payment_details'][0]['amount'], '59.50')
 
     def test_enviar_email_registra_evidencia_de_entrega(self):
         venta = self._crear_venta_facturable()

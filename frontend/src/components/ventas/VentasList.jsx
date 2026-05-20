@@ -308,13 +308,9 @@ export default function VentasList({
                       />
                       <ActionButton
                         icon={Slash}
-                        label="Cancelar"
+                        label="Anular"
                         onClick={() => onCancel(venta)}
-                        disabled={
-                          venta.estado === 'CANCELADA' ||
-                          Number(venta.saldo_pendiente || 0) <
-                            Number(venta.total || 0)
-                        }
+                        disabled={venta.estado === 'CANCELADA'}
                       />
                       <ActionButton
                         icon={ReceiptText}

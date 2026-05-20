@@ -476,6 +476,8 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
                 {'error': _error_message(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        except FacturacionError as exc:
+            return _facturacion_error_response(exc)
         except ValueError:
             return Response(
                 {'error': _('ID de venta invÃ¡lido')},
@@ -734,6 +736,7 @@ class VentaViewSet(RolePermissionMixin, viewsets.ViewSet):
                 int(pk),
                 reason=request.data.get('reason') or request.data.get('motivo') or '',
                 concept_code=request.data.get('concept_code', '1'),
+                items=request.data.get('items'),
             )
             serializer = VentaFacturaElectronicaSerializer(documento)
             return Response(serializer.data, status=status.HTTP_201_CREATED)

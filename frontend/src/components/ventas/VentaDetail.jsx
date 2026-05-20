@@ -153,14 +153,11 @@ export default function VentaDetail({
             <button
               type="button"
               onClick={() => onCancel(venta)}
-              disabled={
-                venta.estado === 'CANCELADA' ||
-                Number(venta.total_abonado || 0) > 0
-              }
+              disabled={venta.estado === 'CANCELADA'}
               className="inline-flex min-h-10 items-center gap-2 rounded-md border border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] px-4 py-2 text-[12px] font-semibold text-[var(--danger-text)] transition hover:bg-[rgba(253,235,236,0.9)] disabled:opacity-40"
             >
               <Slash className="h-4 w-4" />
-              Cancelar
+              Anular
             </button>
             <button
               type="button"

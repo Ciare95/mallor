@@ -76,11 +76,12 @@ export const enviarFacturaVentaEmail = async (ventaId, email) => {
 
 export const crearNotaCreditoVenta = async (
   ventaId,
-  { reason, conceptCode = '1' },
+  { reason, conceptCode = '1', items },
 ) => {
   const response = await api.post(`/ventas/${ventaId}/factura/nota-credito/`, {
     reason,
     concept_code: conceptCode,
+    items,
   });
   return response.data;
 };

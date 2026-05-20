@@ -360,6 +360,7 @@ def build_credit_note_payload(
     reason: str,
     *,
     reference_code: Optional[str] = None,
+    items: Optional[list[Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
     if not factura.bill_number:
         raise FacturacionValidacionError(
@@ -370,9 +371,9 @@ def build_credit_note_payload(
     original_payload = factura.request_payload or {}
     payment_details = original_payload.get('payment_details') or []
     customer = original_payload.get('customer') or {}
-    items = original_payload.get('items') or []
+    payload_items = items or original_payload.get('items') or []
 
-    if not payment_details or not customer or not items:
+    if not payment_details or not customer or not payload_items:
         raise FacturacionValidacionError(
             (
                 'La factura original no tiene payload suficiente para '
@@ -386,6 +387,10 @@ def build_credit_note_payload(
     for detail in payment_details:
         normalized_detail = dict(detail)
         normalized_detail['reference_code'] = note_reference
+        if items is not None:
+            normalized_detail['amount'] = _format_decimal(
+                _calculate_credit_note_items_total(payload_items),
+            )
         normalized_payment_details.append(normalized_detail)
 
     return {
@@ -397,5 +402,24 @@ def build_credit_note_payload(
         'payment_details': normalized_payment_details,
         'observation': reason,
         'customer': customer,
-        'items': items,
+        'items': payload_items,
     }
+
+
+def _calculate_credit_note_items_total(items: list[Dict[str, Any]]) -> Decimal:
+    total = Decimal('0.00')
+    for item in items:
+        quantity = Decimal(str(item.get('quantity') or '0'))
+        price = Decimal(str(item.get('price') or '0'))
+        discount_rate = Decimal(str(item.get('discount_rate') or '0'))
+        line_base = quantity * price
+        line_discount = line_base * discount_rate / Decimal('100')
+        taxable_base = line_base - line_discount
+        taxes = item.get('taxes') or []
+        line_tax = Decimal('0.00')
+        for tax in taxes:
+            rate = Decimal(str(tax.get('rate') or '0'))
+            line_tax += taxable_base * rate / Decimal('100')
+        total += taxable_base + line_tax
+
+    return total.quantize(Decimal('0.01'))

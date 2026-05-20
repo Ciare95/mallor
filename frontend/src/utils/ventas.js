@@ -82,18 +82,44 @@ export const extractApiError = (error, fallback = 'Ocurrio un error') => {
   }
 
   if (data.errors) {
-    const firstKey = Object.keys(data.errors)[0];
-    const value = data.errors[firstKey];
-    return `${firstKey}: ${Array.isArray(value) ? value[0] : value}`;
+    return formatApiErrorValue(data.errors) || fallback;
   }
 
-  const firstKey = Object.keys(data)[0];
-  if (!firstKey) {
-    return fallback;
+  return formatApiErrorValue(data) || fallback;
+};
+
+const formatApiErrorValue = (value, path = '') => {
+  if (value === undefined || value === null || value === '') {
+    return '';
   }
 
-  const firstValue = data[firstKey];
-  return `${firstKey}: ${Array.isArray(firstValue) ? firstValue[0] : firstValue}`;
+  if (typeof value === 'string') {
+    return path ? `${path}: ${value}` : value;
+  }
+
+  if (Array.isArray(value)) {
+    const messages = value
+      .map((item, index) => {
+        const label = path && typeof item === 'object'
+          ? `${path} ${index + 1}`
+          : path;
+        return formatApiErrorValue(item, label);
+      })
+      .filter(Boolean);
+    return messages.join(' | ');
+  }
+
+  if (typeof value === 'object') {
+    const messages = Object.entries(value)
+      .map(([key, nested]) => {
+        const label = path ? `${path}.${key}` : key;
+        return formatApiErrorValue(nested, label);
+      })
+      .filter(Boolean);
+    return messages.join(' | ');
+  }
+
+  return path ? `${path}: ${value}` : String(value);
 };
 
 export const resolveFacturaErrorMessage = (factura) => {
@@ -211,7 +237,7 @@ export const createLineItem = (producto, overrides = {}) => ({
   producto,
   cantidad: overrides.cantidad ?? 1,
   precio_unitario:
-    overrides.precio_unitario ?? Math.round(Number(producto?.precio_venta || 0)),
+    overrides.precio_unitario ?? Number(producto?.precio_venta || 0),
   descuento: overrides.descuento ?? 0,
 });
 

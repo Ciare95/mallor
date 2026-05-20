@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal
 from typing import Any, Dict, Optional
 
 from django.db import transaction
@@ -1003,6 +1004,7 @@ class FacturacionElectronicaService:
         *,
         reason: str,
         concept_code: str = '1',
+        items: Optional[list[Dict[str, Any]]] = None,
     ) -> VentaFacturaElectronica:
         documento = self.obtener_documento(venta_id)
         config = self.get_config(documento.empresa)
@@ -1017,6 +1019,8 @@ class FacturacionElectronicaService:
             ).get('reference_code')
             or f'NC-{documento.reference_code}'
         )
+        credit_note_items = self._build_credit_note_items(documento, items)
+        is_total_credit_note = credit_note_items is None
 
         for attempt in range(2):
             payload = build_credit_note_payload(
@@ -1025,17 +1029,20 @@ class FacturacionElectronicaService:
                 concept_code,
                 reason,
                 reference_code=note_reference,
+                items=credit_note_items,
             )
             try:
                 response = self._adapter_for_empresa(
                     documento.empresa,
                 ).crear_nota_credito(payload)
                 parsed = extract_bill_result(response)
-                documento.status = VentaFacturaElectronica.Status.ANULADA
+                if is_total_credit_note:
+                    documento.status = VentaFacturaElectronica.Status.ANULADA
                 documento.credit_note_number = parsed['bill_number']
                 documento.credit_note_payload = {
                     'request_payload': payload,
                     'response_payload': response,
+                    'type': 'total' if is_total_credit_note else 'partial',
                 }
                 documento.response_payload = response
                 documento.last_error_code = ''
@@ -1096,3 +1103,65 @@ class FacturacionElectronicaService:
                         code='factus_nota_credito_pendiente_dian',
                     ) from exc
                 raise
+
+    @staticmethod
+    def _build_credit_note_items(
+        documento: VentaFacturaElectronica,
+        items: Optional[list[Dict[str, Any]]],
+    ) -> Optional[list[Dict[str, Any]]]:
+        if not items:
+            return None
+
+        original_items = documento.request_payload.get('items') or []
+        original_by_code = {
+            str(item.get('code_reference') or ''): item
+            for item in original_items
+        }
+        detalles = {
+            detalle.id: detalle
+            for detalle in documento.venta.detalles.select_related(
+                'producto',
+            ).all()
+        }
+        credit_note_items = []
+
+        for raw_item in items:
+            detalle_id = raw_item.get('detalle_id') or raw_item.get('id')
+            try:
+                detalle_id = int(detalle_id)
+            except (TypeError, ValueError) as exc:
+                raise FacturacionValidacionError(
+                    'Cada item de nota credito debe indicar detalle_id.',
+                    code='factus_nota_item_invalido',
+                ) from exc
+
+            detalle = detalles.get(detalle_id)
+            if detalle is None:
+                raise FacturacionValidacionError(
+                    'El item de nota credito no pertenece a esta venta.',
+                    code='factus_nota_item_invalido',
+                )
+
+            quantity = Decimal(str(raw_item.get('quantity') or raw_item.get('cantidad') or '0'))
+            if quantity <= Decimal('0.00') or quantity > detalle.cantidad:
+                raise FacturacionValidacionError(
+                    'La cantidad de nota credito debe ser mayor que cero y no exceder lo facturado.',
+                    code='factus_nota_cantidad_invalida',
+                )
+
+            code_reference = (
+                detalle.producto.codigo_barras
+                or detalle.producto.codigo_interno_formateado
+            )
+            original_item = original_by_code.get(str(code_reference))
+            if original_item is None:
+                raise FacturacionValidacionError(
+                    'No se encontro el item original de Factus para la nota credito.',
+                    code='factus_nota_item_original_no_encontrado',
+                )
+
+            credit_item = dict(original_item)
+            credit_item['quantity'] = str(quantity.quantize(Decimal('0.01')))
+            credit_note_items.append(credit_item)
+
+        return credit_note_items

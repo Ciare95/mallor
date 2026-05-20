@@ -57,6 +57,26 @@ import VentaDetail from './VentaDetail';
 import VentaForm from './VentaForm';
 import VentasList from './VentasList';
 
+const hasReturnedItemsOnUpdate = (venta, nextDetalles = []) => {
+  if (!venta?.detalles?.length) {
+    return false;
+  }
+
+  const nextByProduct = new Map(
+    nextDetalles.map((detalle) => [
+      Number(detalle.producto),
+      Number(detalle.cantidad || 0),
+    ]),
+  );
+
+  return venta.detalles.some((detalle) => {
+    const productoId = Number(detalle.producto?.id || detalle.producto);
+    const previousQuantity = Number(detalle.cantidad || 0);
+    const nextQuantity = nextByProduct.get(productoId) || 0;
+    return nextQuantity < previousQuantity;
+  });
+};
+
 export default function VentasPage() {
   const queryClient = useQueryClient();
   const { toasts, toast, closeToast } = useToast();
@@ -239,10 +259,17 @@ export default function VentasPage() {
 
   const actualizarVentaMutation = useMutation({
     mutationFn: ({ id, datos }) => actualizarVenta(id, datos),
-    onSuccess: async (venta) => {
+    onSuccess: async (venta, variables) => {
       invalidateVentas();
       const refreshed = await obtenerVenta(venta.id);
-      toast.success(`Venta ${refreshed.numero_venta} actualizada`);
+      toast.success(
+        variables.hasReturnedItems
+          ? (
+              `Venta ${refreshed.numero_venta} actualizada. `
+              + 'Los productos devueltos volvieron al inventario.'
+            )
+          : `Venta ${refreshed.numero_venta} actualizada`,
+      );
       resetDraft();
       setVentaSeleccionada(null);
       setPosFocusSignal((current) => current + 1);
@@ -259,13 +286,21 @@ export default function VentasPage() {
     mutationFn: ({ id, motivo }) => cancelarVenta(id, motivo),
     onSuccess: (venta) => {
       invalidateVentas();
-      toast.success(`Venta ${venta.numero_venta} cancelada`);
+      toast.success(
+        `Venta ${venta.numero_venta} anulada. `
+        + 'Todos los productos volvieron al inventario.',
+      );
       startTransition(() => {
         openVentaDetail(venta, detalleTab);
       });
     },
     onError: (error) => {
-      toast.error(extractApiError(error, 'No fue posible cancelar la venta'));
+      const message = extractApiError(
+        error,
+        'No fue posible anular la venta',
+      );
+      const resolution = error?.response?.data?.resolution;
+      toast.error(resolution ? `${message} ${resolution}` : message);
     },
   });
 
@@ -333,8 +368,8 @@ export default function VentasPage() {
   });
 
   const notaCreditoMutation = useMutation({
-    mutationFn: ({ venta, reason }) =>
-      crearNotaCreditoVenta(venta.id, { reason }),
+    mutationFn: ({ venta, reason, conceptCode, items }) =>
+      crearNotaCreditoVenta(venta.id, { reason, conceptCode, items }),
     onSuccess: async (_, variables) => {
       invalidateVentas();
       await refreshVentaDetail(variables.venta.id);
@@ -388,6 +423,10 @@ export default function VentasPage() {
       actualizarVentaMutation.mutate({
         id: payload.ventaId,
         datos: body,
+        hasReturnedItems: hasReturnedItemsOnUpdate(
+          ventaSeleccionada,
+          body.detalles,
+        ),
       });
       return;
     }
@@ -429,7 +468,7 @@ export default function VentasPage() {
 
   const handleCancelVenta = (venta) => {
     const motivo =
-      window.prompt(`Motivo de cancelacion para ${venta.numero_venta}`) || '';
+      window.prompt(`Motivo de anulacion para ${venta.numero_venta}`) || '';
 
     if (!motivo.trim()) {
       return;
@@ -498,18 +537,50 @@ export default function VentasPage() {
   };
 
   const handleCrearNotaCredito = (venta) => {
+    const isPartial = window.confirm(
+      'Aceptar: nota credito parcial. Cancelar: nota credito total.',
+    );
     const reason = window.prompt(
       `Motivo de nota credito para ${venta.numero_venta}`,
-      'Anulacion fiscal de factura electronica',
+      isPartial
+        ? 'Devolucion parcial de productos'
+        : 'Anulacion fiscal total de factura electronica',
     );
 
     if (!reason?.trim()) {
       return;
     }
 
+    let items;
+    if (isPartial) {
+      items = (venta.detalles || [])
+        .map((detalle) => {
+          const cantidad = window.prompt(
+            `Cantidad a devolver de ${detalle.producto?.nombre}`,
+            '0',
+          );
+          const numericCantidad = Number(cantidad || 0);
+          if (!numericCantidad) {
+            return null;
+          }
+          return {
+            detalle_id: detalle.id,
+            cantidad: numericCantidad.toFixed(2),
+          };
+        })
+        .filter(Boolean);
+
+      if (!items.length) {
+        toast.info('No se seleccionaron productos para nota credito parcial.');
+        return;
+      }
+    }
+
     notaCreditoMutation.mutate({
       venta,
       reason: reason.trim(),
+      conceptCode: isPartial ? '1' : '2',
+      items,
     });
   };
 

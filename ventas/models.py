@@ -421,13 +421,6 @@ class Venta(models.Model):
                 ),
             })
 
-        if self.total_abonado > self.total:
-            raise ValidationError({
-                'total_abonado': _(
-                    'El total abonado no puede exceder el total de la venta.'
-                ),
-            })
-
         if (
             self.numero_factura_electronica
             and not self.factura_electronica

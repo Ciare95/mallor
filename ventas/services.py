@@ -474,21 +474,62 @@ class VentaService:
             raise VentaFacturadaError(venta.numero_venta)
 
     @staticmethod
-    def _validar_venta_cancelable(venta: Venta) -> None:
+    def _validar_venta_cancelable(
+        venta: Venta,
+        *,
+        allow_facturada: bool = False,
+        allow_abonos: bool = False,
+    ) -> None:
         if venta.estado == Venta.Estado.CANCELADA:
             raise VentaNoCancelableError(
                 venta.numero_venta,
                 _('ya fue cancelada'),
             )
 
-        if venta.numero_factura_electronica or venta.fecha_facturacion:
+        if (
+            not allow_facturada
+            and (venta.numero_factura_electronica or venta.fecha_facturacion)
+        ):
             raise VentaFacturadaError(venta.numero_venta)
 
-        if venta.total_abonado > Decimal('0.00'):
+        if not allow_abonos and venta.total_abonado > Decimal('0.00'):
             raise VentaNoCancelableError(
                 venta.numero_venta,
                 _('tiene abonos registrados'),
             )
+
+    @staticmethod
+    def _requiere_nota_credito_para_cancelar(venta: Venta) -> bool:
+        documento = getattr(venta, 'factura_documento', None)
+        if documento is None:
+            return bool(
+                venta.numero_factura_electronica or venta.fecha_facturacion,
+            )
+
+        if documento.status == VentaFacturaElectronica.Status.ANULADA:
+            return False
+
+        return bool(documento.bill_number or venta.numero_factura_electronica)
+
+    @staticmethod
+    def _crear_nota_credito_cancelacion(venta: Venta, motivo: str) -> None:
+        if not VentaService._requiere_nota_credito_para_cancelar(venta):
+            return
+
+        documento = getattr(venta, 'factura_documento', None)
+        if (
+            documento is not None
+            and documento.status == VentaFacturaElectronica.Status.ANULADA
+        ):
+            return
+
+        from ventas.facturacion_services import FacturacionElectronicaService
+
+        FacturacionElectronicaService().crear_nota_credito(
+            venta.id,
+            reason=motivo or _('Anulacion operativa de venta.'),
+            concept_code='2',
+        )
 
     @staticmethod
     @transaction.atomic
@@ -755,19 +796,6 @@ class VentaService:
                     venta.empresa,
                 ),
             )
-            totales = _VentaInventarioService.calcular_totales_proyectados(
-                detalles_data,
-                descuento_global,
-            )
-            if venta.total_abonado > totales['total']:
-                raise VentaError(
-                    _(
-                        'El nuevo total de la venta no puede ser inferior '
-                        'al valor ya abonado.'
-                    ),
-                    code='venta_total_menor_a_abonos',
-                )
-
         for campo, valor in datos_venta.items():
             if hasattr(venta, campo):
                 setattr(venta, campo, valor)
@@ -830,7 +858,12 @@ class VentaService:
         usuario: Optional[Usuario] = None,
     ) -> Venta:
         venta = VentaService._obtener_venta_para_actualizar(venta_id)
-        VentaService._validar_venta_cancelable(venta)
+        VentaService._validar_venta_cancelable(
+            venta,
+            allow_facturada=True,
+            allow_abonos=True,
+        )
+        VentaService._crear_nota_credito_cancelacion(venta, motivo)
 
         usuario_accion = usuario or venta.usuario_registro
         detalles = list(venta.detalles.all())
