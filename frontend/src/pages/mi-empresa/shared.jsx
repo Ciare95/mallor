@@ -192,6 +192,18 @@ export function useMiEmpresaModule() {
     setConfiguracionOperativa(nextConfig);
   };
 
+  const persistConfigPatch = (patch = {}) => {
+    const nextConfig = normalizeConfig({
+      ...configForm,
+      ...patch,
+    });
+    setConfigForm(nextConfig);
+    setConfiguracionOperativa(nextConfig);
+    if (empresaActiva && puedeEditar) {
+      guardarConfiguracionMutation.mutate(buildConfigPayload(nextConfig));
+    }
+  };
+
   const handleEmpresaSubmit = (event) => {
     event.preventDefault();
     if (!empresaActiva || !puedeEditar) {
@@ -235,6 +247,7 @@ export function useMiEmpresaModule() {
     setConfigField,
     setTemaField,
     setShortcut,
+    persistConfigPatch,
     handleEmpresaSubmit,
     handleConfigSubmit,
   };
@@ -650,6 +663,7 @@ export function EmpresaConfigSection({
   setConfigField,
   setTemaField,
   setShortcut,
+  persistConfigPatch,
 }) {
   return (
     <SectionShell
@@ -760,6 +774,37 @@ export function EmpresaConfigSection({
                 placeholder="No se aceptan devoluciones despues de 24 horas."
               />
             </label>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={!puedeEditar || isSaving}
+                onClick={() =>
+                  persistConfigPatch({
+                    ticket_footer_text: configForm.ticket_footer_text || '',
+                  })
+                }
+                className="app-button-secondary min-h-10"
+              >
+                <Save className="h-4 w-4" />
+                Guardar texto
+              </button>
+              <button
+                type="button"
+                disabled={
+                  !puedeEditar ||
+                  isSaving ||
+                  !String(configForm.ticket_footer_text || '').trim()
+                }
+                onClick={() =>
+                  persistConfigPatch({
+                    ticket_footer_text: '',
+                  })
+                }
+                className="app-button-ghost min-h-10 border border-app bg-white/40 px-4"
+              >
+                Eliminar texto
+              </button>
+            </div>
           </div>
         </div>
 

@@ -21,6 +21,7 @@ export default function MiEmpresaConfiguracionPage() {
     setConfigField,
     setTemaField,
     setShortcut,
+    persistConfigPatch,
   } = useMiEmpresaModule();
 
   if (!empresaActiva) {
@@ -84,6 +85,7 @@ export default function MiEmpresaConfiguracionPage() {
           setConfigField={setConfigField}
           setTemaField={setTemaField}
           setShortcut={setShortcut}
+          persistConfigPatch={persistConfigPatch}
         />
       </MiEmpresaModuleShell>
       <EmpresaModuleToasts toasts={toasts} closeToast={closeToast} />

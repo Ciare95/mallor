@@ -38,7 +38,7 @@ const LEGAL_TEXT_STANDARD =
   'Esta factura se asimila a una letra de cambio Art. 774 del codigo de comercio';
 
 const SOFTWARE_FOOTER =
-  'Fabricante de software y proveedor tecnologico: Mallor';
+  'Fabricante de software y proveedor tecnologico: Mallor by Ciare Group';
 
 function clampCopies(value) {
   const numeric = Number.parseInt(value, 10);
@@ -441,7 +441,7 @@ function TicketSection({ title, children }) {
   );
 }
 
-function QrBlock({ qrSrc, cufe }) {
+function QrBlock({ qrSrc }) {
   return (
     <div className="thermal-ticket__center">
       <div className="thermal-ticket__qr">
@@ -454,9 +454,6 @@ function QrBlock({ qrSrc, cufe }) {
             <span>desde backend</span>
           </div>
         )}
-      </div>
-      <div className="thermal-ticket__muted-center thermal-ticket__cufe-block">
-        {cufe}
       </div>
     </div>
   );
@@ -686,7 +683,6 @@ export function ThermalTicket({
           </div>
           <QrBlock
             qrSrc={electronicBilling.qrSrc}
-            cufe={electronicBilling.cufe}
           />
         </TicketSection>
       ) : null}

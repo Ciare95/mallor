@@ -157,7 +157,7 @@
   --ticket-width: 80mm;
   --ticket-font-size: 11px;
   --ticket-line-height: 1.35;
-  --ticket-qr-size: 132px;
+  --ticket-qr-size: 150px;
   width: var(--ticket-width);
   max-width: 100%;
   background: #fff;
@@ -172,13 +172,13 @@
 .thermal-ticket-sheet.paper-58 {
   --ticket-width: 58mm;
   --ticket-font-size: 9.5px;
-  --ticket-qr-size: 88px;
+  --ticket-qr-size: 108px;
 }
 
 .thermal-ticket-sheet.paper-80 {
   --ticket-width: 80mm;
   --ticket-font-size: 11px;
-  --ticket-qr-size: 132px;
+  --ticket-qr-size: 150px;
 }
 
 .thermal-ticket-sheet.preview {
