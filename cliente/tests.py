@@ -1,8 +1,9 @@
 from datetime import timedelta
 from decimal import Decimal
+from unittest import mock
 
 from django.core.exceptions import ValidationError
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -24,6 +25,18 @@ from core.exceptions import (
 )
 from usuario.models import Usuario
 from ventas.models import Venta
+
+
+FACTUS_TEST_CONFIG = {
+    'BASE_URL': 'https://factus.test.invalid',
+    'CLIENT_ID': 'client-id',
+    'CLIENT_SECRET': 'client-secret',
+    'USERNAME': 'user@example.com',
+    'PASSWORD': 'secret',
+    'TIMEOUT': 3,
+    'MAX_RETRIES': 0,
+    'VERIFY_SSL': True,
+}
 
 
 class ClienteModelTest(TestCase):
@@ -537,6 +550,30 @@ class ClienteServiceTest(TestCase):
         with self.assertRaises(ClienteNoEncontradoError):
             ClienteService.obtener_cliente(999999)
 
+    @override_settings(FACTUS_CONFIG=FACTUS_TEST_CONFIG)
+    @mock.patch('ventas.adapters.factus_adapter.FactusAdapter.consultar_adquiriente')
+    def test_autocompletar_desde_factus_normaliza_nit(self, mock_consulta):
+        mock_consulta.return_value = {
+            'status': 'OK',
+            'data': {
+                'name': 'Cliente Factus SAS',
+                'email': 'factus@example.com',
+            },
+        }
+
+        data = ClienteService.autocompletar_desde_factus(
+            Cliente.TipoDocumento.NIT,
+            '900.373.913',
+        )
+
+        self.assertTrue(data['found'])
+        self.assertEqual(data['tipo_cliente'], Cliente.TipoCliente.JURIDICO)
+        self.assertEqual(data['numero_documento'], '900373913')
+        self.assertEqual(data['digito_verificacion'], '4')
+        self.assertEqual(data['razon_social'], 'Cliente Factus SAS')
+        self.assertEqual(data['email'], 'factus@example.com')
+        mock_consulta.assert_called_once_with('6', '900373913')
+
 
 class ClienteApiTest(TestCase):
     def setUp(self):
@@ -696,6 +733,31 @@ class ClienteApiTest(TestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['count'], 1)
+
+    @override_settings(FACTUS_CONFIG=FACTUS_TEST_CONFIG)
+    @mock.patch('ventas.adapters.factus_adapter.FactusAdapter.consultar_adquiriente')
+    def test_autocompletar_cliente_desde_factus(self, mock_consulta):
+        self.autenticar(self.empleado)
+        mock_consulta.return_value = {
+            'status': 'OK',
+            'data': {
+                'name': 'Empresa Consultada SAS',
+                'email': 'compras@example.com',
+            },
+        }
+
+        response = self.client_api.get(
+            reverse('cliente-autocompletar'),
+            {
+                'tipo_documento': Cliente.TipoDocumento.NIT,
+                'numero_documento': '900373913',
+            },
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data['found'])
+        self.assertEqual(response.data['razon_social'], 'Empresa Consultada SAS')
+        self.assertEqual(response.data['email'], 'compras@example.com')
 
     def test_actualizar_cliente(self):
         self.autenticar(self.empleado)

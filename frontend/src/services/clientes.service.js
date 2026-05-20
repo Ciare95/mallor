@@ -63,6 +63,19 @@ export const obtenerEstadisticasCliente = async (id) => {
   return response.data;
 };
 
+export const autocompletarCliente = async ({
+  tipoDocumento,
+  numeroDocumento,
+}) => {
+  const response = await api.get('/clientes/autocompletar/', {
+    params: cleanParams({
+      tipo_documento: tipoDocumento,
+      numero_documento: numeroDocumento,
+    }),
+  });
+  return response.data;
+};
+
 export const obtenerMejoresClientes = async (limite = 10) => {
   const response = await api.get('/clientes/mejores/', {
     params: { limite },
@@ -108,6 +121,7 @@ export default {
   obtenerHistorialCliente,
   obtenerCarteraCliente,
   obtenerEstadisticasCliente,
+  autocompletarCliente,
   obtenerMejoresClientes,
   obtenerClientesMorosos,
   validarDocumentoCliente,

@@ -1,5 +1,5 @@
 import { createElement, useDeferredValue, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Building2,
@@ -8,9 +8,13 @@ import {
   Phone,
   Save,
   ShieldCheck,
+  Sparkles,
   UserRound,
 } from 'lucide-react';
-import { validarDocumentoCliente } from '../../services/clientes.service';
+import {
+  autocompletarCliente,
+  validarDocumentoCliente,
+} from '../../services/clientes.service';
 import {
   DOCUMENTO_LABELS,
   REGIMEN_LABELS,
@@ -41,6 +45,7 @@ export default function ClienteForm({
 }) {
   const [form, setForm] = useState(() => createClienteFormState(cliente));
   const [touched, setTouched] = useState({});
+  const [autocompleteMessage, setAutocompleteMessage] = useState('');
   const deferredDocumento = useDeferredValue(form.numero_documento.trim());
   const isEdit = mode === 'edit';
 
@@ -85,6 +90,39 @@ export default function ClienteForm({
   const canSubmit = Object.keys(validationErrors).length === 0;
   const showVerificationDigit = form.tipo_documento === 'NIT';
 
+  const autocompleteMutation = useMutation({
+    mutationFn: autocompletarCliente,
+    onSuccess: (data) => {
+      if (!data?.found) {
+        setAutocompleteMessage(
+          data?.message ||
+          'Factus no encontro datos. Puedes crear el cliente manualmente.',
+        );
+        return;
+      }
+
+      setForm((current) => ({
+        ...current,
+        tipo_cliente: data.tipo_cliente || current.tipo_cliente,
+        tipo_documento: data.tipo_documento || current.tipo_documento,
+        numero_documento: data.numero_documento || current.numero_documento,
+        digito_verificacion:
+          data.digito_verificacion || current.digito_verificacion,
+        nombre: data.nombre || current.nombre,
+        razon_social: data.razon_social || current.razon_social,
+        email: data.email || current.email,
+      }));
+      setAutocompleteMessage('Datos encontrados en Factus. Revisa antes de guardar.');
+    },
+    onError: (error) => {
+      const message = (
+        error?.response?.data?.error ||
+        'No fue posible consultar Factus. Puedes crear el cliente manualmente.'
+      );
+      setAutocompleteMessage(message);
+    },
+  });
+
   const setField = (field, value) => {
     setForm((current) => {
       const isNitDocument = current.tipo_documento === 'NIT';
@@ -113,6 +151,9 @@ export default function ClienteForm({
 
       return next;
     });
+    if (field === 'tipo_documento' || field === 'numero_documento') {
+      setAutocompleteMessage('');
+    }
   };
 
   const setMunicipio = (municipio) => {
@@ -146,6 +187,23 @@ export default function ClienteForm({
     }
 
     onSubmit(buildClientePayload(form));
+  };
+
+  const handleAutocomplete = () => {
+    const numeroDocumento = form.numero_documento.trim();
+    if (!numeroDocumento) {
+      setTouched((current) => ({
+        ...current,
+        numero_documento: true,
+      }));
+      setAutocompleteMessage('Ingresa el documento antes de autocompletar.');
+      return;
+    }
+
+    autocompleteMutation.mutate({
+      tipoDocumento: form.tipo_documento,
+      numeroDocumento,
+    });
   };
 
   const title = isEdit
@@ -186,18 +244,33 @@ export default function ClienteForm({
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <InputField
-              label="Numero de documento"
-              value={form.numero_documento}
-              onChange={(value) => setField('numero_documento', value)}
-              onBlur={() => handleBlur('numero_documento')}
-              error={visibleErrors.numero_documento}
-              helper={
-                duplicateQuery.isFetching
-                  ? 'Verificando disponibilidad...'
-                  : 'Documento unico por tipo.'
-              }
-            />
+            <div className="grid gap-2">
+              <InputField
+                label="Numero de documento"
+                value={form.numero_documento}
+                onChange={(value) => setField('numero_documento', value)}
+                onBlur={() => handleBlur('numero_documento')}
+                error={visibleErrors.numero_documento}
+                helper={
+                  duplicateQuery.isFetching
+                    ? 'Verificando disponibilidad...'
+                    : 'Documento unico por tipo.'
+                }
+              />
+              <button
+                type="button"
+                onClick={handleAutocomplete}
+                disabled={autocompleteMutation.isPending || !form.numero_documento.trim()}
+                className="app-button-secondary min-h-11 justify-center"
+              >
+                {autocompleteMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="h-4 w-4" />
+                )}
+                Autocompletar datos
+              </button>
+            </div>
             {showVerificationDigit && (
               <InputField
                 label="Digito de verificacion"
@@ -229,6 +302,12 @@ export default function ClienteForm({
               />
             )}
           </div>
+
+          {autocompleteMessage && (
+            <div className="rounded-xl border border-[rgba(31,108,159,0.18)] bg-[var(--info-soft)] px-4 py-3 text-sm text-[var(--info-text)]">
+              {autocompleteMessage}
+            </div>
+          )}
 
           {form.tipo_cliente === 'JURIDICO' && (
             <div className="grid gap-4 lg:grid-cols-2">

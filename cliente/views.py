@@ -17,7 +17,13 @@ from cliente.serializers import (
     ClienteUpdateSerializer,
 )
 from cliente.services import ClienteService
-from core.exceptions import ClienteError, ClienteNoEncontradoError
+from core.exceptions import (
+    ClienteError,
+    ClienteNoEncontradoError,
+    FacturacionComunicacionError,
+    FacturacionConfiguracionError,
+    FacturacionOperacionError,
+)
 from empresa.services import EmpresaService
 from usuario.utils import RolePermissionMixin
 from ventas.serializers import VentaListSerializer
@@ -75,6 +81,7 @@ class ClientePermission(BaseClientePermission):
         'cartera': 'ver_cliente',
         'estadisticas': 'ver_cliente',
         'buscar': 'listar_clientes',
+        'autocompletar': 'crear_cliente',
         'mejores': 'ver_informe_clientes',
         'morosos': 'ver_informe_clientes',
     }
@@ -393,6 +400,47 @@ class ClienteViewSet(RolePermissionMixin, viewsets.ViewSet):
     @action(detail=False, methods=['get'], url_path='buscar')
     def buscar(self, request: Request) -> Response:
         return self.list(request)
+
+    @action(detail=False, methods=['get'], url_path='autocompletar')
+    def autocompletar(self, request: Request) -> Response:
+        try:
+            data = ClienteService.autocompletar_desde_factus(
+                request.query_params.get('tipo_documento'),
+                request.query_params.get('numero_documento'),
+            )
+            return Response(data)
+        except ClienteError as exc:
+            return Response(
+                {'error': _error_message(exc), 'code': exc.code},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except FacturacionConfiguracionError as exc:
+            return Response(
+                {
+                    'error': (
+                        'No hay credenciales Factus configuradas para '
+                        'autocompletar clientes.'
+                    ),
+                    'code': exc.code,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except FacturacionOperacionError as exc:
+            if exc.code == 'factus_http_404':
+                return Response({
+                    'found': False,
+                    'source': 'factus',
+                    'message': 'Factus no encontro datos para este documento.',
+                })
+            return Response(
+                {'error': _error_message(exc), 'code': exc.code},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except FacturacionComunicacionError as exc:
+            return Response(
+                {'error': _error_message(exc), 'code': exc.code},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
     @action(detail=False, methods=['get'], url_path='mejores')
     def mejores(self, request: Request) -> Response:

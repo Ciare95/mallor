@@ -1,5 +1,6 @@
 from datetime import timedelta
 from decimal import Decimal
+import re
 from typing import Any, Dict, List, Optional
 
 from django.db import transaction
@@ -15,6 +16,7 @@ from core.exceptions import (
     ClienteConVentasError,
     ClienteCreditoInsuficienteError,
     ClienteDuplicadoError,
+    ClienteError,
     ClienteInactivoError,
     ClienteNoEncontradoError,
 )
@@ -22,6 +24,32 @@ from ventas.models import Venta
 
 
 QUANTIZER = Decimal('0.01')
+NIT_DV_WEIGHTS = [71, 67, 59, 53, 47, 43, 41, 37, 29, 23, 19, 17, 13, 7, 3]
+FACTUS_DOCUMENT_IDS = {
+    Cliente.TipoDocumento.CC: '3',
+    Cliente.TipoDocumento.NIT: '6',
+    Cliente.TipoDocumento.CE: '5',
+    Cliente.TipoDocumento.PASAPORTE: '7',
+}
+
+
+def _sanitize_numeric(value: str) -> str:
+    return re.sub(r'\D', '', str(value or '')).strip()
+
+
+def _calculate_nit_dv(nit: str) -> str:
+    normalized = _sanitize_numeric(nit)
+    if not normalized:
+        return ''
+
+    digits = normalized[-len(NIT_DV_WEIGHTS):]
+    start_index = len(NIT_DV_WEIGHTS) - len(digits)
+    total = sum(
+        int(digit) * NIT_DV_WEIGHTS[start_index + index]
+        for index, digit in enumerate(digits)
+    )
+    remainder = total % 11
+    return str(11 - remainder if remainder > 1 else remainder)
 
 
 class ClienteService:
@@ -456,6 +484,69 @@ class ClienteService:
             )
 
         return True
+
+    @staticmethod
+    def autocompletar_desde_factus(
+        tipo_documento: str,
+        numero_documento: str,
+    ) -> Dict[str, Any]:
+        """
+        Consulta datos basicos del adquiriente en Factus para ayudar el alta.
+        """
+        tipo_documento = str(tipo_documento or '').strip().upper()
+        numero_documento = str(numero_documento or '').strip()
+
+        if tipo_documento not in FACTUS_DOCUMENT_IDS:
+            raise ClienteError(
+                'Factus no soporta este tipo de documento para autocompletar.',
+                code='cliente_autocompletar_tipo_documento',
+            )
+
+        if not numero_documento:
+            raise ClienteError(
+                'El numero de documento es obligatorio para autocompletar.',
+                code='cliente_autocompletar_documento',
+            )
+
+        if tipo_documento == Cliente.TipoDocumento.NIT:
+            numero_documento = _sanitize_numeric(numero_documento)
+
+        from ventas.adapters.factus_adapter import FactusAdapter
+
+        response = FactusAdapter(
+            empresa=get_empresa_actual_or_default(),
+        ).consultar_adquiriente(
+            FACTUS_DOCUMENT_IDS[tipo_documento],
+            numero_documento,
+        )
+        data = response.get('data') or {}
+        name = str(data.get('name') or '').strip()
+        email = str(data.get('email') or '').strip()
+        found = bool(name or email)
+        tipo_cliente = (
+            Cliente.TipoCliente.JURIDICO
+            if tipo_documento == Cliente.TipoDocumento.NIT
+            else Cliente.TipoCliente.NATURAL
+        )
+
+        result = {
+            'found': found,
+            'source': 'factus',
+            'tipo_documento': tipo_documento,
+            'numero_documento': numero_documento,
+            'tipo_cliente': tipo_cliente,
+            'nombre': name if tipo_cliente == Cliente.TipoCliente.NATURAL else '',
+            'razon_social': (
+                name if tipo_cliente == Cliente.TipoCliente.JURIDICO else ''
+            ),
+            'email': email,
+            'digito_verificacion': '',
+        }
+
+        if tipo_documento == Cliente.TipoDocumento.NIT:
+            result['digito_verificacion'] = _calculate_nit_dv(numero_documento)
+
+        return result
 
     @staticmethod
     def obtener_mejores_clientes(limite: int = 10) -> List[Cliente]:
