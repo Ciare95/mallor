@@ -1605,7 +1605,7 @@ class FacturacionElectronicaTest(TestCase):
             ).exists(),
         )
 
-    def test_sincronizar_rangos_acepta_payload_dian_sin_id(self):
+    def test_sincronizar_rangos_ignora_payload_dian_sin_id(self):
         empresa = Empresa.get_default()
         token = set_empresa_actual(empresa)
         service = FacturacionElectronicaService(adapter=self._build_adapter())
@@ -1637,11 +1637,55 @@ class FacturacionElectronicaTest(TestCase):
         finally:
             reset_empresa_actual(token)
 
+        self.assertEqual(payload['count'], 0)
+        self.assertFalse(
+            FactusNumberingRange.objects.filter(
+                empresa=empresa,
+                prefix='SEDS',
+            ).exists(),
+        )
+
+    def test_sincronizar_rangos_usa_id_real_de_factus(self):
+        empresa = Empresa.get_default()
+        token = set_empresa_actual(empresa)
+        service = FacturacionElectronicaService(adapter=self._build_adapter())
+
+        try:
+            with patch.object(
+                service.adapter,
+                'listar_rangos',
+                return_value={
+                    'data': [
+                        {
+                            'id': 389,
+                            'document': 'Factura de venta',
+                            'prefix': 'SEDS',
+                            'from': '984000000',
+                            'to': '985000000',
+                            'current': '984000001',
+                            'resolution_number': '18760000001',
+                            'start_date': '2026-01-01',
+                            'end_date': '2026-12-31',
+                        },
+                    ],
+                },
+                create=True,
+            ), patch.object(
+                service.adapter,
+                'ver_empresa',
+                return_value={'data': {'company': 'Ciare Company'}},
+                create=True,
+            ):
+                payload = service.sincronizar_rangos()
+        finally:
+            reset_empresa_actual(token)
+
         self.assertEqual(payload['count'], 1)
         rango = FactusNumberingRange.objects.get(
             empresa=empresa,
             prefix='SEDS',
         )
+        self.assertEqual(rango.factus_id, 389)
         self.assertEqual(rango.document_code, '01')
         self.assertEqual(rango.from_number, 984000000)
         self.assertEqual(rango.to_number, 985000000)

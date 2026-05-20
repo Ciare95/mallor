@@ -222,14 +222,14 @@ class FactusAdapter(FacturacionPort):
 
     def listar_rangos(self) -> Dict[str, Any]:
         try:
-            response = self._request('GET', '/v2/numbering-ranges/dian')
+            response = self._request('GET', '/v2/numbering-ranges')
         except FacturacionOperacionError as exc:
             if exc.code != 'factus_http_404':
                 raise
             logger.info(
-                'Factus no devolvio rangos DIAN asociados; usando listado general.',
+                'Factus no devolvio listado general; usando rangos DIAN asociados.',
             )
-            response = self._request('GET', '/v2/numbering-ranges')
+            response = self._request('GET', '/v2/numbering-ranges/dian')
         return response.json()
 
     def consultar_adquiriente(

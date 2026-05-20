@@ -1,5 +1,4 @@
 import logging
-import zlib
 from typing import Any, Dict, Optional
 
 from django.db import transaction
@@ -114,19 +113,7 @@ def _resolve_range_factus_id(row: Dict[str, Any]) -> Optional[int]:
     factus_id = row.get('id') or row.get('numbering_range_id')
     if factus_id:
         return int(factus_id)
-
-    fallback_parts = [
-        row.get('prefix') or '',
-        row.get('resolution_number') or '',
-        row.get('from') or row.get('from_number') or '',
-        row.get('to') or row.get('to_number') or '',
-    ]
-    fallback_key = '|'.join(str(part).strip() for part in fallback_parts if part)
-    if not fallback_key:
-        return None
-
-    synthetic_id = zlib.crc32(fallback_key.encode('utf-8')) % 2147483647
-    return synthetic_id or 1
+    return None
 
 
 class FacturacionElectronicaService:
