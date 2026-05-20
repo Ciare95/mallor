@@ -388,6 +388,7 @@ class EmpresaUsuarioSerializer(serializers.ModelSerializer):
         read_only=True,
     )
     usuario_email = serializers.EmailField(source='usuario.email', read_only=True)
+    usuario_phone = serializers.CharField(source='usuario.phone', read_only=True)
     usuario_activo = serializers.BooleanField(
         source='usuario.is_active',
         read_only=True,
@@ -402,6 +403,7 @@ class EmpresaUsuarioSerializer(serializers.ModelSerializer):
             'usuario_username',
             'usuario_nombre',
             'usuario_email',
+            'usuario_phone',
             'usuario_activo',
             'rol',
             'activo',
@@ -413,6 +415,7 @@ class EmpresaUsuarioSerializer(serializers.ModelSerializer):
             'usuario_username',
             'usuario_nombre',
             'usuario_email',
+            'usuario_phone',
             'usuario_activo',
         ]
 

@@ -551,6 +551,22 @@ class FacturacionElectronicaService:
             factus_id__in=synced_ids,
         ).update(is_active=False)
 
+        if config.active_bill_range_id and not FactusNumberingRange.objects.filter(
+            pk=config.active_bill_range_id,
+            factus_id__in=synced_ids,
+            is_active=True,
+        ).exists():
+            config.active_bill_range = None
+        if (
+            config.active_credit_note_range_id
+            and not FactusNumberingRange.objects.filter(
+                pk=config.active_credit_note_range_id,
+                factus_id__in=synced_ids,
+                is_active=True,
+            ).exists()
+        ):
+            config.active_credit_note_range = None
+
         config.company_snapshot = empresa_response
         config.last_connection_status = 'ok'
         config.last_connection_checked_at = timezone.now()

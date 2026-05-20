@@ -733,9 +733,6 @@ class FacturacionElectronicaConfigSerializer(serializers.ModelSerializer):
             'environment',
             getattr(self.instance, 'environment', FactusEnvironment.SANDBOX),
         )
-        if environment != FactusEnvironment.PRODUCCION:
-            return attrs
-
         empresa = getattr(self.instance, 'empresa', None)
         if empresa is None:
             request = self.context.get('request') if self.context else None
@@ -744,6 +741,10 @@ class FacturacionElectronicaConfigSerializer(serializers.ModelSerializer):
         if empresa is None:
             return attrs
 
+        is_enabled = attrs.get(
+            'is_enabled',
+            getattr(self.instance, 'is_enabled', False),
+        )
         active_bill_range = attrs.get(
             'active_bill_range',
             getattr(self.instance, 'active_bill_range', None),
@@ -754,22 +755,32 @@ class FacturacionElectronicaConfigSerializer(serializers.ModelSerializer):
         )
         has_credential = FactusCredential.objects.filter(
             empresa=empresa,
-            environment=FactusEnvironment.PRODUCCION,
+            environment=environment,
             activo=True,
         ).exists()
 
         errors = {}
-        if not has_credential:
+        requires_ready_config = (
+            is_enabled
+            or environment == FactusEnvironment.PRODUCCION
+        )
+        if requires_ready_config and not has_credential:
             errors['environment'] = (
-                'Debe configurar credenciales Factus de produccion.'
+                'Debe configurar credenciales Factus activas para este ambiente.'
             )
+        if requires_ready_config and active_bill_range is None:
+            errors['active_bill_range_id'] = (
+                'Debe sincronizar y seleccionar un rango de factura.'
+            )
+
+        if environment != FactusEnvironment.PRODUCCION:
+            if errors:
+                raise serializers.ValidationError(errors)
+            return attrs
+
         if getattr(self.instance, 'last_connection_status', '') != 'ok':
             errors['last_connection_status'] = (
                 'Debe validar la conexion productiva con Factus.'
-            )
-        if active_bill_range is None:
-            errors['active_bill_range_id'] = (
-                'Debe sincronizar y seleccionar un rango productivo de factura.'
             )
         if active_credit_note_range is None:
             errors['active_credit_note_range_id'] = (

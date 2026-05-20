@@ -46,7 +46,7 @@ class FactusAdapter(FacturacionPort):
         missing = [key for key in required if not self.config.get(key)]
         if missing:
             raise FacturacionConfiguracionError(
-                'Configuracion Factus incompleta en variables de entorno.',
+                'Configuracion Factus incompleta.',
                 code='factus_config_incompleta',
             )
 
@@ -77,6 +77,13 @@ class FactusAdapter(FacturacionPort):
                     'MAX_RETRIES': credential.max_retries,
                     'VERIFY_SSL': credential.verify_ssl,
                 }
+            raise FacturacionConfiguracionError(
+                (
+                    'No hay credenciales Factus activas para la empresa '
+                    f'{empresa} en ambiente {facturacion_config.environment}.'
+                ),
+                code='factus_credenciales_empresa_requeridas',
+            )
 
         return settings.FACTUS_CONFIG
 

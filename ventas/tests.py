@@ -11,6 +11,7 @@ from empresa.models import Empresa, EmpresaConfiguracion, EmpresaUsuario
 from core.exceptions import (
     AbonoNoPermitidoError,
     FacturacionComunicacionError,
+    FacturacionConfiguracionError,
     FacturacionOperacionError,
     FacturacionValidacionError,
     StockInsuficienteError,
@@ -19,6 +20,7 @@ from core.exceptions import (
 )
 from inventario.models import HistorialInventario, Producto
 from usuario.models import Usuario
+from ventas.adapters.factus_adapter import FactusAdapter
 from ventas.factus_transformers import (
     build_credit_note_payload,
     build_factus_bill_payload,
@@ -32,6 +34,8 @@ from ventas.models import (
     FacturaElectronicaEntrega,
     FacturaElectronicaIntento,
     FacturaElectronicaSoporte,
+    FactusCredential,
+    FactusEnvironment,
     FactusNumberingRange,
     Venta,
     VentaFacturaElectronica,
@@ -39,6 +43,7 @@ from ventas.models import (
 from ventas.serializers import (
     AbonoCreateSerializer,
     DetalleVentaSerializer,
+    FacturacionElectronicaConfigSerializer,
     VentaCreateSerializer,
     VentaSerializer,
     VentaUpdateSerializer,
@@ -1029,6 +1034,43 @@ class FacturacionElectronicaTest(TestCase):
             pass
 
         return DummyAdapter()
+
+    def test_factus_adapter_no_usa_credenciales_globales_si_empresa_sin_credencial(self):
+        with self.assertRaises(FacturacionConfiguracionError) as exc:
+            FactusAdapter(empresa=self.empresa)
+
+        self.assertEqual(
+            exc.exception.code,
+            'factus_credenciales_empresa_requeridas',
+        )
+
+    def test_configuracion_no_habilita_facturacion_sin_credencial_empresa(self):
+        serializer = FacturacionElectronicaConfigSerializer(
+            self.config,
+            data={'is_enabled': True},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('environment', serializer.errors)
+
+    def test_configuracion_habilita_facturacion_con_credencial_empresa(self):
+        FactusCredential.objects.create(
+            empresa=self.empresa,
+            environment=FactusEnvironment.SANDBOX,
+            base_url='https://api-sandbox.factus.com.co',
+            client_id='cliente-prueba',
+            client_secret='secret-prueba',
+            username='sandbox@factus.test',
+            password='Password123',
+        )
+        serializer = FacturacionElectronicaConfigSerializer(
+            self.config,
+            data={'is_enabled': True},
+            partial=True,
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
 
     def test_venta_create_serializer_requiere_municipio_para_facturar(self):
         cliente = Cliente.objects.create(
