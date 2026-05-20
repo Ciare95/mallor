@@ -14,7 +14,12 @@ import {
   X,
 } from 'lucide-react';
 import { listarCategorias } from '../../services/inventario.service';
+import { useInventarioStore } from '../../store/useInventarioStore';
 import { formatCurrency } from '../../utils/formatters';
+import {
+  calculateSuggestedSalePrice,
+  roundCurrencyInput,
+} from '../../utils/inventarioPricing';
 
 const initialFormData = {
   codigo_interno: '',
@@ -79,6 +84,7 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
   const [formData, setFormData] = useState(() => getInitialFormData(producto));
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
+  const salePricingRules = useInventarioStore((state) => state.salePricingRules);
 
   const { data: categoriasData } = useQuery({
     queryKey: ['inventario', 'categorias'],
@@ -101,8 +107,11 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
   const isSpecialProduct = Boolean(formData.es_producto_especial);
   const margen =
     precioCompra > 0 ? ((precioVenta - precioCompra) / precioCompra) * 100 : 0;
-  const precioSugerido =
-    precioCompra > 0 ? precioCompra * (1 + iva / 100) * 1.3 : 0;
+  const costoFinal = precioCompra * (1 + iva / 100);
+  const precioSugerido = calculateSuggestedSalePrice(
+    costoFinal,
+    salePricingRules,
+  );
 
   const validators = {
     nombre: (value) => (!value.trim() ? 'El nombre es obligatorio' : null),
@@ -215,7 +224,7 @@ const ProductoForm = ({ producto, onSubmit, onCancel, isLoading, error }) => {
   const applySuggestedPrice = () => {
     setFormData((prev) => ({
       ...prev,
-      precio_venta: Math.ceil(precioSugerido).toString(),
+      precio_venta: roundCurrencyInput(precioSugerido),
     }));
     setErrors((prev) => ({ ...prev, precio_venta: null }));
   };
