@@ -5,6 +5,7 @@ import { ToastContainer } from '../ui/Toast';
 import {
   ajustarStock,
   actualizarProducto,
+  actualizarDetallesFacturaCompra,
   crearProducto,
   eliminarProducto,
   procesarFacturaCompra,
@@ -87,8 +88,15 @@ const ProductosPage = () => {
     mutationFn: registrarFacturaCompra,
     onSuccess: (factura) => {
       invalidateInventario();
-      toast.success(`Factura ${factura.numero_factura} registrada`);
-      setVistaActual(INVENTARIO_VISTAS.PROCESAR_FACTURA);
+      const tieneProductos = Array.isArray(factura.detalles) && factura.detalles.length > 0;
+      const notaPago =
+        factura.forma_pago === 'CONTADO'
+          ? ' y gasto registrado para cierre de caja'
+          : ' como cuenta por pagar';
+      toast.success(`Factura ${factura.numero_factura} registrada${notaPago}`);
+      setVistaActual(
+        tieneProductos ? INVENTARIO_VISTAS.PROCESAR_FACTURA : INVENTARIO_VISTAS.LISTA
+      );
     },
     onError: (error) => toast.error(extractApiError(error, 'No fue posible registrar la factura')),
   });
@@ -101,6 +109,15 @@ const ProductosPage = () => {
       setVistaActual(INVENTARIO_VISTAS.LISTA);
     },
     onError: (error) => toast.error(extractApiError(error, 'No fue posible procesar la factura')),
+  });
+
+  const actualizarDetallesFacturaMutation = useMutation({
+    mutationFn: ({ id, detalles }) => actualizarDetallesFacturaCompra(id, detalles),
+    onSuccess: (factura) => {
+      invalidateInventario();
+      toast.success(`Productos agregados a la factura ${factura.numero_factura}`);
+    },
+    onError: (error) => toast.error(extractApiError(error, 'No fue posible agregar productos a la factura')),
   });
 
   const handleSubmitProducto = (datos) => {
@@ -169,10 +186,15 @@ const ProductosPage = () => {
       {vistaActual === INVENTARIO_VISTAS.PROCESAR_FACTURA && (
         <ProcesarFacturaForm
           onProcess={(payload) => procesarFacturaMutation.mutate(payload)}
+          onAddDetails={(payload, callbacks) =>
+            actualizarDetallesFacturaMutation.mutate(payload, callbacks)
+          }
           onCancel={goList}
           onCreateProduct={() => { setProductoSeleccionado(null); setVistaActual(INVENTARIO_VISTAS.CREAR); }}
           isLoading={procesarFacturaMutation.isPending}
+          isSavingDetails={actualizarDetallesFacturaMutation.isPending}
           error={extractMutationError(procesarFacturaMutation)}
+          detailsError={extractMutationError(actualizarDetallesFacturaMutation)}
         />
       )}
 

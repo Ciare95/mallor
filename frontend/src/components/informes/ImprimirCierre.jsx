@@ -9,6 +9,7 @@ export default function ImprimirCierre({ cierre }) {
 
   const expenseRows = buildExpenseRows(cierre.gastos_operativos);
   const categoryRows = Object.entries(cierre.ventas_por_categoria || {});
+  const gastosPorMetodo = cierre.gastos_operativos?.por_metodo_pago || {};
 
   return (
     <div className="bg-white p-8 text-slate-900">
@@ -100,6 +101,27 @@ export default function ImprimirCierre({ cierre }) {
                   </td>
                   <td className="border border-slate-300 px-3 py-2">
                     {item.descripcion || '--'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <h2 className="text-lg font-semibold">Gastos por metodo</h2>
+          <table className="mt-3 w-full border-collapse text-sm">
+            <tbody>
+              {[
+                ['Efectivo', gastosPorMetodo.EFECTIVO || 0],
+                ['Transferencia', gastosPorMetodo.TRANSFERENCIA || 0],
+              ].map(([label, value]) => (
+                <tr key={label}>
+                  <td className="border border-slate-300 px-3 py-2">
+                    {label}
+                  </td>
+                  <td className="border border-slate-300 px-3 py-2 text-right">
+                    {formatCurrency(value)}
                   </td>
                 </tr>
               ))}
@@ -212,10 +234,21 @@ function extractExpenseDescription(expense, fallback = '') {
   }
 
   if (expense.descripcion) {
-    return expense.descripcion;
+    const metodo = formatPurchasePaymentMethod(expense.metodo_pago);
+    return `${expense.descripcion}${metodo ? ` - ${metodo}` : ''}`;
   }
 
   const detail = Array.isArray(expense.detalle) ? expense.detalle : [];
+  const invoiceItems = detail.filter((item) => item?.numero_factura);
+  if (invoiceItems.length > 0) {
+    return invoiceItems
+      .map((item) => {
+        const metodo = formatPurchasePaymentMethod(item.metodo_pago);
+        return `Factura ${item.numero_factura}${metodo ? ` - ${metodo}` : ''}`;
+      })
+      .join('; ');
+  }
+
   const firstItem = detail[0];
 
   if (typeof firstItem === 'string') {
@@ -226,9 +259,13 @@ function extractExpenseDescription(expense, fallback = '') {
     return firstItem.descripcion;
   }
 
-  if (firstItem?.numero_factura) {
-    return `Factura ${firstItem.numero_factura}`;
-  }
-
   return fallback || '';
+}
+
+function formatPurchasePaymentMethod(value) {
+  const labels = {
+    EFECTIVO: 'Efectivo',
+    TRANSFERENCIA: 'Transferencia',
+  };
+  return labels[value] || value || '';
 }

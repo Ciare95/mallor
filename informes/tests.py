@@ -6,7 +6,10 @@ from django.utils import timezone
 from rest_framework import status
 
 import informes.services as informes_services
-from informes.services import ReporteEstadisticasService
+from informes.models import CierreCaja
+from informes.services import CierreCajaService, ReporteEstadisticasService
+from inventario.models import AbonoFacturaCompra, FacturaCompra
+from proveedor.models import Proveedor
 from ventas.models import Venta
 from tests.factories import (
     EmpresaFactory,
@@ -85,6 +88,236 @@ def test_reporte_estadisticas_valor_inventario_aisla_empresa(empresa_a, empresa_
         'total_existencias': 5.0,
         'cantidad_productos': 1,
     }
+
+
+@pytest.mark.django_db
+def test_cierre_caja_usa_abonos_de_facturas_compra_por_fecha_pago(
+    empresa_a,
+    admin_a,
+):
+    proveedor = Proveedor.objects.create(
+        empresa=empresa_a,
+        numero_documento='900555001',
+        razon_social='Proveedor cierre',
+        nombre_contacto='Compras',
+        email='proveedor-cierre@mallor.test',
+        telefono='3000000000',
+        direccion='Calle 1',
+        ciudad='Bogota',
+        departamento='Cundinamarca',
+        tipo_productos='General',
+    )
+    hoy = timezone.localdate()
+    ahora = timezone.now()
+
+    with empresa_context(empresa_a):
+        factura_pagada_hoy = FacturaCompra.objects.create(
+            empresa=empresa_a,
+            numero_factura='FC-CIERRE-001',
+            proveedor=proveedor,
+            fecha_factura=hoy - timedelta(days=5),
+            subtotal=Decimal('10000.00'),
+            total=Decimal('10000.00'),
+            forma_pago=FacturaCompra.FORMA_PAGO_CREDITO,
+            usuario_registro=admin_a,
+        )
+        factura_pagada_manana = FacturaCompra.objects.create(
+            empresa=empresa_a,
+            numero_factura='FC-CIERRE-002',
+            proveedor=proveedor,
+            fecha_factura=hoy,
+            subtotal=Decimal('9000.00'),
+            total=Decimal('9000.00'),
+            forma_pago=FacturaCompra.FORMA_PAGO_CREDITO,
+            usuario_registro=admin_a,
+        )
+        pago_hoy = AbonoFacturaCompra.objects.create(
+            empresa=empresa_a,
+            factura=factura_pagada_hoy,
+            monto=Decimal('4000.00'),
+            metodo_pago=FacturaCompra.METODO_PAGO_EFECTIVO,
+            fecha_pago=ahora,
+            usuario_registro=admin_a,
+        )
+        AbonoFacturaCompra.objects.create(
+            empresa=empresa_a,
+            factura=factura_pagada_manana,
+            monto=Decimal('9000.00'),
+            metodo_pago=FacturaCompra.METODO_PAGO_TRANSFERENCIA,
+            fecha_pago=ahora + timedelta(days=1),
+            usuario_registro=admin_a,
+        )
+
+        compras = CierreCajaService._calcular_compras_mercancia_periodo(hoy, hoy)
+
+    assert compras['monto'] == Decimal('4000.00')
+    assert compras['detalle'] == [
+        {
+            'factura_id': factura_pagada_hoy.id,
+            'pago_id': pago_hoy.id,
+            'numero_factura': 'FC-CIERRE-001',
+            'fecha_factura': factura_pagada_hoy.fecha_factura.isoformat(),
+            'fecha_pago': timezone.localtime(pago_hoy.fecha_pago).isoformat(),
+            'proveedor': 'Proveedor cierre',
+            'metodo_pago': FacturaCompra.METODO_PAGO_EFECTIVO,
+            'estado': FacturaCompra.ESTADO_PENDIENTE,
+            'estado_pago': FacturaCompra.ESTADO_PAGO_ABONADA,
+            'total': 4000.0,
+        }
+    ]
+
+
+@pytest.mark.django_db
+def test_cierre_caja_resta_compras_mercancia_en_efectivo_del_esperado(
+    empresa_a,
+    admin_a,
+):
+    hoy = timezone.localdate()
+    ahora = timezone.now()
+    proveedor = Proveedor.objects.create(
+        empresa=empresa_a,
+        numero_documento='900555002',
+        razon_social='Proveedor efectivo',
+        nombre_contacto='Compras',
+        email='proveedor-efectivo@mallor.test',
+        telefono='3000000000',
+        direccion='Calle 2',
+        ciudad='Bogota',
+        departamento='Cundinamarca',
+        tipo_productos='General',
+    )
+
+    with empresa_context(empresa_a):
+        Venta.objects.filter(empresa=empresa_a).delete()
+        VentaFactory(
+            empresa=empresa_a,
+            usuario_registro=admin_a,
+            total=Decimal('10000.00'),
+            subtotal=Decimal('10000.00'),
+            impuestos=Decimal('0.00'),
+            metodo_pago=Venta.MetodoPago.EFECTIVO,
+            fecha_venta=ahora,
+        )
+        factura_efectivo = FacturaCompra.objects.create(
+            empresa=empresa_a,
+            numero_factura='FC-EFECTIVO-001',
+            proveedor=proveedor,
+            fecha_factura=hoy,
+            subtotal=Decimal('4000.00'),
+            total=Decimal('4000.00'),
+            forma_pago=FacturaCompra.FORMA_PAGO_CONTADO,
+            metodo_pago=FacturaCompra.METODO_PAGO_EFECTIVO,
+            usuario_registro=admin_a,
+        )
+        factura_transferencia = FacturaCompra.objects.create(
+            empresa=empresa_a,
+            numero_factura='FC-TRANSFER-001',
+            proveedor=proveedor,
+            fecha_factura=hoy,
+            subtotal=Decimal('3000.00'),
+            total=Decimal('3000.00'),
+            forma_pago=FacturaCompra.FORMA_PAGO_CONTADO,
+            metodo_pago=FacturaCompra.METODO_PAGO_TRANSFERENCIA,
+            usuario_registro=admin_a,
+        )
+        AbonoFacturaCompra.objects.create(
+            empresa=empresa_a,
+            factura=factura_efectivo,
+            monto=Decimal('4000.00'),
+            metodo_pago=FacturaCompra.METODO_PAGO_EFECTIVO,
+            fecha_pago=ahora,
+            usuario_registro=admin_a,
+        )
+        AbonoFacturaCompra.objects.create(
+            empresa=empresa_a,
+            factura=factura_transferencia,
+            monto=Decimal('3000.00'),
+            metodo_pago=FacturaCompra.METODO_PAGO_TRANSFERENCIA,
+            fecha_pago=ahora,
+            usuario_registro=admin_a,
+        )
+        gastos = CierreCajaService._construir_gastos_operativos(hoy)
+        cierre = CierreCaja.objects.create(
+            empresa=empresa_a,
+            fecha_cierre=hoy,
+            usuario_cierre=admin_a,
+            efectivo_real=Decimal('6000.00'),
+            gastos_operativos=CierreCajaService._serializar_gastos_operativos(
+                gastos,
+            ),
+        )
+
+    assert cierre.total_efectivo == Decimal('10000.00')
+    assert cierre.total_gastos == Decimal('7000.00')
+    assert cierre.efectivo_esperado == Decimal('6000.00')
+    assert cierre.diferencia == Decimal('0.00')
+
+
+@pytest.mark.django_db
+def test_cierre_caja_resta_gastos_manuales_en_efectivo_y_resume_metodos(
+    empresa_a,
+    admin_a,
+):
+    hoy = timezone.localdate()
+    ahora = timezone.now()
+
+    with empresa_context(empresa_a):
+        Venta.objects.filter(empresa=empresa_a).delete()
+        VentaFactory(
+            empresa=empresa_a,
+            usuario_registro=admin_a,
+            total=Decimal('20000.00'),
+            subtotal=Decimal('20000.00'),
+            impuestos=Decimal('0.00'),
+            metodo_pago=Venta.MetodoPago.EFECTIVO,
+            fecha_venta=ahora,
+        )
+        gastos = CierreCajaService._construir_gastos_operativos(
+            hoy,
+            {
+                'servicios_publicos': {
+                    'monto': Decimal('3000.00'),
+                    'metodo_pago': 'EFECTIVO',
+                    'descripcion': 'Energia',
+                },
+                'arriendos': {
+                    'monto': Decimal('5000.00'),
+                    'metodo_pago': 'TRANSFERENCIA',
+                    'descripcion': 'Canon',
+                },
+            },
+        )
+        cierre = CierreCaja.objects.create(
+            empresa=empresa_a,
+            fecha_cierre=hoy,
+            usuario_cierre=admin_a,
+            efectivo_real=Decimal('17000.00'),
+            gastos_operativos=CierreCajaService._serializar_gastos_operativos(
+                gastos,
+            ),
+        )
+
+    assert cierre.total_gastos == Decimal('8000.00')
+    assert cierre.efectivo_esperado == Decimal('17000.00')
+    assert cierre.diferencia == Decimal('0.00')
+    assert cierre.gastos_operativos['por_metodo_pago'] == {
+        'EFECTIVO': 3000.0,
+        'TRANSFERENCIA': 5000.0,
+    }
+
+
+@pytest.mark.django_db
+def test_gasto_manual_con_monto_requiere_metodo_pago(empresa_a):
+    with empresa_context(empresa_a), pytest.raises(Exception):
+        CierreCajaService._construir_gastos_operativos(
+            timezone.localdate(),
+            {
+                'otros_gastos': {
+                    'monto': Decimal('1000.00'),
+                    'descripcion': 'Papeleria',
+                },
+            },
+        )
 
 
 @pytest.mark.django_db

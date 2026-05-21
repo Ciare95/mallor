@@ -489,10 +489,30 @@ class FacturaCompra(models.Model):
     # Estados de la factura
     ESTADO_PENDIENTE = 'PENDIENTE'
     ESTADO_PROCESADA = 'PROCESADA'
+    ESTADO_PAGO_PENDIENTE = 'PENDIENTE'
+    ESTADO_PAGO_ABONADA = 'ABONADA'
+    ESTADO_PAGO_PAGADA = 'PAGADA'
+    FORMA_PAGO_CONTADO = 'CONTADO'
+    FORMA_PAGO_CREDITO = 'CREDITO'
+    METODO_PAGO_EFECTIVO = 'EFECTIVO'
+    METODO_PAGO_TRANSFERENCIA = 'TRANSFERENCIA'
     
     ESTADO_CHOICES = [
         (ESTADO_PENDIENTE, _('Pendiente')),
         (ESTADO_PROCESADA, _('Procesada')),
+    ]
+    ESTADO_PAGO_CHOICES = [
+        (ESTADO_PAGO_PENDIENTE, _('Pendiente')),
+        (ESTADO_PAGO_ABONADA, _('Abonada')),
+        (ESTADO_PAGO_PAGADA, _('Pagada')),
+    ]
+    FORMA_PAGO_CHOICES = [
+        (FORMA_PAGO_CONTADO, _('Contado')),
+        (FORMA_PAGO_CREDITO, _('Credito')),
+    ]
+    METODO_PAGO_CHOICES = [
+        (METODO_PAGO_EFECTIVO, _('Efectivo')),
+        (METODO_PAGO_TRANSFERENCIA, _('Transferencia')),
     ]
     
     empresa = models.ForeignKey(
@@ -524,6 +544,13 @@ class FacturaCompra(models.Model):
         help_text=_('Fecha de emisión de la factura')
     )
     
+    fecha_vencimiento = models.DateField(
+        _('fecha de vencimiento'),
+        null=True,
+        blank=True,
+        help_text=_('Fecha limite de pago de la factura'),
+    )
+
     fecha_registro = models.DateTimeField(
         _('fecha de registro'),
         auto_now_add=True,
@@ -562,6 +589,41 @@ class FacturaCompra(models.Model):
         help_text=_('Valor total de la factura (subtotal + IVA - descuento)')
     )
     
+    forma_pago = models.CharField(
+        _('forma de pago'),
+        max_length=20,
+        choices=FORMA_PAGO_CHOICES,
+        default=FORMA_PAGO_CONTADO,
+    )
+
+    metodo_pago = models.CharField(
+        _('metodo de pago'),
+        max_length=20,
+        choices=METODO_PAGO_CHOICES,
+        default=METODO_PAGO_EFECTIVO,
+    )
+
+    total_abonado = models.DecimalField(
+        _('total abonado'),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+    )
+
+    saldo_pendiente = models.DecimalField(
+        _('saldo pendiente'),
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal('0.00'),
+    )
+
+    estado_pago = models.CharField(
+        _('estado de pago'),
+        max_length=20,
+        choices=ESTADO_PAGO_CHOICES,
+        default=ESTADO_PAGO_PENDIENTE,
+    )
+
     observaciones = models.TextField(
         _('observaciones'),
         blank=True,
@@ -605,7 +667,9 @@ class FacturaCompra(models.Model):
             models.Index(fields=['numero_factura']),
             models.Index(fields=['proveedor']),
             models.Index(fields=['fecha_factura']),
+            models.Index(fields=['fecha_vencimiento']),
             models.Index(fields=['estado']),
+            models.Index(fields=['estado_pago']),
             models.Index(fields=['usuario_registro']),
             models.Index(fields=['created_at']),
         ]
@@ -661,6 +725,29 @@ class FacturaCompra(models.Model):
             'descuento': self.descuento,
             'total': total
         }
+
+    def actualizar_estado_pago(self):
+        total_abonos = self.abonos.aggregate(
+            total=models.Sum('monto'),
+        )['total'] or Decimal('0.00')
+        q = Decimal('0.01')
+        self.total_abonado = total_abonos.quantize(q)
+        saldo = (self.total - self.total_abonado).quantize(q)
+        self.saldo_pendiente = max(saldo, Decimal('0.00'))
+        if self.saldo_pendiente <= Decimal('0.00') and self.total > 0:
+            self.estado_pago = self.ESTADO_PAGO_PAGADA
+        elif self.total_abonado > Decimal('0.00'):
+            self.estado_pago = self.ESTADO_PAGO_ABONADA
+        else:
+            self.estado_pago = self.ESTADO_PAGO_PENDIENTE
+        return self.estado_pago
+
+    @property
+    def vencimiento_proximo(self):
+        if not self.fecha_vencimiento or self.estado_pago == self.ESTADO_PAGO_PAGADA:
+            return False
+        dias = (self.fecha_vencimiento - timezone.now().date()).days
+        return 0 <= dias <= 3
     
     def marcar_como_procesada(self):
         """
@@ -685,6 +772,16 @@ class FacturaCompra(models.Model):
         if self.fecha_factura and self.fecha_factura > timezone.now().date():
             raise ValidationError({
                 'fecha_factura': _('La fecha de factura no puede ser futura')
+            })
+        if (
+            self.fecha_vencimiento
+            and self.fecha_factura
+            and self.fecha_vencimiento < self.fecha_factura
+        ):
+            raise ValidationError({
+                'fecha_vencimiento': _(
+                    'La fecha de vencimiento no puede ser anterior a la factura'
+                )
             })
         
         # Validar que descuento no sea negativo
@@ -721,6 +818,73 @@ class FacturaCompra(models.Model):
             self.empresa = get_empresa_actual_or_default()
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class AbonoFacturaCompra(models.Model):
+    factura = models.ForeignKey(
+        FacturaCompra,
+        on_delete=models.CASCADE,
+        related_name='abonos',
+        verbose_name=_('factura de compra'),
+    )
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='abonos_facturas_compra',
+    )
+    monto = models.DecimalField(max_digits=12, decimal_places=2)
+    metodo_pago = models.CharField(
+        max_length=20,
+        choices=FacturaCompra.METODO_PAGO_CHOICES,
+        default=FacturaCompra.METODO_PAGO_EFECTIVO,
+    )
+    fecha_pago = models.DateTimeField(default=timezone.now)
+    referencia_pago = models.CharField(max_length=100, blank=True)
+    observaciones = models.TextField(blank=True)
+    usuario_registro = models.ForeignKey(
+        'usuario.Usuario',
+        on_delete=models.PROTECT,
+        related_name='abonos_facturas_compra',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'abonos_facturas_compra'
+        ordering = ['-fecha_pago', '-created_at']
+        indexes = [
+            models.Index(fields=['empresa']),
+            models.Index(fields=['factura']),
+            models.Index(fields=['fecha_pago']),
+            models.Index(fields=['metodo_pago']),
+        ]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.monto <= Decimal('0.00'):
+            raise ValidationError({'monto': _('El abono debe ser mayor que cero')})
+        abonado = self.factura.abonos.exclude(pk=self.pk).aggregate(
+            total=models.Sum('monto'),
+        )['total'] or Decimal('0.00')
+        if self.monto > (self.factura.total - abonado).quantize(Decimal('0.01')):
+            raise ValidationError({
+                'monto': _('El abono no puede exceder el saldo pendiente')
+            })
+
+    def save(self, *args, **kwargs):
+        if self.empresa_id is None and self.factura_id:
+            self.empresa = self.factura.empresa
+        self.full_clean()
+        super().save(*args, **kwargs)
+        self.factura.actualizar_estado_pago()
+        self.factura.save(update_fields=[
+            'total_abonado',
+            'saldo_pendiente',
+            'estado_pago',
+            'updated_at',
+        ])
 
 
 class DetalleFacturaCompra(models.Model):

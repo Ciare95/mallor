@@ -241,6 +241,48 @@ class CierreCaja(models.Model):
             self._extraer_total_gasto(self.gastos_operativos),
         )
 
+    def _calcular_gastos_por_metodo(self) -> dict[str, Decimal]:
+        if not isinstance(self.gastos_operativos, dict):
+            return {
+                'EFECTIVO': ZERO,
+                'TRANSFERENCIA': ZERO,
+            }
+
+        totales = {
+            'EFECTIVO': ZERO,
+            'TRANSFERENCIA': ZERO,
+        }
+        compras = self.gastos_operativos.get('compras_mercancia', {})
+        detalle = compras.get('detalle', []) if isinstance(compras, dict) else []
+        for item in detalle if isinstance(detalle, list) else []:
+            if not isinstance(item, dict):
+                continue
+            metodo = str(item.get('metodo_pago') or '').upper()
+            if metodo not in totales:
+                continue
+            totales[metodo] += self._coerce_decimal(
+                item.get('total', item.get('monto', ZERO)),
+            )
+
+        for key in (
+            'servicios_publicos',
+            'arriendos',
+            'salarios',
+            'otros_gastos',
+        ):
+            gasto = self.gastos_operativos.get(key, {})
+            if not isinstance(gasto, dict):
+                continue
+            metodo = str(gasto.get('metodo_pago') or 'EFECTIVO').upper()
+            if metodo not in totales:
+                continue
+            totales[metodo] += self._coerce_decimal(gasto.get('monto', ZERO))
+
+        return {
+            metodo: self._quantize(total)
+            for metodo, total in totales.items()
+        }
+
     def _calcular_ventas_por_categoria(self) -> dict[str, float]:
         ventas_por_categoria = {}
         categorias = DetalleVenta.objects.filter(
@@ -363,8 +405,19 @@ class CierreCaja(models.Model):
         self.total_abonos = self._quantize(total_abonos)
         self.total_gastos = self._calcular_total_gastos_operativos()
         self.ventas_por_categoria = self._calcular_ventas_por_categoria()
+        gastos_por_metodo = self._calcular_gastos_por_metodo()
+        if isinstance(self.gastos_operativos, dict):
+            self.gastos_operativos['por_metodo_pago'] = {
+                metodo: float(total)
+                for metodo, total in gastos_por_metodo.items()
+            }
         self.efectivo_esperado = self._quantize(
-            self.total_efectivo + self.total_abonos,
+            max(
+                self.total_efectivo
+                + self.total_abonos
+                - gastos_por_metodo.get('EFECTIVO', ZERO),
+                ZERO,
+            ),
         )
         self.calcular_diferencia()
 

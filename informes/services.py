@@ -30,7 +30,7 @@ from core.exceptions import (
 )
 from cliente.models import Cliente
 from empresa.context import get_empresa_actual_or_default
-from inventario.models import FacturaCompra
+from inventario.models import AbonoFacturaCompra, FacturaCompra
 from inventario.models import Producto
 from usuario.models import Usuario
 from ventas.models import DetalleVenta, Venta
@@ -46,6 +46,7 @@ MANUAL_GASTO_KEYS = (
     'salarios',
     'otros_gastos',
 )
+GASTO_METODOS_PAGO = ('EFECTIVO', 'TRANSFERENCIA')
 BUSINESS_TIMEZONE = ZoneInfo('America/Bogota')
 MONTH_LABELS = (
     'Enero',
@@ -255,13 +256,14 @@ class CierreCajaService:
         fecha_inicio: date,
         fecha_fin: date,
     ):
-        return FacturaCompra.objects.select_related(
-            'proveedor',
+        return AbonoFacturaCompra.objects.select_related(
+            'factura',
+            'factura__proveedor',
             'usuario_registro',
         ).filter(
             empresa=get_empresa_actual_or_default(),
-            fecha_factura__gte=fecha_inicio,
-            fecha_factura__lte=fecha_fin,
+            fecha_pago__gte=_local_day_start_utc(fecha_inicio),
+            fecha_pago__lt=_next_local_day_start_utc(fecha_fin),
         )
 
     @staticmethod
@@ -270,18 +272,23 @@ class CierreCajaService:
     ) -> List[Dict[str, Any]]:
         detalles = []
 
-        for factura in facturas:
+        for pago in facturas:
+            factura = pago.factura
             detalles.append({
                 'factura_id': factura.id,
+                'pago_id': pago.id,
                 'numero_factura': factura.numero_factura,
                 'fecha_factura': factura.fecha_factura.isoformat(),
+                'fecha_pago': timezone.localtime(pago.fecha_pago).isoformat(),
                 'proveedor': (
                     factura.proveedor.razon_social
                     if factura.proveedor else ''
                 ),
+                'metodo_pago': pago.metodo_pago,
                 'estado': factura.estado,
+                'estado_pago': factura.estado_pago,
                 'total': float(
-                    CierreCajaService._quantize(factura.total),
+                    CierreCajaService._quantize(pago.monto),
                 ),
             })
 
@@ -297,11 +304,11 @@ class CierreCajaService:
             fecha_fin,
         )
         facturas = list(
-            facturas_qs.order_by('fecha_factura', 'numero_factura'),
+            facturas_qs.order_by('fecha_pago', 'factura__numero_factura'),
         )
         total = facturas_qs.aggregate(
             total=Coalesce(
-                Sum('total'),
+                Sum('monto'),
                 ZERO,
                 output_field=DecimalField(
                     max_digits=12,
@@ -363,11 +370,26 @@ class CierreCajaService:
         monto = CierreCajaService._quantize(
             CierreCajaService._extraer_total_gasto(raw_value),
         )
+        metodo_pago = ''
+        if isinstance(raw_value, dict):
+            metodo_pago = str(raw_value.get('metodo_pago') or '').upper()
+        if monto > ZERO:
+            if not metodo_pago:
+                raise InformeError(
+                    _('Debes indicar el metodo de pago de cada gasto.'),
+                    code='metodo_pago_gasto_requerido',
+                )
+            if metodo_pago not in GASTO_METODOS_PAGO:
+                raise InformeError(
+                    _('Metodo de pago de gasto invalido.'),
+                    code='metodo_pago_gasto_invalido',
+                )
         gasto = {
             'monto': monto,
             'detalle': CierreCajaService._normalizar_detalle_gasto(
                 raw_value,
             ),
+            'metodo_pago': metodo_pago or 'EFECTIVO',
         }
 
         if isinstance(raw_value, dict) and raw_value.get('descripcion'):
@@ -386,8 +408,45 @@ class CierreCajaService:
 
         if gasto.get('descripcion'):
             serializado['descripcion'] = gasto['descripcion']
+        if gasto.get('metodo_pago'):
+            serializado['metodo_pago'] = gasto['metodo_pago']
 
         return serializado
+
+    @staticmethod
+    def _calcular_gastos_por_metodo(
+        gastos_operativos: Dict[str, Any],
+    ) -> Dict[str, Decimal]:
+        totales = {
+            'EFECTIVO': ZERO,
+            'TRANSFERENCIA': ZERO,
+        }
+        compras = gastos_operativos.get('compras_mercancia', {})
+        for item in compras.get('detalle', []) if isinstance(compras, dict) else []:
+            if not isinstance(item, dict):
+                continue
+            metodo = str(item.get('metodo_pago') or '').upper()
+            if metodo not in totales:
+                continue
+            totales[metodo] += CierreCajaService._coerce_decimal(
+                item.get('total', item.get('monto', ZERO)),
+            )
+
+        for key in MANUAL_GASTO_KEYS:
+            gasto = gastos_operativos.get(key, {})
+            if not isinstance(gasto, dict):
+                continue
+            metodo = str(gasto.get('metodo_pago') or 'EFECTIVO').upper()
+            if metodo not in totales:
+                continue
+            totales[metodo] += CierreCajaService._coerce_decimal(
+                gasto.get('monto', ZERO),
+            )
+
+        return {
+            key: CierreCajaService._quantize(value)
+            for key, value in totales.items()
+        }
 
     @staticmethod
     def _construir_gastos_operativos(
@@ -453,6 +512,12 @@ class CierreCajaService:
         serializado['total'] = float(
             CierreCajaService._quantize(gastos_operativos['total']),
         )
+        serializado['por_metodo_pago'] = {
+            metodo: float(total)
+            for metodo, total in CierreCajaService._calcular_gastos_por_metodo(
+                gastos_operativos,
+            ).items()
+        }
         return serializado
 
     @staticmethod

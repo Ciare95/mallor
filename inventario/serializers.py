@@ -8,6 +8,7 @@ from .models import (
     Producto,
     FacturaCompra,
     DetalleFacturaCompra,
+    AbonoFacturaCompra,
     HistorialInventario,
 )
 from usuario.models import Usuario
@@ -439,6 +440,22 @@ class DetalleFacturaCompraCreateSerializer(serializers.ModelSerializer):
         return value
 
 
+class FacturaCompraDetallesUpdateSerializer(serializers.Serializer):
+    detalles = DetalleFacturaCompraCreateSerializer(many=True)
+
+    def validate_detalles(self, value):
+        if not value:
+            raise serializers.ValidationError(
+                'Debe incluir al menos un producto en la factura'
+            )
+        productos = [detalle['producto'].id for detalle in value]
+        if len(productos) != len(set(productos)):
+            raise serializers.ValidationError(
+                'No repitas el mismo producto dentro de la factura'
+            )
+        return value
+
+
 class FacturaCompraSerializer(serializers.ModelSerializer):
     detalles = DetalleFacturaCompraSerializer(many=True, read_only=True)
     proveedor_nombre = serializers.CharField(
@@ -450,13 +467,16 @@ class FacturaCompraSerializer(serializers.ModelSerializer):
         source='usuario_registro.get_full_name',
         read_only=True,
     )
+    vencimiento_proximo = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = FacturaCompra
         fields = [
             'id', 'numero_factura', 'proveedor', 'proveedor_nombre',
-            'fecha_factura', 'fecha_registro',
+            'fecha_factura', 'fecha_vencimiento', 'fecha_registro',
             'subtotal', 'iva', 'descuento', 'total',
+            'forma_pago', 'metodo_pago', 'total_abonado',
+            'saldo_pendiente', 'estado_pago', 'vencimiento_proximo',
             'observaciones', 'usuario_registro',
             'usuario_registro_nombre', 'estado',
             'detalles', 'created_at', 'updated_at',
@@ -469,13 +489,15 @@ class FacturaCompraSerializer(serializers.ModelSerializer):
 
 
 class FacturaCompraCreateSerializer(serializers.ModelSerializer):
-    detalles = DetalleFacturaCompraCreateSerializer(many=True)
+    detalles = DetalleFacturaCompraCreateSerializer(many=True, required=False)
 
     class Meta:
         model = FacturaCompra
         fields = [
             'numero_factura', 'proveedor', 'fecha_factura',
-            'descuento', 'observaciones', 'usuario_registro',
+            'fecha_vencimiento', 'subtotal', 'iva', 'total',
+            'descuento', 'forma_pago', 'metodo_pago',
+            'observaciones', 'usuario_registro',
             'detalles',
         ]
 
@@ -494,34 +516,50 @@ class FacturaCompraCreateSerializer(serializers.ModelSerializer):
             )
         return value
 
-    def validate_detalles(self, value):
-        if not value:
-            raise serializers.ValidationError(
-                'Debe incluir al menos un producto en la factura'
-            )
-        return value
-
     def validate(self, data):
         if data.get('descuento') and data.get('descuento') < 0:
             raise serializers.ValidationError(
                 {'descuento': 'El descuento no puede ser negativo'}
             )
+        detalles = data.get('detalles') or []
+        if not detalles and data.get('total', Decimal('0.00')) <= 0:
+            raise serializers.ValidationError({
+                'total': 'Debe indicar el total si registra la factura sin productos'
+            })
         return data
 
     def create(self, validated_data):
-        detalles_data = validated_data.pop('detalles')
+        detalles_data = validated_data.pop('detalles', [])
         factura = FacturaCompra.objects.create(**validated_data)
         for detalle_data in detalles_data:
             DetalleFacturaCompra.objects.create(
                 factura=factura,
                 **detalle_data
             )
-        factura.calcular_totales()
-        factura.save()
+        if detalles_data:
+            factura.calcular_totales()
+            factura.save()
         return factura
 
     def to_representation(self, instance):
         return FacturaCompraSerializer(instance).data
+
+
+class AbonoFacturaCompraSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AbonoFacturaCompra
+        fields = [
+            'id', 'factura', 'monto', 'metodo_pago', 'fecha_pago',
+            'referencia_pago', 'observaciones', 'usuario_registro',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'factura', 'usuario_registro', 'created_at']
+
+
+class AbonoFacturaCompraCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AbonoFacturaCompra
+        fields = ['monto', 'metodo_pago', 'fecha_pago', 'referencia_pago', 'observaciones']
 
 
 class HistorialInventarioSerializer(serializers.ModelSerializer):

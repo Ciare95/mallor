@@ -184,6 +184,22 @@ export const obtenerFacturaCompra = async (id) => {
   return response.data;
 };
 
+export const actualizarDetallesFacturaCompra = async (id, detalles) => {
+  const response = await api.post(
+    `${INVENTARIO_BASE}/facturas/${id}/detalles/`,
+    { detalles }
+  );
+  return response.data;
+};
+
+export const registrarAbonoFacturaCompra = async (id, datos) => {
+  const response = await api.post(
+    `${INVENTARIO_BASE}/facturas/${id}/abonos/`,
+    datos
+  );
+  return response.data;
+};
+
 export const procesarFacturaCompra = async (input) => {
   const payload =
     typeof input === 'object' && input !== null ? input : { id: input };
@@ -260,6 +276,8 @@ export default {
   listarFacturasCompra,
   registrarFacturaCompra,
   obtenerFacturaCompra,
+  actualizarDetallesFacturaCompra,
+  registrarAbonoFacturaCompra,
   procesarFacturaCompra,
   obtenerValorTotalInventario,
   obtenerProductosBajoStock,

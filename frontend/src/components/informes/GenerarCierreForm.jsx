@@ -124,6 +124,24 @@ export default function GenerarCierreForm({
                 ))}
               </div>
             </div>
+
+            <div className="mt-5 rounded-[18px] border border-app bg-white/76 p-4">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">
+                Gastos por metodo
+              </div>
+              <div className="mt-3 space-y-2">
+                <SummaryRow
+                  label="Efectivo"
+                  value={formatCurrency(preview.gastosPorMetodo?.EFECTIVO || 0)}
+                  compact
+                />
+                <SummaryRow
+                  label="Transferencia"
+                  value={formatCurrency(preview.gastosPorMetodo?.TRANSFERENCIA || 0)}
+                  compact
+                />
+              </div>
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -135,7 +153,7 @@ export default function GenerarCierreForm({
                 {MANUAL_EXPENSE_FIELDS.map((field) => (
                   <div
                     key={field.key}
-                    className="grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)]"
+                    className="grid gap-3 lg:grid-cols-[130px_150px_minmax(0,1fr)]"
                   >
                     <label className="app-field">
                       <span className="app-field-label">{field.label}</span>
@@ -152,6 +170,24 @@ export default function GenerarCierreForm({
                         }
                         className="app-input min-h-11"
                       />
+                    </label>
+                    <label className="app-field">
+                      <span className="app-field-label">Metodo</span>
+                      <select
+                        value={form.gastos[field.key].metodo_pago}
+                        onChange={(event) =>
+                          onChange(
+                            `gastos.${field.key}.metodo_pago`,
+                            event.target.value,
+                          )
+                        }
+                        className="app-input min-h-11"
+                        required={Number(form.gastos[field.key].monto || 0) > 0}
+                      >
+                        <option value="">Selecciona</option>
+                        <option value="EFECTIVO">Efectivo</option>
+                        <option value="TRANSFERENCIA">Transferencia</option>
+                      </select>
                     </label>
                     <label className="app-field">
                       <span className="app-field-label">Detalle</span>

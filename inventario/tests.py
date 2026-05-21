@@ -3,10 +3,11 @@ from decimal import Decimal
 
 from django.test import TestCase
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from usuario.models import Usuario
 from proveedor.models import Proveedor
 
-from .models import Categoria, DetalleFacturaCompra, FacturaCompra, Producto
+from .models import AbonoFacturaCompra, Categoria, DetalleFacturaCompra, FacturaCompra, Producto
 from .services import FacturaCompraService, ReporteService
 
 
@@ -464,6 +465,164 @@ class FacturaCompraServiceTest(TestCase):
             precio_venta=Decimal('7000.00'),
             iva=Decimal('0.00'),
         )
+
+    def test_registrar_factura_contado_sin_productos_crea_pago_completo(self):
+        factura = FacturaCompraService.registrar_factura_compra({
+            'numero_factura': 'FC-CONTADO-001',
+            'proveedor': self.proveedor,
+            'fecha_factura': date(2026, 5, 21),
+            'subtotal': Decimal('10000.00'),
+            'iva': Decimal('1900.00'),
+            'total': Decimal('11900.00'),
+            'forma_pago': FacturaCompra.FORMA_PAGO_CONTADO,
+            'metodo_pago': FacturaCompra.METODO_PAGO_TRANSFERENCIA,
+            'usuario_registro': self.usuario,
+        })
+
+        factura.refresh_from_db()
+
+        self.assertEqual(factura.detalles.count(), 0)
+        self.assertEqual(factura.total_abonado, Decimal('11900.00'))
+        self.assertEqual(factura.saldo_pendiente, Decimal('0.00'))
+        self.assertEqual(factura.estado_pago, FacturaCompra.ESTADO_PAGO_PAGADA)
+        self.assertEqual(factura.abonos.count(), 1)
+        self.assertEqual(
+            factura.abonos.first().metodo_pago,
+            FacturaCompra.METODO_PAGO_TRANSFERENCIA,
+        )
+
+    def test_registrar_factura_credito_sin_productos_deja_saldo_pendiente(self):
+        factura = FacturaCompraService.registrar_factura_compra({
+            'numero_factura': 'FC-CREDITO-001',
+            'proveedor': self.proveedor,
+            'fecha_factura': date(2026, 5, 21),
+            'fecha_vencimiento': timezone.now().date(),
+            'subtotal': Decimal('5000.00'),
+            'iva': Decimal('950.00'),
+            'total': Decimal('5950.00'),
+            'forma_pago': FacturaCompra.FORMA_PAGO_CREDITO,
+            'metodo_pago': FacturaCompra.METODO_PAGO_EFECTIVO,
+            'usuario_registro': self.usuario,
+        })
+
+        factura.refresh_from_db()
+
+        self.assertEqual(factura.total_abonado, Decimal('0.00'))
+        self.assertEqual(factura.saldo_pendiente, Decimal('5950.00'))
+        self.assertEqual(factura.estado_pago, FacturaCompra.ESTADO_PAGO_PENDIENTE)
+        self.assertTrue(factura.vencimiento_proximo)
+
+    def test_registrar_abono_actualiza_saldo_y_estado_pago(self):
+        factura = FacturaCompraService.registrar_factura_compra({
+            'numero_factura': 'FC-ABONO-001',
+            'proveedor': self.proveedor,
+            'fecha_factura': date(2026, 5, 21),
+            'subtotal': Decimal('10000.00'),
+            'iva': Decimal('0.00'),
+            'total': Decimal('10000.00'),
+            'forma_pago': FacturaCompra.FORMA_PAGO_CREDITO,
+            'metodo_pago': FacturaCompra.METODO_PAGO_EFECTIVO,
+            'usuario_registro': self.usuario,
+        })
+
+        FacturaCompraService.registrar_abono_factura(
+            factura.id,
+            {
+                'monto': Decimal('4000.00'),
+                'metodo_pago': FacturaCompra.METODO_PAGO_EFECTIVO,
+            },
+            self.usuario,
+        )
+        factura.refresh_from_db()
+
+        self.assertEqual(factura.total_abonado, Decimal('4000.00'))
+        self.assertEqual(factura.saldo_pendiente, Decimal('6000.00'))
+        self.assertEqual(factura.estado_pago, FacturaCompra.ESTADO_PAGO_ABONADA)
+
+        FacturaCompraService.registrar_abono_factura(
+            factura.id,
+            {
+                'monto': Decimal('6000.00'),
+                'metodo_pago': FacturaCompra.METODO_PAGO_TRANSFERENCIA,
+            },
+            self.usuario,
+        )
+        factura.refresh_from_db()
+
+        self.assertEqual(factura.total_abonado, Decimal('10000.00'))
+        self.assertEqual(factura.saldo_pendiente, Decimal('0.00'))
+        self.assertEqual(factura.estado_pago, FacturaCompra.ESTADO_PAGO_PAGADA)
+
+    def test_abono_no_puede_exceder_saldo_pendiente(self):
+        factura = FacturaCompra.objects.create(
+            numero_factura='FC-ABONO-002',
+            proveedor=self.proveedor,
+            fecha_factura=date(2026, 5, 21),
+            subtotal=Decimal('1000.00'),
+            total=Decimal('1000.00'),
+            forma_pago=FacturaCompra.FORMA_PAGO_CREDITO,
+            usuario_registro=self.usuario,
+        )
+
+        with self.assertRaises(ValidationError):
+            AbonoFacturaCompra.objects.create(
+                factura=factura,
+                monto=Decimal('1000.01'),
+                metodo_pago=FacturaCompra.METODO_PAGO_EFECTIVO,
+                usuario_registro=self.usuario,
+            )
+
+    def test_actualizar_detalles_factura_pendiente_no_cambia_total_registrado(self):
+        factura = FacturaCompraService.registrar_factura_compra({
+            'numero_factura': 'FC-DETALLES-001',
+            'proveedor': self.proveedor,
+            'fecha_factura': date(2026, 5, 21),
+            'subtotal': Decimal('10000.00'),
+            'iva': Decimal('1900.00'),
+            'total': Decimal('11900.00'),
+            'forma_pago': FacturaCompra.FORMA_PAGO_CREDITO,
+            'metodo_pago': FacturaCompra.METODO_PAGO_EFECTIVO,
+            'usuario_registro': self.usuario,
+        })
+
+        factura = FacturaCompraService.actualizar_detalles_factura(
+            factura.id,
+            [{
+                'producto': self.producto,
+                'cantidad': Decimal('2.00'),
+                'precio_unitario': Decimal('6000.00'),
+                'precio_venta_sugerido': Decimal('8500.00'),
+                'iva': Decimal('0.00'),
+                'descuento': Decimal('0.00'),
+            }],
+        )
+
+        self.assertEqual(factura.detalles.count(), 1)
+        self.assertEqual(factura.total, Decimal('11900.00'))
+        self.assertEqual(factura.saldo_pendiente, Decimal('11900.00'))
+
+    def test_actualizar_detalles_factura_procesada_no_permite_editar(self):
+        factura = FacturaCompra.objects.create(
+            numero_factura='FC-DETALLES-002',
+            proveedor=self.proveedor,
+            fecha_factura=date(2026, 5, 21),
+            subtotal=Decimal('10000.00'),
+            total=Decimal('10000.00'),
+            estado=FacturaCompra.ESTADO_PROCESADA,
+            usuario_registro=self.usuario,
+        )
+
+        with self.assertRaises(Exception):
+            FacturaCompraService.actualizar_detalles_factura(
+                factura.id,
+                [{
+                    'producto': self.producto,
+                    'cantidad': Decimal('1.00'),
+                    'precio_unitario': Decimal('1000.00'),
+                    'iva': Decimal('0.00'),
+                    'descuento': Decimal('0.00'),
+                }],
+            )
 
     def test_procesar_factura_aplica_precio_venta_sugerido(self):
         factura = FacturaCompra.objects.create(

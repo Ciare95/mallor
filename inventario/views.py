@@ -19,6 +19,9 @@ from .serializers import (
     ProductoUpdateSerializer,
     FacturaCompraSerializer,
     FacturaCompraCreateSerializer,
+    FacturaCompraDetallesUpdateSerializer,
+    AbonoFacturaCompraSerializer,
+    AbonoFacturaCompraCreateSerializer,
     HistorialInventarioSerializer,
     ImportarProductosExcelSerializer,
 )
@@ -602,6 +605,63 @@ class FacturaCompraViewSet(RolePermissionMixin, viewsets.ViewSet):
                 {'error': _('Error al procesar factura: %(error)s') % {'error': str(e)}},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+    @action(detail=True, methods=['post'], url_path='detalles')
+    def detalles(self, request: Request, pk: int = None) -> Response:
+        try:
+            serializer = FacturaCompraDetallesUpdateSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            factura = FacturaCompraService.actualizar_detalles_factura(
+                int(pk),
+                serializer.validated_data['detalles'],
+            )
+            return Response(
+                FacturaCompraSerializer(factura).data,
+                status=status.HTTP_200_OK,
+            )
+        except FacturaNoEncontradaError as e:
+            return Response({'error': e.message}, status=status.HTTP_404_NOT_FOUND)
+        except (FacturaYaProcesadaError, ValidationError, DRFValidationError) as e:
+            error_msg = (
+                _validation_error_payload(e)
+                if isinstance(e, DRFValidationError)
+                else (e.message if hasattr(e, 'message') else str(e))
+            )
+            return Response({'error': error_msg}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError:
+            return Response({'error': _('ID de factura invÃ¡lido')}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['post'], url_path='abonos')
+    def abonos(self, request: Request, pk: int = None) -> Response:
+        try:
+            usuario = request.user if request.user.is_authenticated else None
+            if not usuario:
+                return Response(
+                    {'error': _('Usuario no autenticado')},
+                    status=status.HTTP_401_UNAUTHORIZED,
+                )
+            serializer = AbonoFacturaCompraCreateSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            abono = FacturaCompraService.registrar_abono_factura(
+                int(pk),
+                serializer.validated_data,
+                usuario,
+            )
+            return Response(
+                AbonoFacturaCompraSerializer(abono).data,
+                status=status.HTTP_201_CREATED,
+            )
+        except FacturaNoEncontradaError as e:
+            return Response({'error': e.message}, status=status.HTTP_404_NOT_FOUND)
+        except (ValidationError, DRFValidationError) as e:
+            error_msg = (
+                _validation_error_payload(e)
+                if isinstance(e, DRFValidationError)
+                else (e.message if hasattr(e, 'message') else str(e))
+            )
+            return Response({'error': error_msg}, status=status.HTTP_400_BAD_REQUEST)
+        except ValueError:
+            return Response({'error': _('ID de factura invÃ¡lido')}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ReportesViewSet(RolePermissionMixin, viewsets.ViewSet):

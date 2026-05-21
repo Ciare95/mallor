@@ -60,18 +60,23 @@ function DetalleCierreContent({
         monto: String(cierre.gastos_operativos?.servicios_publicos?.monto || ''),
         descripcion:
           cierre.gastos_operativos?.servicios_publicos?.descripcion || '',
+        metodo_pago:
+          cierre.gastos_operativos?.servicios_publicos?.metodo_pago || '',
       },
       arriendos: {
         monto: String(cierre.gastos_operativos?.arriendos?.monto || ''),
         descripcion: cierre.gastos_operativos?.arriendos?.descripcion || '',
+        metodo_pago: cierre.gastos_operativos?.arriendos?.metodo_pago || '',
       },
       salarios: {
         monto: String(cierre.gastos_operativos?.salarios?.monto || ''),
         descripcion: cierre.gastos_operativos?.salarios?.descripcion || '',
+        metodo_pago: cierre.gastos_operativos?.salarios?.metodo_pago || '',
       },
       otros_gastos: {
         monto: String(cierre.gastos_operativos?.otros_gastos?.monto || ''),
         descripcion: cierre.gastos_operativos?.otros_gastos?.descripcion || '',
+        metodo_pago: cierre.gastos_operativos?.otros_gastos?.metodo_pago || '',
       },
     },
   }));
@@ -184,6 +189,24 @@ function DetalleCierreContent({
               <InfoRow label="Efectivo real" value={formatCurrency(cierre.efectivo_real)} />
             </div>
           </div>
+
+          <div className="rounded-[22px] border border-app bg-[var(--panel-soft)] p-4">
+            <div className="eyebrow">Gastos por metodo</div>
+            <div className="mt-4 space-y-3">
+              <InfoRow
+                label="Efectivo"
+                value={formatCurrency(
+                  cierre.gastos_operativos?.por_metodo_pago?.EFECTIVO || 0,
+                )}
+              />
+              <InfoRow
+                label="Transferencia"
+                value={formatCurrency(
+                  cierre.gastos_operativos?.por_metodo_pago?.TRANSFERENCIA || 0,
+                )}
+              />
+            </div>
+          </div>
         </div>
 
         <div className="space-y-4">
@@ -220,7 +243,7 @@ function DetalleCierreContent({
                 {MANUAL_EXPENSE_FIELDS.map(([key, label]) => (
                   <div
                     key={key}
-                    className="grid gap-3 lg:grid-cols-[160px_minmax(0,1fr)]"
+                    className="grid gap-3 lg:grid-cols-[140px_150px_minmax(0,1fr)]"
                   >
                     <label className="app-field">
                       <span className="app-field-label">{label}</span>
@@ -234,6 +257,24 @@ function DetalleCierreContent({
                         }
                         className="app-input min-h-11"
                       />
+                    </label>
+                    <label className="app-field">
+                      <span className="app-field-label">Metodo</span>
+                      <select
+                        value={form.gastos[key].metodo_pago}
+                        onChange={(event) =>
+                          handleFieldChange(
+                            `gastos.${key}.metodo_pago`,
+                            event.target.value,
+                          )
+                        }
+                        className="app-input min-h-11"
+                        required={Number(form.gastos[key].monto || 0) > 0}
+                      >
+                        <option value="">Selecciona</option>
+                        <option value="EFECTIVO">Efectivo</option>
+                        <option value="TRANSFERENCIA">Transferencia</option>
+                      </select>
                     </label>
                     <label className="app-field">
                       <span className="app-field-label">Detalle</span>
@@ -280,6 +321,11 @@ function DetalleCierreContent({
                           <div className="mt-1 text-[12px] text-soft">
                             {item.descripcion || '--'}
                           </div>
+                          {item.metodo_pago && (
+                            <div className="mt-2 inline-flex rounded-full border border-app bg-white/72 px-2 py-1 text-[11px] font-semibold text-soft">
+                              {formatPurchasePaymentMethod(item.metodo_pago)}
+                            </div>
+                          )}
                         </div>
                         <div className="text-sm font-semibold text-main">
                           {formatCurrency(item.monto)}
@@ -360,30 +406,35 @@ function buildExpenseRows(gastosOperativos = {}) {
         gastosOperativos?.compras_mercancia,
         'Facturas del dia incluidas en el cierre',
       ),
+      metodo_pago: '',
     },
     {
       key: 'servicios_publicos',
       label: 'Servicios publicos',
       monto: gastosOperativos?.servicios_publicos?.monto || 0,
       descripcion: getExpenseDescription(gastosOperativos?.servicios_publicos),
+      metodo_pago: gastosOperativos?.servicios_publicos?.metodo_pago || '',
     },
     {
       key: 'arriendos',
       label: 'Arriendos',
       monto: gastosOperativos?.arriendos?.monto || 0,
       descripcion: getExpenseDescription(gastosOperativos?.arriendos),
+      metodo_pago: gastosOperativos?.arriendos?.metodo_pago || '',
     },
     {
       key: 'salarios',
       label: 'Salarios',
       monto: gastosOperativos?.salarios?.monto || 0,
       descripcion: getExpenseDescription(gastosOperativos?.salarios),
+      metodo_pago: gastosOperativos?.salarios?.metodo_pago || '',
     },
     {
       key: 'otros_gastos',
       label: 'Otros gastos',
       monto: gastosOperativos?.otros_gastos?.monto || 0,
       descripcion: getExpenseDescription(gastosOperativos?.otros_gastos),
+      metodo_pago: gastosOperativos?.otros_gastos?.metodo_pago || '',
     },
   ];
 }
@@ -394,10 +445,21 @@ function getExpenseDescription(expense, fallback = '') {
   }
 
   if (expense.descripcion) {
-    return expense.descripcion;
+    const metodo = formatPurchasePaymentMethod(expense.metodo_pago);
+    return `${expense.descripcion}${metodo ? ` - ${metodo}` : ''}`;
   }
 
   const detail = Array.isArray(expense.detalle) ? expense.detalle : [];
+  const invoiceItems = detail.filter((item) => item?.numero_factura);
+  if (invoiceItems.length > 0) {
+    return invoiceItems
+      .map((item) => {
+        const metodo = formatPurchasePaymentMethod(item.metodo_pago);
+        return `Factura ${item.numero_factura}${metodo ? ` - ${metodo}` : ''}`;
+      })
+      .join('; ');
+  }
+
   const firstItem = detail[0];
 
   if (typeof firstItem === 'string') {
@@ -408,9 +470,13 @@ function getExpenseDescription(expense, fallback = '') {
     return firstItem.descripcion;
   }
 
-  if (firstItem?.numero_factura) {
-    return `Factura ${firstItem.numero_factura}`;
-  }
-
   return fallback || '';
+}
+
+function formatPurchasePaymentMethod(value) {
+  const labels = {
+    EFECTIVO: 'Efectivo',
+    TRANSFERENCIA: 'Transferencia',
+  };
+  return labels[value] || value || '';
 }

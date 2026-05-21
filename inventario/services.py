@@ -27,6 +27,7 @@ from .models import (
     Producto,
     FacturaCompra,
     DetalleFacturaCompra,
+    AbonoFacturaCompra,
     HistorialInventario,
 )
 from .utils import COLUMNAS_IMPORTACION_EXCEL, HOJA_INVENTARIO
@@ -1262,11 +1263,8 @@ class FacturaCompraService:
         empresa = get_empresa_actual_or_default()
         data['empresa'] = empresa
 
-        if not detalles_data:
-            raise FacturaSinDetallesError(0)
-
         if 'proveedor' not in data or data['proveedor'] is None:
-            proveedor_default, _ = Proveedor.objects.get_or_create(
+            proveedor_default, _created = Proveedor.objects.get_or_create(
                 empresa=empresa,
                 numero_documento='0000000000',
                 defaults={
@@ -1291,8 +1289,85 @@ class FacturaCompraService:
                 **detalle_data
             )
 
-        factura.calcular_totales()
-        factura.save(update_fields=['subtotal', 'iva', 'total', 'updated_at'])
+        if detalles_data and not data.get('total'):
+            factura.calcular_totales()
+            factura.save(update_fields=['subtotal', 'iva', 'total', 'updated_at'])
+
+        if factura.forma_pago == FacturaCompra.FORMA_PAGO_CONTADO:
+            AbonoFacturaCompra.objects.create(
+                factura=factura,
+                empresa=empresa,
+                monto=factura.total,
+                metodo_pago=factura.metodo_pago,
+                usuario_registro=factura.usuario_registro,
+                observaciones=_('Pago automatico por compra de contado.'),
+            )
+        else:
+            factura.actualizar_estado_pago()
+            factura.save(update_fields=[
+                'total_abonado',
+                'saldo_pendiente',
+                'estado_pago',
+                'updated_at',
+            ])
+
+        return FacturaCompra.objects.prefetch_related(
+            'detalles__producto__categoria'
+        ).select_related(
+            'proveedor', 'usuario_registro'
+        ).get(id=factura.id, empresa=empresa)
+
+    @staticmethod
+    @transaction.atomic
+    def registrar_abono_factura(
+        factura_id: int,
+        data: Dict[str, Any],
+        usuario: Usuario,
+    ) -> AbonoFacturaCompra:
+        try:
+            factura = FacturaCompra.objects.select_for_update().get(
+                id=factura_id,
+                empresa=get_empresa_actual_or_default(),
+            )
+        except FacturaCompra.DoesNotExist:
+            raise FacturaNoEncontradaError(factura_id)
+
+        return AbonoFacturaCompra.objects.create(
+            factura=factura,
+            empresa=factura.empresa,
+            monto=data['monto'],
+            metodo_pago=data.get('metodo_pago') or factura.metodo_pago,
+            fecha_pago=data.get('fecha_pago') or timezone.now(),
+            referencia_pago=data.get('referencia_pago', ''),
+            observaciones=data.get('observaciones', ''),
+            usuario_registro=usuario,
+        )
+
+    @staticmethod
+    @transaction.atomic
+    def actualizar_detalles_factura(
+        factura_id: int,
+        detalles_data: List[Dict[str, Any]],
+    ) -> FacturaCompra:
+        try:
+            factura = FacturaCompra.objects.select_for_update().get(
+                id=factura_id,
+                empresa=get_empresa_actual_or_default(),
+            )
+        except FacturaCompra.DoesNotExist:
+            raise FacturaNoEncontradaError(factura_id)
+
+        if factura.estado == FacturaCompra.ESTADO_PROCESADA:
+            raise FacturaYaProcesadaError(factura_id)
+
+        empresa = factura.empresa
+        factura.detalles.all().delete()
+        for detalle_data in detalles_data:
+            DetalleFacturaCompra.objects.create(
+                factura=factura,
+                empresa=empresa,
+                **detalle_data,
+            )
 
         return FacturaCompra.objects.prefetch_related(
             'detalles__producto__categoria'

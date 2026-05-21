@@ -29,10 +29,10 @@ import { useAppStore } from '../../store/useStore';
 const TODAY = new Date().toISOString().slice(0, 10);
 
 const createExpenseState = () => ({
-  servicios_publicos: { monto: '', descripcion: '' },
-  arriendos: { monto: '', descripcion: '' },
-  salarios: { monto: '', descripcion: '' },
-  otros_gastos: { monto: '', descripcion: '' },
+  servicios_publicos: { monto: '', descripcion: '', metodo_pago: '' },
+  arriendos: { monto: '', descripcion: '', metodo_pago: '' },
+  salarios: { monto: '', descripcion: '', metodo_pago: '' },
+  otros_gastos: { monto: '', descripcion: '', metodo_pago: '' },
 });
 
 export default function CierresCajaPage() {
@@ -194,10 +194,43 @@ export default function CierresCajaPage() {
     (accumulator, item) => accumulator + Number(item.total || 0),
     0,
   );
+  const comprasMercanciaEfectivo = facturas.reduce(
+    (accumulator, item) =>
+      item.metodo_pago === 'EFECTIVO'
+        ? accumulator + Number(item.total || 0)
+        : accumulator,
+    0,
+  );
+  const gastosManualesPorMetodo = Object.values(form.gastos).reduce(
+    (accumulator, item) => {
+      const monto = Number(item.monto || 0);
+      const metodo = item.metodo_pago || '';
+      if (monto <= 0 || !metodo) return accumulator;
+      return {
+        ...accumulator,
+        [metodo]: (accumulator[metodo] || 0) + monto,
+      };
+    },
+    {},
+  );
+  const gastosPorMetodo = {
+    EFECTIVO: comprasMercanciaEfectivo + (gastosManualesPorMetodo.EFECTIVO || 0),
+    TRANSFERENCIA:
+      facturas.reduce(
+        (accumulator, item) =>
+          item.metodo_pago === 'TRANSFERENCIA'
+            ? accumulator + Number(item.total || 0)
+            : accumulator,
+        0,
+      ) + (gastosManualesPorMetodo.TRANSFERENCIA || 0),
+  };
   const totalEfectivo =
     paymentMethods.find((item) => item.metodo_pago === 'EFECTIVO')
       ?.total_vendido || 0;
-  const efectivoEsperado = Number(totalEfectivo) + totalAbonos;
+  const efectivoEsperado = Math.max(
+    Number(totalEfectivo) + totalAbonos - gastosPorMetodo.EFECTIVO,
+    0,
+  );
   const totalGastos = comprasMercancia + manualExpensesTotal;
   const diferencia = Number(form.efectivo_real || 0) - efectivoEsperado;
 
@@ -209,6 +242,7 @@ export default function CierresCajaPage() {
     efectivoEsperado,
     diferencia,
     metodosPago: paymentMethods,
+    gastosPorMetodo,
   };
 
   const handleFormChange = (path, value) => {
@@ -243,6 +277,13 @@ export default function CierresCajaPage() {
 
     if (Number(form.efectivo_real || 0) < 0) {
       toast.error('El efectivo real no puede ser negativo.');
+      return;
+    }
+    const gastoSinMetodo = Object.values(form.gastos).some(
+      (gasto) => Number(gasto.monto || 0) > 0 && !gasto.metodo_pago,
+    );
+    if (gastoSinMetodo) {
+      toast.error('Debes indicar el metodo de pago de cada gasto.');
       return;
     }
 
@@ -366,6 +407,7 @@ function buildManualExpense(expense = {}) {
 
   return {
     monto: toDecimalString(monto),
+    metodo_pago: expense.metodo_pago || '',
     descripcion,
     detalle: descripcion ? [{ descripcion }] : [],
   };
@@ -394,6 +436,11 @@ function openPrintWindow(cierre, empresa) {
       `,
     )
     .join('');
+  const gastosPorMetodo = cierre.gastos_operativos?.por_metodo_pago || {};
+  const gastosMetodoMarkup = `
+    <tr><td>Efectivo</td><td style="text-align:right;">${formatCurrency(gastosPorMetodo.EFECTIVO || 0)}</td></tr>
+    <tr><td>Transferencia</td><td style="text-align:right;">${formatCurrency(gastosPorMetodo.TRANSFERENCIA || 0)}</td></tr>
+  `;
   const categoriesMarkup = categoryRows
     .map(
       ([label, value]) => `
@@ -478,6 +525,16 @@ function openPrintWindow(cierre, empresa) {
         </div>
 
         <div class="section">
+          <h2>Gastos por metodo de pago</h2>
+          <table>
+            <thead>
+              <tr><th>Metodo</th><th>Total</th></tr>
+            </thead>
+            <tbody>${gastosMetodoMarkup}</tbody>
+          </table>
+        </div>
+
+        <div class="section">
           <h2>Ventas por categoria</h2>
           <table>
             <thead>
@@ -537,10 +594,21 @@ function extractPrintableExpenseDescription(expense, fallback = '') {
   }
 
   if (expense.descripcion) {
-    return expense.descripcion;
+    const metodo = formatPurchasePaymentMethod(expense.metodo_pago);
+    return `${expense.descripcion}${metodo ? ` - ${metodo}` : ''}`;
   }
 
   const detail = Array.isArray(expense.detalle) ? expense.detalle : [];
+  const invoiceItems = detail.filter((item) => item?.numero_factura);
+  if (invoiceItems.length > 0) {
+    return invoiceItems
+      .map((item) => {
+        const metodo = formatPurchasePaymentMethod(item.metodo_pago);
+        return `Factura ${item.numero_factura}${metodo ? ` - ${metodo}` : ''}`;
+      })
+      .join('; ');
+  }
+
   const firstItem = detail[0];
 
   if (typeof firstItem === 'string') {
@@ -551,9 +619,13 @@ function extractPrintableExpenseDescription(expense, fallback = '') {
     return firstItem.descripcion;
   }
 
-  if (firstItem?.numero_factura) {
-    return `Factura ${firstItem.numero_factura}`;
-  }
-
   return fallback;
+}
+
+function formatPurchasePaymentMethod(value) {
+  const labels = {
+    EFECTIVO: 'Efectivo',
+    TRANSFERENCIA: 'Transferencia',
+  };
+  return labels[value] || value || '';
 }
