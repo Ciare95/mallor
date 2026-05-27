@@ -83,10 +83,12 @@ export function SupplierMetaGrid({ proveedor }) {
       'Forma pago',
       FORMA_PAGO_PROVEEDOR_LABELS[proveedor.forma_pago] || proveedor.forma_pago,
     ],
+    ['Banco', proveedor.banco || '--'],
+    ['Cuenta bancaria', proveedor.cuenta_bancaria || '--'],
   ];
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
       {rows.map(([label, value]) => (
         <div
           key={label}

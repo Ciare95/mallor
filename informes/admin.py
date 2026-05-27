@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import CierreCaja, Informe
+from .models import CierreCaja, GastoCaja, Informe
 
 
 @admin.register(CierreCaja)
@@ -70,6 +70,26 @@ class CierreCajaAdmin(admin.ModelAdmin):
             'classes': ('collapse',),
         }),
     )
+
+
+@admin.register(GastoCaja)
+class GastoCajaAdmin(admin.ModelAdmin):
+    """
+    Configuracion del modelo GastoCaja en el admin de Django.
+    """
+
+    list_display = (
+        'fecha',
+        'descripcion',
+        'monto',
+        'metodo_pago',
+        'usuario_registro',
+        'fecha_registro',
+    )
+    list_filter = ('fecha', 'metodo_pago', 'usuario_registro')
+    search_fields = ('descripcion', 'usuario_registro__username')
+    ordering = ('-fecha', '-fecha_registro')
+    readonly_fields = ('fecha_registro', 'fecha_actualizacion')
 
 
 @admin.register(Informe)

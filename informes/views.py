@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Any
 
 from django.http import FileResponse
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework import permissions, status, viewsets
@@ -16,18 +17,21 @@ from core.exceptions import (
     InformeError,
     InformeNoEncontradoError,
 )
+from empresa.context import get_empresa_actual_or_default
 from empresa.services import EmpresaService
 from usuario.utils import RolePermissionMixin
 
-from .models import Informe
+from .models import GastoCaja, Informe
 from .serializers import (
     CierreCajaCreateSerializer,
     CierreCajaDetailSerializer,
     CierreCajaFilterSerializer,
     CierreCajaGenerateSerializer,
     CierreCajaListSerializer,
+    CierreCajaPeriodoSerializer,
     CierreCajaUpdateSerializer,
     EstadisticasPeriodoSerializer,
+    GastoCajaSerializer,
     InformeDetailSerializer,
     InformeFilterSerializer,
     InformeGenerateSerializer,
@@ -63,6 +67,28 @@ class AdminRolePermission(permissions.BasePermission):
             getattr(request, 'user', None),
             getattr(request, 'empresa', None),
             'ver_informe_financiero',
+        )
+
+
+class GastoCajaPermission(permissions.BasePermission):
+    """
+    Permite gestionar gastos de caja a usuarios operativos del POS.
+    """
+
+    action_mapping = {
+        'list': 'listar_ventas',
+        'create': 'crear_venta',
+        'update': 'crear_venta',
+        'partial_update': 'crear_venta',
+        'destroy': 'crear_venta',
+    }
+
+    def has_permission(self, request: Request, view) -> bool:
+        accion = self.action_mapping.get(getattr(view, 'action', None))
+        return EmpresaService.validar_permiso_operacion(
+            getattr(request, 'user', None),
+            getattr(request, 'empresa', None),
+            accion,
         )
 
 
@@ -375,6 +401,7 @@ class CierreCajaViewSet(BaseInformesViewSet):
         'update': CierreCajaUpdateSerializer,
         'partial_update': CierreCajaUpdateSerializer,
         'generar': CierreCajaGenerateSerializer,
+        'resumen_periodo': CierreCajaPeriodoSerializer,
     }
 
     def get_serializer_class(self):
@@ -555,6 +582,91 @@ class CierreCajaViewSet(BaseInformesViewSet):
                 {'error': _error_message(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+    @action(detail=False, methods=['get'], url_path='resumen-periodo')
+    def resumen_periodo(self, request: Request) -> Response:
+        try:
+            serializer = self.get_serializer(data=request.query_params)
+            serializer.is_valid(raise_exception=True)
+            return Response(
+                CierreCajaService.generar_resumen_periodo(
+                    serializer.validated_data['fecha_inicio'],
+                    serializer.validated_data['fecha_fin'],
+                ),
+            )
+        except DRFValidationError as exc:
+            return _validation_error_response(exc)
+        except InformeError as exc:
+            return Response(
+                {'error': _error_message(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+
+class GastoCajaViewSet(BaseInformesViewSet):
+    """
+    Gastos operativos registrados durante el dia antes del cierre.
+    """
+
+    permission_classes = [GastoCajaPermission]
+
+    def _queryset(self, request: Request):
+        queryset = GastoCaja.objects.filter(
+            empresa=get_empresa_actual_or_default(),
+        )
+        fecha = request.query_params.get('fecha')
+        fecha_inicio = (
+            request.query_params.get('fecha_inicio')
+            or request.query_params.get('fecha_desde')
+        )
+        fecha_fin = (
+            request.query_params.get('fecha_fin')
+            or request.query_params.get('fecha_hasta')
+        )
+        if fecha:
+            queryset = queryset.filter(fecha=fecha)
+        if fecha_inicio:
+            queryset = queryset.filter(fecha__gte=fecha_inicio)
+        if fecha_fin:
+            queryset = queryset.filter(fecha__lte=fecha_fin)
+        return queryset.order_by('fecha', 'fecha_registro', 'id')
+
+    def list(self, request: Request) -> Response:
+        queryset = self._queryset(request)
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = GastoCajaSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = GastoCajaSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def create(self, request: Request) -> Response:
+        serializer = GastoCajaSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(
+            empresa=get_empresa_actual_or_default(),
+            usuario_registro=request.user if request.user.is_authenticated else None,
+        )
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def update(self, request: Request, pk: int = None) -> Response:
+        gasto = get_object_or_404(self._queryset(request), pk=pk)
+        serializer = GastoCajaSerializer(
+            gasto,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def partial_update(self, request: Request, pk: int = None) -> Response:
+        return self.update(request, pk)
+
+    def destroy(self, request: Request, pk: int = None) -> Response:
+        gasto = get_object_or_404(self._queryset(request), pk=pk)
+        gasto.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class InformeViewSet(BaseInformesViewSet):

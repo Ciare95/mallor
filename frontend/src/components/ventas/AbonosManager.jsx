@@ -116,7 +116,7 @@ export default function AbonosManager({
           <EmptyState
             icon={Wallet}
             title="No fue posible cargar los abonos"
-            description="Intenta nuevamente o revisa la conexion con el backend."
+            description="Intenta nuevamente o revisa la conexion con el sistema."
           />
         )}
 

@@ -273,6 +273,22 @@ class CierreCaja(models.Model):
             gasto = self.gastos_operativos.get(key, {})
             if not isinstance(gasto, dict):
                 continue
+            detalle = gasto.get('detalle')
+            if isinstance(detalle, list) and detalle:
+                for item in detalle:
+                    if not isinstance(item, dict):
+                        continue
+                    metodo = str(
+                        item.get('metodo_pago')
+                        or gasto.get('metodo_pago')
+                        or 'EFECTIVO',
+                    ).upper()
+                    if metodo not in totales:
+                        continue
+                    totales[metodo] += self._coerce_decimal(
+                        item.get('monto', item.get('total', ZERO)),
+                    )
+                continue
             metodo = str(gasto.get('metodo_pago') or 'EFECTIVO').upper()
             if metodo not in totales:
                 continue
@@ -522,6 +538,91 @@ class CierreCaja(models.Model):
 
             self.empresa = get_empresa_actual_or_default()
         self.calcular_totales()
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class GastoCaja(models.Model):
+    """
+    Gasto operativo registrado durante el dia antes del cierre.
+    """
+
+    class MetodoPago(models.TextChoices):
+        EFECTIVO = 'EFECTIVO', _('Efectivo')
+        TRANSFERENCIA = 'TRANSFERENCIA', _('Transferencia')
+
+    id = models.AutoField(primary_key=True)
+    empresa = models.ForeignKey(
+        'empresa.Empresa',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='gastos_caja',
+        verbose_name=_('empresa'),
+    )
+    fecha = models.DateField(
+        _('fecha'),
+        help_text=_('Fecha en la que se realizo el gasto.'),
+    )
+    descripcion = models.CharField(
+        _('descripcion'),
+        max_length=255,
+        help_text=_('Detalle del gasto realizado.'),
+    )
+    monto = models.DecimalField(
+        _('monto'),
+        max_digits=12,
+        decimal_places=2,
+        default=ZERO,
+    )
+    metodo_pago = models.CharField(
+        _('metodo de pago'),
+        max_length=20,
+        choices=MetodoPago.choices,
+    )
+    usuario_registro = models.ForeignKey(
+        'usuario.Usuario',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='gastos_caja_registrados',
+        verbose_name=_('usuario que registro'),
+    )
+    fecha_registro = models.DateTimeField(
+        _('fecha de registro'),
+        auto_now_add=True,
+    )
+    fecha_actualizacion = models.DateTimeField(
+        _('fecha de actualizacion'),
+        auto_now=True,
+    )
+
+    class Meta:
+        db_table = 'gastos_caja'
+        ordering = ['fecha', 'fecha_registro', 'id']
+        verbose_name = _('gasto de caja')
+        verbose_name_plural = _('gastos de caja')
+        indexes = [
+            models.Index(fields=['empresa', 'fecha']),
+            models.Index(fields=['fecha_registro']),
+            models.Index(fields=['metodo_pago']),
+        ]
+
+    def __str__(self):
+        return f'{self.fecha:%Y-%m-%d} - {self.descripcion}'
+
+    def clean(self):
+        super().clean()
+        if self.monto < ZERO:
+            raise ValidationError({
+                'monto': _('El valor del gasto no puede ser negativo.'),
+            })
+
+    def save(self, *args, **kwargs):
+        if self.empresa_id is None:
+            from empresa.context import get_empresa_actual_or_default
+
+            self.empresa = get_empresa_actual_or_default()
         self.full_clean()
         super().save(*args, **kwargs)
 

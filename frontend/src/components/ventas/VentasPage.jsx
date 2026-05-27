@@ -34,6 +34,7 @@ import {
   reintentarSync,
 } from '../../services/offline.service';
 import { registrarAbonoVenta } from '../../services/abonos.service';
+import { crearGastoCaja } from '../../services/informes.service';
 import {
   VENTAS_VISTAS,
   VENTA_DETALLE_TABS,
@@ -56,6 +57,16 @@ import ReportesVentas from './ReportesVentas';
 import VentaDetail from './VentaDetail';
 import VentaForm from './VentaForm';
 import VentasList from './VentasList';
+import NuevoGastoPosModal from './NuevoGastoPosModal';
+
+const todayDate = () => new Date().toISOString().slice(0, 10);
+
+const createExpenseForm = () => ({
+  fecha: todayDate(),
+  metodo_pago: 'EFECTIVO',
+  monto: '',
+  descripcion: '',
+});
 
 const hasReturnedItemsOnUpdate = (venta, nextDetalles = []) => {
   if (!venta?.detalles?.length) {
@@ -113,6 +124,9 @@ export default function VentasPage() {
   const [posFocusSignal, setPosFocusSignal] = useState(0);
   const [cobroShortcutSignal, setCobroShortcutSignal] = useState(0);
   const [submitShortcutSignal, setSubmitShortcutSignal] = useState(0);
+  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+  const [expenseForm, setExpenseForm] = useState(createExpenseForm);
+  const [expenseError, setExpenseError] = useState('');
   const empresaActiva = useAppStore((state) => state.empresaActiva);
   const configuracionOperativa = useAppStore(
     (state) => state.configuracionOperativa,
@@ -185,6 +199,60 @@ export default function VentasPage() {
       toast.error(extractApiError(error, 'No fue posible reintentar facturas'));
     },
   });
+
+  const createExpenseMutation = useMutation({
+    mutationFn: crearGastoCaja,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['informes', 'gastos-caja'] });
+      queryClient.invalidateQueries({ queryKey: ['informes', 'cierres'] });
+      setExpenseModalOpen(false);
+      setExpenseForm(createExpenseForm());
+      setExpenseError('');
+      toast.success('Gasto guardado correctamente.');
+    },
+    onError: (error) => {
+      setExpenseError(extractApiError(error, 'No fue posible guardar el gasto.'));
+    },
+  });
+
+  const handleOpenExpenseModal = () => {
+    setExpenseForm(createExpenseForm());
+    setExpenseError('');
+    setExpenseModalOpen(true);
+  };
+
+  const handleExpenseChange = (field, value) => {
+    setExpenseForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  };
+
+  const handleSubmitExpense = (event) => {
+    event.preventDefault();
+    const descripcion = expenseForm.descripcion.trim();
+    const monto = Number(expenseForm.monto || 0);
+
+    if (!descripcion) {
+      setExpenseError('Debes indicar el detalle del gasto.');
+      return;
+    }
+    if (monto <= 0) {
+      setExpenseError('El valor del gasto debe ser mayor a cero.');
+      return;
+    }
+    if (!expenseForm.metodo_pago) {
+      setExpenseError('Debes indicar el metodo de pago.');
+      return;
+    }
+
+    createExpenseMutation.mutate({
+      fecha: expenseForm.fecha,
+      descripcion,
+      monto: monto.toFixed(2),
+      metodo_pago: expenseForm.metodo_pago,
+    });
+  };
 
   const getPreferredTicketSettings = () =>
     resolveTicketPreferences({
@@ -665,6 +733,22 @@ export default function VentasPage() {
               }
             />
           )}
+          <section className="surface flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="eyebrow">Gastos manuales del dia</div>
+              <div className="mt-1 text-[13px] text-soft">
+                Registra egresos sin salir del POS; quedan disponibles para el cierre.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleOpenExpenseModal}
+              className="app-button-secondary min-h-11"
+            >
+              <Plus className="h-4 w-4" />
+              Nuevo gasto
+            </button>
+          </section>
           <PrecuentasBar
             precuentas={precuentas}
             activeId={precuentaActivaId}
@@ -762,6 +846,17 @@ export default function VentasPage() {
       {vistaActual === VENTAS_VISTAS.REPORTES && <ReportesVentas />}
 
       <ToastContainer toasts={toasts} onClose={closeToast} />
+
+      {expenseModalOpen && (
+        <NuevoGastoPosModal
+          form={expenseForm}
+          onChange={handleExpenseChange}
+          onClose={() => setExpenseModalOpen(false)}
+          onSubmit={handleSubmitExpense}
+          isSaving={createExpenseMutation.isPending}
+          error={expenseError}
+        />
+      )}
 
       <ThermalTicketPreviewModal
         open={ticketPreviewState.open}

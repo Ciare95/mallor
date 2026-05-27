@@ -176,7 +176,7 @@ export default function CuentasPorCobrar({ onAbonar, onOpenVenta }) {
           <EmptyState
             icon={AlertTriangle}
             title="No fue posible cargar la cartera"
-            description="Intenta nuevamente o revisa la conexion con el backend."
+            description="Intenta nuevamente o revisa la conexion con el sistema."
           />
         )}
 

@@ -451,7 +451,7 @@ function QrBlock({ qrSrc }) {
           <div className="thermal-ticket__qr-fallback">
             <span>QR listo</span>
             <span>cuando llegue</span>
-            <span>desde backend</span>
+            <span>desde sistema</span>
           </div>
         )}
       </div>

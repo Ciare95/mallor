@@ -1,15 +1,19 @@
 import { useState } from 'react';
-import { Download, FilePenLine, Printer, Save } from 'lucide-react';
+import { Download, FilePenLine, Plus, Printer, Save, Trash2 } from 'lucide-react';
 import { formatCurrency, formatDateTime } from '../../utils/formatters';
 import ImprimirCierre from './ImprimirCierre';
 import { EmptyPanel, PanelShell } from './shared';
 
-const MANUAL_EXPENSE_FIELDS = [
-  ['servicios_publicos', 'Servicios publicos'],
-  ['arriendos', 'Arriendos'],
-  ['salarios', 'Salarios'],
-  ['otros_gastos', 'Otros gastos'],
-];
+const createExpenseId = () =>
+  globalThis.crypto?.randomUUID?.() ||
+  `gasto-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const createExpenseItem = (expense = {}) => ({
+  id: expense.id || createExpenseId(),
+  monto: String(expense.monto || ''),
+  descripcion: expense.descripcion || '',
+  metodo_pago: expense.metodo_pago || '',
+});
 
 export default function DetalleCierre({
   cierre,
@@ -55,44 +59,39 @@ function DetalleCierreContent({
   const [form, setForm] = useState(() => ({
     efectivo_real: String(cierre.efectivo_real || ''),
     observaciones: cierre.observaciones || '',
-    gastos: {
-      servicios_publicos: {
-        monto: String(cierre.gastos_operativos?.servicios_publicos?.monto || ''),
-        descripcion:
-          cierre.gastos_operativos?.servicios_publicos?.descripcion || '',
-        metodo_pago:
-          cierre.gastos_operativos?.servicios_publicos?.metodo_pago || '',
-      },
-      arriendos: {
-        monto: String(cierre.gastos_operativos?.arriendos?.monto || ''),
-        descripcion: cierre.gastos_operativos?.arriendos?.descripcion || '',
-        metodo_pago: cierre.gastos_operativos?.arriendos?.metodo_pago || '',
-      },
-      salarios: {
-        monto: String(cierre.gastos_operativos?.salarios?.monto || ''),
-        descripcion: cierre.gastos_operativos?.salarios?.descripcion || '',
-        metodo_pago: cierre.gastos_operativos?.salarios?.metodo_pago || '',
-      },
-      otros_gastos: {
-        monto: String(cierre.gastos_operativos?.otros_gastos?.monto || ''),
-        descripcion: cierre.gastos_operativos?.otros_gastos?.descripcion || '',
-        metodo_pago: cierre.gastos_operativos?.otros_gastos?.metodo_pago || '',
-      },
-    },
+    gastos: extractEditableExpenses(cierre.gastos_operativos),
   }));
 
   const handleFieldChange = (path, value) => {
-    if (path.startsWith('gastos.')) {
-      const [, expenseKey, field] = path.split('.');
+    if (path === 'gastos.add') {
       setForm((current) => ({
         ...current,
-        gastos: {
-          ...current.gastos,
-          [expenseKey]: {
-            ...current.gastos[expenseKey],
-            [field]: value,
-          },
-        },
+        gastos: [...current.gastos, createExpenseItem()],
+      }));
+      return;
+    }
+
+    if (path === 'gastos.remove') {
+      setForm((current) => ({
+        ...current,
+        gastos:
+          current.gastos.length <= 1
+            ? [createExpenseItem()]
+            : current.gastos.filter((expense) => expense.id !== value),
+      }));
+      return;
+    }
+
+    if (path.startsWith('gastos.')) {
+      const [, indexValue, field] = path.split('.');
+      const expenseIndex = Number(indexValue);
+      setForm((current) => ({
+        ...current,
+        gastos: current.gastos.map((expense, index) =>
+          index === expenseIndex
+            ? { ...expense, [field]: value }
+            : expense,
+        ),
       }));
       return;
     }
@@ -240,50 +239,75 @@ function DetalleCierreContent({
               </div>
 
               <div className="mt-4 space-y-4">
-                {MANUAL_EXPENSE_FIELDS.map(([key, label]) => (
-                  <div
-                    key={key}
-                    className="grid gap-3 lg:grid-cols-[140px_150px_minmax(0,1fr)]"
+                <div className="flex items-center justify-between gap-3">
+                  <div className="eyebrow">Gastos del cierre</div>
+                  <button
+                    type="button"
+                    onClick={() => handleFieldChange('gastos.add')}
+                    className="app-button-secondary min-h-10"
                   >
-                    <label className="app-field">
-                      <span className="app-field-label">{label}</span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={form.gastos[key].monto}
-                        onChange={(event) =>
-                          handleFieldChange(`gastos.${key}.monto`, event.target.value)
-                        }
-                        className="app-input min-h-11"
-                      />
-                    </label>
-                    <label className="app-field">
-                      <span className="app-field-label">Metodo</span>
-                      <select
-                        value={form.gastos[key].metodo_pago}
-                        onChange={(event) =>
-                          handleFieldChange(
-                            `gastos.${key}.metodo_pago`,
-                            event.target.value,
-                          )
-                        }
-                        className="app-input min-h-11"
-                        required={Number(form.gastos[key].monto || 0) > 0}
+                    <Plus className="h-4 w-4" />
+                    Agregar fila
+                  </button>
+                </div>
+                {form.gastos.map((expense, index) => (
+                  <div
+                    key={expense.id}
+                    className="rounded-[18px] border border-app bg-[var(--panel-soft)] p-3"
+                  >
+                    <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(92px,1fr)_42px]">
+                      <label className="app-field">
+                        <span className="app-field-label">Metodo</span>
+                        <select
+                          value={expense.metodo_pago}
+                          onChange={(event) =>
+                            handleFieldChange(
+                              `gastos.${index}.metodo_pago`,
+                              event.target.value,
+                            )
+                          }
+                          className="app-input min-h-11"
+                          required={Number(expense.monto || 0) > 0}
+                        >
+                          <option value="">Selecciona</option>
+                          <option value="EFECTIVO">Efectivo</option>
+                          <option value="TRANSFERENCIA">Transferencia</option>
+                        </select>
+                      </label>
+                      <label className="app-field">
+                        <span className="app-field-label">Valor</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={expense.monto}
+                          onChange={(event) =>
+                            handleFieldChange(
+                              `gastos.${index}.monto`,
+                              event.target.value,
+                            )
+                          }
+                          className="app-input min-h-11"
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => handleFieldChange('gastos.remove', expense.id)}
+                        disabled={form.gastos.length <= 1}
+                        className="mt-[22px] inline-flex min-h-11 items-center justify-center rounded-xl border border-[rgba(159,47,45,0.18)] bg-[var(--danger-soft)] text-[var(--danger-text)] transition hover:bg-[rgba(253,235,236,0.9)] disabled:cursor-not-allowed disabled:opacity-45"
+                        aria-label="Eliminar gasto"
                       >
-                        <option value="">Selecciona</option>
-                        <option value="EFECTIVO">Efectivo</option>
-                        <option value="TRANSFERENCIA">Transferencia</option>
-                      </select>
-                    </label>
-                    <label className="app-field">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <label className="app-field mt-3">
                       <span className="app-field-label">Detalle</span>
                       <input
                         type="text"
-                        value={form.gastos[key].descripcion}
+                        value={expense.descripcion}
                         onChange={(event) =>
                           handleFieldChange(
-                            `gastos.${key}.descripcion`,
+                            `gastos.${index}.descripcion`,
                             event.target.value,
                           )
                         }
@@ -397,7 +421,7 @@ function InfoRow({ label, value }) {
 }
 
 function buildExpenseRows(gastosOperativos = {}) {
-  return [
+  const rows = [
     {
       key: 'compras_mercancia',
       label: 'Compras de mercancia',
@@ -408,35 +432,58 @@ function buildExpenseRows(gastosOperativos = {}) {
       ),
       metodo_pago: '',
     },
-    {
-      key: 'servicios_publicos',
-      label: 'Servicios publicos',
-      monto: gastosOperativos?.servicios_publicos?.monto || 0,
-      descripcion: getExpenseDescription(gastosOperativos?.servicios_publicos),
-      metodo_pago: gastosOperativos?.servicios_publicos?.metodo_pago || '',
-    },
-    {
-      key: 'arriendos',
-      label: 'Arriendos',
-      monto: gastosOperativos?.arriendos?.monto || 0,
-      descripcion: getExpenseDescription(gastosOperativos?.arriendos),
-      metodo_pago: gastosOperativos?.arriendos?.metodo_pago || '',
-    },
-    {
-      key: 'salarios',
-      label: 'Salarios',
-      monto: gastosOperativos?.salarios?.monto || 0,
-      descripcion: getExpenseDescription(gastosOperativos?.salarios),
-      metodo_pago: gastosOperativos?.salarios?.metodo_pago || '',
-    },
-    {
-      key: 'otros_gastos',
-      label: 'Otros gastos',
-      monto: gastosOperativos?.otros_gastos?.monto || 0,
-      descripcion: getExpenseDescription(gastosOperativos?.otros_gastos),
-      metodo_pago: gastosOperativos?.otros_gastos?.metodo_pago || '',
-    },
   ];
+
+  return [
+    ...rows,
+    ...extractEditableExpenses(gastosOperativos).map((expense, index) => ({
+      key: `gasto-${index}-${expense.id}`,
+      label: 'Gasto',
+      monto: expense.monto,
+      descripcion: expense.descripcion,
+      metodo_pago: expense.metodo_pago,
+    })),
+  ];
+}
+
+function extractEditableExpenses(gastosOperativos = {}) {
+  const manualKeys = [
+    'servicios_publicos',
+    'arriendos',
+    'salarios',
+    'otros_gastos',
+  ];
+  const expenses = [];
+
+  manualKeys.forEach((key) => {
+    const expense = gastosOperativos?.[key];
+    if (!expense || typeof expense !== 'object') return;
+    const detail = Array.isArray(expense.detalle) ? expense.detalle : [];
+    const detailedItems = detail.filter(
+      (item) => item && typeof item === 'object' && (item.monto || item.total),
+    );
+
+    if (detailedItems.length > 0) {
+      detailedItems.forEach((item) => {
+        expenses.push(createExpenseItem({
+          monto: item.monto || item.total || '',
+          descripcion: item.descripcion || item.detalle || expense.descripcion || '',
+          metodo_pago: item.metodo_pago || expense.metodo_pago || '',
+        }));
+      });
+      return;
+    }
+
+    if (Number(expense.monto || 0) > 0 || expense.descripcion) {
+      expenses.push(createExpenseItem({
+        monto: expense.monto || '',
+        descripcion: expense.descripcion || getExpenseDescription(expense),
+        metodo_pago: expense.metodo_pago || '',
+      }));
+    }
+  });
+
+  return expenses.length ? expenses : [createExpenseItem()];
 }
 
 function getExpenseDescription(expense, fallback = '') {

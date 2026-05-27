@@ -663,7 +663,7 @@ class ProductoImportService:
             excel_row=excel_row,
             errors=errors,
         )
-        existencias = cls._parse_non_negative_integer(
+        existencias = cls._parse_integer(
             row_data.get('Existencias'),
             column='Existencias',
             excel_row=excel_row,
@@ -819,7 +819,10 @@ class ProductoImportService:
                 )
                 producto.save(skip_full_clean=True)
             producto.fecha_ingreso = row_data['fecha_ingreso']
-            producto.save(update_fields=['fecha_ingreso', 'updated_at'])
+            producto.save(
+                update_fields=['fecha_ingreso', 'updated_at'],
+                skip_full_clean=True,
+            )
 
     @staticmethod
     def _row_is_empty(row_values) -> bool:
@@ -925,6 +928,51 @@ class ProductoImportService:
             return None
 
         if decimal_value < 0 or decimal_value != decimal_value.to_integral():
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column=column,
+                    value=value,
+                    error='Debe ser un número entero mayor o igual a 0.',
+                ),
+            )
+            return None
+
+        return int(decimal_value)
+
+    @classmethod
+    def _parse_integer(
+        cls,
+        value,
+        column,
+        excel_row,
+        errors,
+    ):
+        if value in (None, ''):
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column=column,
+                    value=value,
+                    error='Este campo es obligatorio.',
+                ),
+            )
+            return None
+
+        try:
+            decimal_value = Decimal(str(value))
+        except Exception:
+            errors.append(
+                cls._build_error(
+                    row=excel_row,
+                    column=column,
+                    value=value,
+                    error='Debe ser un número entero mayor o igual a 0.',
+                ),
+            )
+            return None
+
+        if decimal_value != decimal_value.to_integral():
             errors.append(
                 cls._build_error(
                     row=excel_row,

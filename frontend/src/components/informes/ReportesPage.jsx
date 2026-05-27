@@ -260,7 +260,7 @@ export default function ReportesPage() {
     event.preventDefault();
 
     if (reportMeta.previewOnly) {
-      setFormError('Este tipo solo tiene vista previa. No existe exportador backend configurado.');
+      setFormError('Este tipo solo tiene vista previa. No existe exportador del sistema configurado.');
       return;
     }
 

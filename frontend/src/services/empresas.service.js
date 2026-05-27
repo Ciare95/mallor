@@ -1,11 +1,11 @@
 import api from './api';
 
-const resolveBackendOrigin = () => {
+const resolveApiOrigin = () => {
   const browserOrigin = globalThis.window?.location?.origin || 'http://localhost:8000';
   return new URL(api.defaults?.baseURL || '/api', browserOrigin).origin;
 };
 
-const BACKEND_ORIGIN = resolveBackendOrigin();
+const API_ORIGIN = resolveApiOrigin();
 
 const normalizeImageUrl = (value) => {
   if (!value || typeof value !== 'string') {
@@ -17,10 +17,10 @@ const normalizeImageUrl = (value) => {
   }
 
   if (value.startsWith('/')) {
-    return `${BACKEND_ORIGIN}${value}`;
+    return `${API_ORIGIN}${value}`;
   }
 
-  return `${BACKEND_ORIGIN}/${value}`;
+  return `${API_ORIGIN}/${value}`;
 };
 
 const normalizeEmpresaResponse = (empresa) => {

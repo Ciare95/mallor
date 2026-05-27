@@ -6,7 +6,8 @@ from django.utils import timezone
 from rest_framework import status
 
 import informes.services as informes_services
-from informes.models import CierreCaja
+from informes.generators import PDFReportGenerator, generar_pdf_cierre_caja
+from informes.models import CierreCaja, GastoCaja
 from informes.services import CierreCajaService, ReporteEstadisticasService
 from inventario.models import AbonoFacturaCompra, FacturaCompra
 from proveedor.models import Proveedor
@@ -318,6 +319,263 @@ def test_gasto_manual_con_monto_requiere_metodo_pago(empresa_a):
                 },
             },
         )
+
+
+@pytest.mark.django_db
+def test_pdf_cierre_caja_no_falla_con_metodos_de_pago_en_cero(
+    empresa_a,
+    admin_a,
+):
+    hoy = timezone.localdate()
+
+    with empresa_context(empresa_a):
+        Venta.objects.filter(empresa=empresa_a).delete()
+        cierre = CierreCaja.objects.create(
+            empresa=empresa_a,
+            fecha_cierre=hoy,
+            usuario_cierre=admin_a,
+            efectivo_real=Decimal('0.00'),
+            gastos_operativos=CierreCajaService._serializar_gastos_operativos(
+                CierreCajaService._construir_gastos_operativos(hoy),
+            ),
+        )
+
+        reporte = generar_pdf_cierre_caja(cierre.id)
+
+    assert reporte.content_type == 'application/pdf'
+    assert reporte.content.startswith(b'%PDF')
+
+
+def test_pdf_cierre_caja_construye_gastos_con_metodo_y_resumen():
+    generator = PDFReportGenerator()
+    gastos_operativos = {
+        'compras_mercancia': {
+            'monto': 400000.0,
+            'detalle': [
+                {
+                    'numero_factura': 'FC-100',
+                    'proveedor': 'Proveedor Uno',
+                    'metodo_pago': 'TRANSFERENCIA',
+                    'total': 400000.0,
+                },
+            ],
+        },
+        'salarios': {
+            'monto': 1200000.0,
+            'metodo_pago': 'EFECTIVO',
+            'descripcion': 'Nomina del dia',
+        },
+        'por_metodo_pago': {
+            'EFECTIVO': 1200000.0,
+            'TRANSFERENCIA': 400000.0,
+        },
+    }
+
+    assert generator._build_expense_rows(gastos_operativos) == [
+        [
+            'Compras de mercancia',
+            '$400,000.00',
+            'Transferencia',
+            'Factura FC-100 - Proveedor Uno',
+        ],
+        ['Salarios', '$1,200,000.00', 'Efectivo', 'Nomina del dia'],
+    ]
+    assert generator._build_expense_payment_rows(gastos_operativos) == [
+        ['Efectivo', '$1,200,000.00'],
+        ['Transferencia', '$400,000.00'],
+    ]
+
+
+@pytest.mark.django_db
+def test_resumen_periodo_cierre_consolida_mes_con_gastos_por_metodo(
+    empresa_a,
+    admin_a,
+):
+    hoy = timezone.localdate()
+    proveedor = Proveedor.objects.create(
+        empresa=empresa_a,
+        numero_documento='900555003',
+        razon_social='Proveedor mensual',
+        nombre_contacto='Compras',
+        email='proveedor-mensual@mallor.test',
+        telefono='3000000000',
+        direccion='Calle 3',
+        ciudad='Bogota',
+        departamento='Cundinamarca',
+        tipo_productos='General',
+    )
+
+    with empresa_context(empresa_a):
+        Venta.objects.filter(empresa=empresa_a).delete()
+        VentaFactory(
+            empresa=empresa_a,
+            usuario_registro=admin_a,
+            total=Decimal('50000.00'),
+            subtotal=Decimal('50000.00'),
+            impuestos=Decimal('0.00'),
+            metodo_pago=Venta.MetodoPago.EFECTIVO,
+            fecha_venta=timezone.now(),
+        )
+        factura = FacturaCompra.objects.create(
+            empresa=empresa_a,
+            numero_factura='FC-MES-001',
+            proveedor=proveedor,
+            fecha_factura=hoy,
+            subtotal=Decimal('10000.00'),
+            total=Decimal('10000.00'),
+            forma_pago=FacturaCompra.FORMA_PAGO_CONTADO,
+            metodo_pago=FacturaCompra.METODO_PAGO_TRANSFERENCIA,
+            usuario_registro=admin_a,
+        )
+        AbonoFacturaCompra.objects.create(
+            empresa=empresa_a,
+            factura=factura,
+            monto=Decimal('10000.00'),
+            metodo_pago=FacturaCompra.METODO_PAGO_TRANSFERENCIA,
+            fecha_pago=timezone.now(),
+            usuario_registro=admin_a,
+        )
+        gastos = CierreCajaService._construir_gastos_operativos(
+            hoy,
+            {
+                'salarios': {
+                    'monto': Decimal('12000.00'),
+                    'metodo_pago': 'EFECTIVO',
+                    'descripcion': 'Nomina',
+                },
+            },
+        )
+        CierreCaja.objects.create(
+            empresa=empresa_a,
+            fecha_cierre=hoy,
+            usuario_cierre=admin_a,
+            efectivo_real=Decimal('38000.00'),
+            gastos_operativos=CierreCajaService._serializar_gastos_operativos(
+                gastos,
+            ),
+        )
+
+        resumen = CierreCajaService.generar_resumen_periodo(
+            hoy.replace(day=1),
+            hoy,
+        )
+
+    assert resumen['tipo_cierre'] == 'MENSUAL'
+    assert resumen['total_ventas'] == 50000.0
+    assert resumen['total_gastos'] == 22000.0
+    assert resumen['gastos_operativos']['por_metodo_pago'] == {
+        'EFECTIVO': 12000.0,
+        'TRANSFERENCIA': 10000.0,
+    }
+
+
+@pytest.mark.django_db
+def test_cierre_caja_acepta_gastos_dinamicos_con_metodos_distintos(
+    empresa_a,
+    admin_a,
+):
+    hoy = timezone.localdate()
+
+    with empresa_context(empresa_a):
+        gastos = CierreCajaService._construir_gastos_operativos(
+            hoy,
+            {
+                'otros_gastos': {
+                    'monto': Decimal('15000.00'),
+                    'metodo_pago': 'EFECTIVO',
+                    'detalle': [
+                        {
+                            'descripcion': 'Compra de agua',
+                            'monto': '5000.00',
+                            'metodo_pago': 'EFECTIVO',
+                        },
+                        {
+                            'descripcion': 'Almuerzo',
+                            'monto': '10000.00',
+                            'metodo_pago': 'TRANSFERENCIA',
+                        },
+                    ],
+                },
+            },
+        )
+        cierre = CierreCaja.objects.create(
+            empresa=empresa_a,
+            fecha_cierre=hoy,
+            usuario_cierre=admin_a,
+            efectivo_real=Decimal('0.00'),
+            gastos_operativos=CierreCajaService._serializar_gastos_operativos(
+                gastos,
+            ),
+        )
+
+    assert cierre.total_gastos == Decimal('15000.00')
+    assert cierre.gastos_operativos['por_metodo_pago'] == {
+        'EFECTIVO': 5000.0,
+        'TRANSFERENCIA': 10000.0,
+    }
+    assert cierre.gastos_operativos['otros_gastos']['detalle'][0] == {
+        'descripcion': 'Compra de agua',
+        'monto': '5000.00',
+        'metodo_pago': 'EFECTIVO',
+    }
+
+
+@pytest.mark.django_db
+def test_cierre_caja_incluye_gastos_caja_persistidos(empresa_a, admin_a):
+    hoy = timezone.localdate()
+
+    with empresa_context(empresa_a):
+        gasto = GastoCaja.objects.create(
+            empresa=empresa_a,
+            fecha=hoy,
+            descripcion='Compra de agua',
+            monto=Decimal('5000.00'),
+            metodo_pago=GastoCaja.MetodoPago.EFECTIVO,
+            usuario_registro=admin_a,
+        )
+        cierre = CierreCajaService.generar_cierre_caja(
+            fecha=hoy,
+            efectivo_real=Decimal('0.00'),
+            usuario_cierre=admin_a,
+        )
+
+    detalle = cierre.gastos_operativos['otros_gastos']['detalle']
+    assert cierre.total_gastos == Decimal('5000.00')
+    assert detalle == [
+        {
+            'gasto_caja_id': gasto.id,
+            'descripcion': 'Compra de agua',
+            'monto': 5000.0,
+            'metodo_pago': 'EFECTIVO',
+            'fecha': hoy.isoformat(),
+        },
+    ]
+    assert cierre.gastos_operativos['por_metodo_pago']['EFECTIVO'] == 5000.0
+
+
+@pytest.mark.django_db
+def test_resumen_periodo_incluye_gastos_caja_sin_cierre(empresa_a, admin_a):
+    hoy = timezone.localdate()
+
+    with empresa_context(empresa_a):
+        GastoCaja.objects.create(
+            empresa=empresa_a,
+            fecha=hoy,
+            descripcion='Almuerzo',
+            monto=Decimal('12000.00'),
+            metodo_pago=GastoCaja.MetodoPago.TRANSFERENCIA,
+            usuario_registro=admin_a,
+        )
+        resumen = CierreCajaService.generar_resumen_periodo(hoy, hoy)
+
+    detalle = resumen['gastos_operativos']['otros_gastos']['detalle']
+    assert resumen['total_gastos'] == 12000.0
+    assert resumen['gastos_operativos']['por_metodo_pago'] == {
+        'EFECTIVO': 0.0,
+        'TRANSFERENCIA': 12000.0,
+    }
+    assert detalle[0]['descripcion'] == 'Almuerzo'
+    assert detalle[0]['metodo_pago'] == 'TRANSFERENCIA'
 
 
 @pytest.mark.django_db

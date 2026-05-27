@@ -267,3 +267,48 @@ def test_importar_excel_reporta_errores_y_no_importa_parcialmente(
         },
     ]
     assert Producto.objects.filter(empresa=empresa_a).count() == 1
+
+
+@pytest.mark.django_db
+def test_importar_excel_permita_existencias_negativas(
+    api_client_empresa,
+    empresa_a,
+):
+    file_bytes = build_excel([
+        [
+            '',
+            '7709998887776',
+            'Producto negativo',
+            'General',
+            'Mallor',
+            'Stock negativo permitido',
+            -1,
+            '',
+            500,
+            900,
+            19,
+            '',
+            '',
+        ],
+    ])
+    upload = SimpleUploadedFile(
+        'productos-negativos.xlsx',
+        file_bytes,
+        content_type=(
+            'application/vnd.openxmlformats-officedocument.'
+            'spreadsheetml.sheet'
+        ),
+    )
+
+    response = api_client_empresa.post(
+        '/api/inventario/productos/importar-excel/',
+        {'archivo': upload},
+        format='multipart',
+    )
+
+    assert response.status_code == 200
+    producto = Producto.objects.get(
+        empresa=empresa_a,
+        codigo_barras='7709998887776',
+    )
+    assert str(producto.existencias) == '-1.00'

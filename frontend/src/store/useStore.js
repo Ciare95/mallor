@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 const THEME_STORAGE_KEY = 'mallor_theme';
 const EMPRESA_STORAGE_KEY = 'mallor_empresa_activa_id';
-const BACKEND_ORIGIN = 'http://localhost:8000';
+const API_ORIGIN = 'http://localhost:8000';
 
 export const DEFAULT_ATAJOS_VENTAS = {
   registrar_venta: 'Ctrl+V',
@@ -159,8 +159,8 @@ const normalizeEmpresaMedia = (empresa) => {
   return {
     ...empresa,
     logo: logo.startsWith('/')
-      ? `${BACKEND_ORIGIN}${logo}`
-      : `${BACKEND_ORIGIN}/${logo}`,
+      ? `${API_ORIGIN}${logo}`
+      : `${API_ORIGIN}/${logo}`,
   };
 };
 

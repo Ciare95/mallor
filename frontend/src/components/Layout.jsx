@@ -75,10 +75,10 @@ export default function Layout() {
     const seleccionada = empresasDisponibles.find(
       (empresa) => String(empresa.id) === String(empresaActivaId),
     );
-    const activaBackend = empresasDisponibles.find(
+    const activaSistema = empresasDisponibles.find(
       (empresa) => empresa.id === empresasQuery.data?.empresa_activa,
     );
-    setEmpresaActiva(seleccionada || activaBackend || empresasDisponibles[0]);
+    setEmpresaActiva(seleccionada || activaSistema || empresasDisponibles[0]);
   }, [empresasQuery.data, empresaActivaId, setEmpresaActiva]);
 
   const seleccionarEmpresaMutation = useMutation({

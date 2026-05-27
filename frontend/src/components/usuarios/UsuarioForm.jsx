@@ -142,7 +142,7 @@ const UsuarioForm = ({ usuario, onSubmit, onCancel, isLoading, error }) => {
     }
 
     // Preparar datos para enviar
-    // - El backend espera 'confirm_password' (snake_case), no 'confirmPassword' (camelCase)
+    // - El sistema espera 'confirm_password' (snake_case), no 'confirmPassword' (camelCase)
     // - En edición, eliminar password/confirm_password si no se cambió
     const { confirmPassword, ...rest } = formData;
     const datosEnviar = { ...rest };
@@ -151,7 +151,7 @@ const UsuarioForm = ({ usuario, onSubmit, onCancel, isLoading, error }) => {
       // Modo edición: no enviar password ni confirm_password
       delete datosEnviar.password;
     } else {
-      // Modo creación: incluir confirm_password (requerido por el backend)
+      // Modo creación: incluir confirm_password (requerido por el sistema)
       datosEnviar.confirm_password = confirmPassword;
     }
 

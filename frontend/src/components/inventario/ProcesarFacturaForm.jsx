@@ -422,7 +422,7 @@ const ProcesarFacturaForm = ({
                     <div>
                       <p className="text-sm font-semibold">Preview confirmado</p>
                       <p className="mt-1 text-[13px] leading-6">
-                        Al procesar, el backend actualizara stock, registrara movimientos y marcara la factura como procesada.
+                        Al procesar, el sistema actualizara stock, registrara movimientos y marcara la factura como procesada.
                       </p>
                     </div>
                   </div>

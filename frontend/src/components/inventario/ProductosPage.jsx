@@ -232,7 +232,7 @@ const ConfirmDeleteProducto = ({ producto, isLoading, onConfirm, onCancel }) => 
         <button type="button" onClick={onCancel} className="rounded-xl p-2 text-slate-500 transition hover:bg-slate-100" aria-label="Cerrar"><X className="h-5 w-5" /></button>
       </div>
       <h2 className="mt-5 text-2xl font-black text-slate-950">Eliminar producto</h2>
-      <p className="mt-2 text-slate-600">Esta acción intentará eliminar <strong>{producto.nombre}</strong>. El backend impedirá eliminarlo si tiene movimientos asociados.</p>
+      <p className="mt-2 text-slate-600">Esta acción intentará eliminar <strong>{producto.nombre}</strong>. El sistema impedirá eliminarlo si tiene movimientos asociados.</p>
       <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         <button type="button" onClick={onCancel} disabled={isLoading} className="min-h-11 rounded-xl border border-slate-300 px-5 py-2.5 font-semibold text-slate-700">Cancelar</button>
         <button type="button" onClick={onConfirm} disabled={isLoading} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 font-semibold text-white transition hover:bg-red-700 disabled:opacity-60">

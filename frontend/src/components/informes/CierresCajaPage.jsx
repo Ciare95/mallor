@@ -1,15 +1,20 @@
-import { startTransition, useMemo, useState } from 'react';
+import { startTransition, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import useToast from '../../hooks/useToast';
 import { listarAbonos } from '../../services/abonos.service';
 import { listarFacturasCompra } from '../../services/inventario.service';
 import {
   actualizarCierreCaja,
+  actualizarGastoCaja,
+  crearGastoCaja,
   descargarReportePdf,
+  eliminarGastoCaja,
   generarCierreCaja,
   generarReporteInforme,
+  listarGastosCaja,
   listarCierresCaja,
   obtenerCierreCaja,
+  obtenerResumenCierrePeriodo,
   obtenerEstadisticasVentasInforme,
   triggerBrowserDownload,
 } from '../../services/informes.service';
@@ -27,13 +32,33 @@ import InformesModuleNav from './InformesModuleNav';
 import { useAppStore } from '../../store/useStore';
 
 const TODAY = new Date().toISOString().slice(0, 10);
+const CURRENT_MONTH = TODAY.slice(0, 7);
 
-const createExpenseState = () => ({
-  servicios_publicos: { monto: '', descripcion: '', metodo_pago: '' },
-  arriendos: { monto: '', descripcion: '', metodo_pago: '' },
-  salarios: { monto: '', descripcion: '', metodo_pago: '' },
-  otros_gastos: { monto: '', descripcion: '', metodo_pago: '' },
+const getMonthRange = (monthValue) => {
+  const [year, month] = String(monthValue || CURRENT_MONTH)
+    .split('-')
+    .map((item) => Number(item));
+  const start = new Date(year, month - 1, 1);
+  const end = new Date(year, month, 0);
+  return {
+    fecha_inicio: start.toISOString().slice(0, 10),
+    fecha_fin: end.toISOString().slice(0, 10),
+  };
+};
+
+const createExpenseId = () =>
+  globalThis.crypto?.randomUUID?.() ||
+  `gasto-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const createExpenseItem = (expense = {}) => ({
+  id: createExpenseId(),
+  registro_id: expense.id || expense.registro_id || null,
+  monto: expense.monto ? String(expense.monto) : '',
+  descripcion: expense.descripcion || '',
+  metodo_pago: expense.metodo_pago || '',
 });
+
+const createExpenseState = () => [createExpenseItem()];
 
 export default function CierresCajaPage() {
   const empresaActiva = useAppStore((state) => state.empresaActiva);
@@ -48,19 +73,25 @@ export default function CierresCajaPage() {
   });
   const [selectedCierreId, setSelectedCierreId] = useState(null);
   const [form, setForm] = useState({
+    tipo_cierre: 'DIA',
     fecha: TODAY,
+    mes: CURRENT_MONTH,
     efectivo_real: '',
     observaciones: '',
     gastos: createExpenseState(),
   });
+  const isMonthlyClosure = form.tipo_cierre === 'MES';
+  const selectedPeriod = isMonthlyClosure
+    ? getMonthRange(form.mes)
+    : { fecha_inicio: form.fecha, fecha_fin: form.fecha };
 
   const selectedDateParams = useMemo(
     () => ({
-      fecha_inicio: form.fecha,
-      fecha_fin: form.fecha,
-      anio: Number(form.fecha.slice(0, 4)),
+      fecha_inicio: selectedPeriod.fecha_inicio,
+      fecha_fin: selectedPeriod.fecha_fin,
+      anio: Number(selectedPeriod.fecha_fin.slice(0, 4)),
     }),
-    [form.fecha],
+    [selectedPeriod.fecha_fin, selectedPeriod.fecha_inicio],
   );
 
   const cierresQuery = useQuery({
@@ -78,12 +109,19 @@ export default function CierresCajaPage() {
         page_size: 10,
       }),
     placeholderData: (previousData) => previousData,
+    enabled: !isMonthlyClosure,
   });
 
   const detalleQuery = useQuery({
     queryKey: ['informes', 'cierres', 'detalle', selectedCierreId],
     queryFn: () => obtenerCierreCaja(selectedCierreId),
     enabled: Boolean(selectedCierreId),
+  });
+
+  const gastosCajaQuery = useQuery({
+    queryKey: ['informes', 'gastos-caja', form.fecha],
+    queryFn: () => listarGastosCaja({ fecha: form.fecha, page_size: 200 }),
+    enabled: !isMonthlyClosure && Boolean(form.fecha),
   });
 
   const ventasPreviewQuery = useQuery({
@@ -93,30 +131,55 @@ export default function CierresCajaPage() {
   });
 
   const abonosPreviewQuery = useQuery({
-    queryKey: ['informes', 'cierres', 'preview', 'abonos', form.fecha],
+    queryKey: ['informes', 'cierres', 'preview', 'abonos', selectedPeriod],
     queryFn: () =>
       listarAbonos({
-        fecha_inicio: form.fecha,
-        fecha_fin: form.fecha,
+        fecha_inicio: selectedPeriod.fecha_inicio,
+        fecha_fin: selectedPeriod.fecha_fin,
         metodo_pago: 'EFECTIVO',
         page_size: 200,
       }),
     placeholderData: (previousData) => previousData,
+    enabled: !isMonthlyClosure,
   });
 
   const facturasPreviewQuery = useQuery({
-    queryKey: ['informes', 'cierres', 'preview', 'facturas', form.fecha],
+    queryKey: ['informes', 'cierres', 'preview', 'facturas', selectedPeriod],
     queryFn: () =>
       listarFacturasCompra({
-        fecha_desde: form.fecha,
-        fecha_hasta: form.fecha,
+        fecha_desde: selectedPeriod.fecha_inicio,
+        fecha_hasta: selectedPeriod.fecha_fin,
       }),
     placeholderData: (previousData) => previousData,
+    enabled: !isMonthlyClosure,
   });
+
+  const monthlySummaryQuery = useQuery({
+    queryKey: ['informes', 'cierres', 'preview', 'mensual', selectedPeriod],
+    queryFn: () => obtenerResumenCierrePeriodo(selectedPeriod),
+    placeholderData: (previousData) => previousData,
+    enabled: isMonthlyClosure,
+  });
+
+  useEffect(() => {
+    if (isMonthlyClosure || gastosCajaQuery.isLoading) return;
+    const gastosGuardados = normalizeCollection(gastosCajaQuery.data).results;
+    setForm((current) => ({
+      ...current,
+      gastos: gastosGuardados.length
+        ? gastosGuardados.map((expense) => createExpenseItem(expense))
+        : [createExpenseItem()],
+    }));
+  }, [form.fecha, gastosCajaQuery.data, gastosCajaQuery.isLoading, isMonthlyClosure]);
 
   const invalidateCierres = () => {
     queryClient.invalidateQueries({ queryKey: ['informes', 'cierres'] });
     queryClient.invalidateQueries({ queryKey: ['informes', 'dashboard'] });
+  };
+
+  const invalidateGastosCaja = () => {
+    queryClient.invalidateQueries({ queryKey: ['informes', 'gastos-caja'] });
+    queryClient.invalidateQueries({ queryKey: ['informes', 'cierres'] });
   };
 
   const generateMutation = useMutation({
@@ -171,6 +234,67 @@ export default function CierresCajaPage() {
       );
     },
   });
+  const downloadMonthlyPdfMutation = useMutation({
+    mutationFn: async () => {
+      const reporte = await generarReporteInforme({
+        tipo_reporte: 'CIERRE_CAJA',
+        formato: 'pdf',
+        fecha_inicio: selectedPeriod.fecha_inicio,
+        fecha_fin: selectedPeriod.fecha_fin,
+      });
+      const response = await descargarReportePdf(reporte.id);
+
+      triggerBrowserDownload(
+        response,
+        `cierre-caja-${selectedPeriod.fecha_inicio}-${selectedPeriod.fecha_fin}.pdf`,
+      );
+      return reporte;
+    },
+    onSuccess: () => {
+      toast.success('Cierre mensual PDF descargado correctamente.');
+    },
+    onError: (error) => {
+      toast.error(
+        extractApiError(error, 'No fue posible descargar el cierre mensual.'),
+      );
+    },
+  });
+
+  const saveExpenseMutation = useMutation({
+    mutationFn: ({ expense }) => {
+      const payload = {
+        fecha: form.fecha,
+        descripcion: String(expense.descripcion || '').trim(),
+        monto: toDecimalString(expense.monto || 0),
+        metodo_pago: expense.metodo_pago,
+      };
+      return expense.registro_id
+        ? actualizarGastoCaja(expense.registro_id, payload)
+        : crearGastoCaja(payload);
+    },
+    onSuccess: () => {
+      invalidateGastosCaja();
+      toast.success('Gasto guardado correctamente.');
+    },
+    onError: (error) => {
+      toast.error(
+        extractApiError(error, 'No fue posible guardar el gasto.'),
+      );
+    },
+  });
+
+  const deleteExpenseMutation = useMutation({
+    mutationFn: eliminarGastoCaja,
+    onSuccess: () => {
+      invalidateGastosCaja();
+      toast.success('Gasto eliminado correctamente.');
+    },
+    onError: (error) => {
+      toast.error(
+        extractApiError(error, 'No fue posible eliminar el gasto.'),
+      );
+    },
+  });
 
   const exactDateClosure =
     normalizeCollection(cierreDelDiaQuery.data).results[0] || null;
@@ -182,7 +306,7 @@ export default function CierresCajaPage() {
   const facturas = Array.isArray(facturasPreviewQuery.data)
     ? facturasPreviewQuery.data
     : [];
-  const manualExpensesTotal = Object.values(form.gastos).reduce(
+  const manualExpensesTotal = form.gastos.reduce(
     (accumulator, item) => accumulator + Number(item.monto || 0),
     0,
   );
@@ -201,7 +325,7 @@ export default function CierresCajaPage() {
         : accumulator,
     0,
   );
-  const gastosManualesPorMetodo = Object.values(form.gastos).reduce(
+  const gastosManualesPorMetodo = form.gastos.reduce(
     (accumulator, item) => {
       const monto = Number(item.monto || 0);
       const metodo = item.metodo_pago || '';
@@ -234,29 +358,133 @@ export default function CierresCajaPage() {
   const totalGastos = comprasMercancia + manualExpensesTotal;
   const diferencia = Number(form.efectivo_real || 0) - efectivoEsperado;
 
-  const preview = {
-    totalVentas: currentSalesSummary.total_ventas || 0,
-    totalAbonos,
-    comprasMercancia,
-    totalGastos,
-    efectivoEsperado,
-    diferencia,
-    metodosPago: paymentMethods,
-    gastosPorMetodo,
-  };
+  const monthlySummary = monthlySummaryQuery.data || null;
+  const preview = isMonthlyClosure && monthlySummary
+    ? {
+        totalVentas: monthlySummary.total_ventas || 0,
+        totalAbonos: monthlySummary.total_abonos || 0,
+        comprasMercancia:
+          monthlySummary.gastos_operativos?.compras_mercancia?.monto || 0,
+        totalGastos: monthlySummary.total_gastos || 0,
+        efectivoEsperado: monthlySummary.efectivo_esperado || 0,
+        diferencia: monthlySummary.diferencia || 0,
+        metodosPago: [
+          {
+            label: 'Efectivo',
+            metodo_pago: 'EFECTIVO',
+            cantidad_ventas: 0,
+            total_vendido: monthlySummary.total_efectivo || 0,
+          },
+          {
+            label: 'Tarjeta',
+            metodo_pago: 'TARJETA',
+            cantidad_ventas: 0,
+            total_vendido: monthlySummary.total_tarjeta || 0,
+          },
+          {
+            label: 'Transferencia',
+            metodo_pago: 'TRANSFERENCIA',
+            cantidad_ventas: 0,
+            total_vendido: monthlySummary.total_transferencia || 0,
+          },
+          {
+            label: 'Credito',
+            metodo_pago: 'CREDITO',
+            cantidad_ventas: 0,
+            total_vendido: monthlySummary.total_credito || 0,
+          },
+        ],
+        gastosPorMetodo:
+          monthlySummary.gastos_operativos?.por_metodo_pago || {},
+      }
+    : {
+        totalVentas: currentSalesSummary.total_ventas || 0,
+        totalAbonos,
+        comprasMercancia,
+        totalGastos,
+        efectivoEsperado,
+        diferencia,
+        metodosPago: paymentMethods,
+        gastosPorMetodo,
+      };
 
   const handleFormChange = (path, value) => {
-    if (path.startsWith('gastos.')) {
-      const [, expenseKey, field] = path.split('.');
+    if (path === 'gastos.add') {
       setForm((current) => ({
         ...current,
-        gastos: {
-          ...current.gastos,
-          [expenseKey]: {
-            ...current.gastos[expenseKey],
-            [field]: value,
-          },
-        },
+        gastos: [...current.gastos, createExpenseItem()],
+      }));
+      toast.info('Fila agregada. Usa Guardar gasto para conservarla.');
+      return;
+    }
+
+    if (path === 'gastos.save') {
+      const expense = form.gastos.find((item) => item.id === value);
+      if (!expense) return;
+      if (!String(expense.descripcion || '').trim()) {
+        toast.error('Debes indicar el detalle del gasto.');
+        return;
+      }
+      if (Number(expense.monto || 0) <= 0) {
+        toast.error('El valor del gasto debe ser mayor a cero.');
+        return;
+      }
+      if (!expense.metodo_pago) {
+        toast.error('Debes indicar el metodo de pago del gasto.');
+        return;
+      }
+      saveExpenseMutation.mutate({ expense });
+      return;
+    }
+
+    if (path === 'gastos.remove') {
+      const expense = form.gastos.find((item) => item.id === value);
+      if (expense?.registro_id) {
+        deleteExpenseMutation.mutate(expense.registro_id);
+        return;
+      }
+      setForm((current) => ({
+        ...current,
+        gastos:
+          current.gastos.length <= 1
+            ? [createExpenseItem()]
+            : current.gastos.filter((expense) => expense.id !== value),
+      }));
+      return;
+    }
+
+    if (path.startsWith('gastos.')) {
+      const [, indexValue, field] = path.split('.');
+      const expenseIndex = Number(indexValue);
+      setForm((current) => ({
+        ...current,
+        gastos: current.gastos.map((expense, index) =>
+          index === expenseIndex
+            ? {
+                ...expense,
+                [field]: value,
+              }
+            : expense,
+        ),
+      }));
+      return;
+    }
+
+    if (path === 'gastos.reset-empty') {
+      setForm((current) => ({
+        ...current,
+        gastos:
+          current.gastos.length === 0
+            ? [createExpenseItem()]
+            : current.gastos,
+      }));
+      return;
+    }
+
+    if (path === 'gastos.replace') {
+      setForm((current) => ({
+        ...current,
+        gastos: Array.isArray(value) && value.length ? value : [createExpenseItem()],
       }));
       return;
     }
@@ -270,6 +498,15 @@ export default function CierresCajaPage() {
   const handleGenerate = (event) => {
     event.preventDefault();
 
+    if (isMonthlyClosure) {
+      if (!form.mes) {
+        toast.error('Debes seleccionar el mes del cierre.');
+        return;
+      }
+      downloadMonthlyPdfMutation.mutate();
+      return;
+    }
+
     if (!form.fecha) {
       toast.error('Debes seleccionar una fecha para el cierre.');
       return;
@@ -279,7 +516,7 @@ export default function CierresCajaPage() {
       toast.error('El efectivo real no puede ser negativo.');
       return;
     }
-    const gastoSinMetodo = Object.values(form.gastos).some(
+    const gastoSinMetodo = form.gastos.some(
       (gasto) => Number(gasto.monto || 0) > 0 && !gasto.metodo_pago,
     );
     if (gastoSinMetodo) {
@@ -349,7 +586,10 @@ export default function CierresCajaPage() {
             preview={preview}
             onSubmit={handleGenerate}
             isSubmitting={generateMutation.isPending}
+            isMonthlySubmitting={downloadMonthlyPdfMutation.isPending}
+            isSavingExpense={saveExpenseMutation.isPending}
             exactDateClosure={exactDateClosure}
+            selectedPeriod={selectedPeriod}
             error={
               generateMutation.isError
                 ? extractApiError(
@@ -393,11 +633,35 @@ export default function CierresCajaPage() {
 }
 
 function buildExpensePayload(expenses) {
+  const expenseItems = Array.isArray(expenses) ? expenses : [];
+  const validItems = expenseItems
+    .map((expense) => ({
+      monto: Number(expense.monto || 0),
+      metodo_pago: expense.metodo_pago || '',
+      descripcion: String(expense.descripcion || '').trim(),
+      gasto_caja_id: expense.registro_id || null,
+    }))
+    .filter((expense) => expense.monto > 0);
+  const total = validItems.reduce(
+    (accumulator, expense) => accumulator + expense.monto,
+    0,
+  );
+
   return {
-    servicios_publicos: buildManualExpense(expenses.servicios_publicos),
-    arriendos: buildManualExpense(expenses.arriendos),
-    salarios: buildManualExpense(expenses.salarios),
-    otros_gastos: buildManualExpense(expenses.otros_gastos),
+    servicios_publicos: buildManualExpense(),
+    arriendos: buildManualExpense(),
+    salarios: buildManualExpense(),
+    otros_gastos: {
+      monto: toDecimalString(total),
+      metodo_pago: validItems[0]?.metodo_pago || '',
+      descripcion: '',
+      detalle: validItems.map((expense) => ({
+        gasto_caja_id: expense.gasto_caja_id,
+        descripcion: expense.descripcion,
+        monto: toDecimalString(expense.monto),
+        metodo_pago: expense.metodo_pago,
+      })),
+    },
   };
 }
 
@@ -552,7 +816,7 @@ function openPrintWindow(cierre, empresa) {
 }
 
 function buildPrintableExpenseRows(gastosOperativos = {}) {
-  return [
+  const rows = [
     {
       label: 'Compras de mercancia',
       monto: gastosOperativos?.compras_mercancia?.monto || 0,
@@ -561,31 +825,35 @@ function buildPrintableExpenseRows(gastosOperativos = {}) {
         'Facturas del dia',
       ),
     },
-    {
-      label: 'Servicios publicos',
-      monto: gastosOperativos?.servicios_publicos?.monto || 0,
-      descripcion: extractPrintableExpenseDescription(
-        gastosOperativos?.servicios_publicos,
-      ),
-    },
-    {
-      label: 'Arriendos',
-      monto: gastosOperativos?.arriendos?.monto || 0,
-      descripcion: extractPrintableExpenseDescription(gastosOperativos?.arriendos),
-    },
-    {
-      label: 'Salarios',
-      monto: gastosOperativos?.salarios?.monto || 0,
-      descripcion: extractPrintableExpenseDescription(gastosOperativos?.salarios),
-    },
-    {
-      label: 'Otros gastos',
-      monto: gastosOperativos?.otros_gastos?.monto || 0,
-      descripcion: extractPrintableExpenseDescription(
-        gastosOperativos?.otros_gastos,
-      ),
-    },
   ];
+  ['servicios_publicos', 'arriendos', 'salarios', 'otros_gastos'].forEach((key) => {
+    const expense = gastosOperativos?.[key];
+    if (!expense || typeof expense !== 'object') return;
+    const detail = Array.isArray(expense.detalle) ? expense.detalle : [];
+    const detailedItems = detail.filter(
+      (item) => item && typeof item === 'object' && (item.monto || item.total),
+    );
+    if (detailedItems.length > 0) {
+      detailedItems.forEach((item) => {
+        const metodo = formatPurchasePaymentMethod(
+          item.metodo_pago || expense.metodo_pago,
+        );
+        rows.push({
+          label: 'Gasto',
+          monto: item.monto || item.total || 0,
+          descripcion: `${item.descripcion || item.detalle || '--'}${metodo ? ` - ${metodo}` : ''}`,
+        });
+      });
+      return;
+    }
+    rows.push({
+      label: key.replaceAll('_', ' '),
+      monto: expense.monto || 0,
+      descripcion: extractPrintableExpenseDescription(expense),
+    });
+  });
+
+  return rows;
 }
 
 function extractPrintableExpenseDescription(expense, fallback = '') {

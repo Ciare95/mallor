@@ -12,7 +12,7 @@ from IA.llm.ports import LLMConfigurationError, LLMResponse
 from IA.models import MensajeIA
 from cliente.models import Cliente
 from empresa.models import Empresa, EmpresaUsuario
-from inventario.models import FacturaCompra, Producto
+from inventario.models import AbonoFacturaCompra, FacturaCompra, Producto
 from proveedor.models import Proveedor
 from usuario.models import Usuario
 from ventas.models import (
@@ -362,7 +362,7 @@ class IADeepSeekFallbackTest(TestCase):
         self.assertIn('ventas', result['respuesta'].lower())
         self.assertEqual(result['herramienta_usada'], 'resumen_ventas_periodo')
 
-    def test_resumen_ventas_no_usa_texto_llm_si_contradice_backend(self):
+    def test_resumen_ventas_no_usa_texto_llm_si_contradice_sistema(self):
         class WrongSalesLLMClient:
             def chat(self, messages, *, temperature=None):
                 return LLMResponse(
@@ -524,7 +524,7 @@ class IADeepSeekFallbackTest(TestCase):
         self.assertIn('lab norte', response.data['respuesta'].lower())
 
     def test_consulta_ganancia_comparando_ventas_con_gastos_usa_utilidad_periodo(self):
-        FacturaCompra.objects.create(
+        factura = FacturaCompra.objects.create(
             empresa=self.empresa,
             numero_factura='FC-002',
             proveedor=self.proveedor,
@@ -534,6 +534,13 @@ class IADeepSeekFallbackTest(TestCase):
             total=Decimal('10000.00'),
             usuario_registro=self.usuario,
             estado=FacturaCompra.ESTADO_PROCESADA,
+        )
+        AbonoFacturaCompra.objects.create(
+            factura=factura,
+            empresa=self.empresa,
+            monto=Decimal('10000.00'),
+            metodo_pago=FacturaCompra.METODO_PAGO_EFECTIVO,
+            usuario_registro=self.usuario,
         )
 
         response = self.client.post(

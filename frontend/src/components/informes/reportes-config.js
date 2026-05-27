@@ -44,7 +44,7 @@ export const REPORT_TYPE_META = {
   },
   ANALISIS_FINANCIERO: {
     label: 'Analisis financiero',
-    description: 'Vista previa financiera consolidada. No tiene exportador backend configurado.',
+    description: 'Vista previa financiera consolidada. No tiene exportador del sistema configurado.',
     supports: [],
     requiresDateRange: true,
     previewKind: 'financiero',

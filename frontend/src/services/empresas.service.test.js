@@ -15,7 +15,7 @@ describe('empresas.service', () => {
     vi.clearAllMocks();
   });
 
-  it('lista empresas y retorna el payload del backend', async () => {
+  it('lista empresas y retorna el payload del sistema', async () => {
     api.get.mockResolvedValueOnce({ data: { results: [{ id: 1 }] } });
     const { listarEmpresas } = await import('./empresas.service');
 
@@ -25,7 +25,7 @@ describe('empresas.service', () => {
     expect(result).toEqual({ results: [{ id: 1 }] });
   });
 
-  it('selecciona empresa usando el endpoint seguro del backend', async () => {
+  it('selecciona empresa usando el endpoint seguro del sistema', async () => {
     api.post.mockResolvedValueOnce({ data: { id: 7 } });
     const { seleccionarEmpresa } = await import('./empresas.service');
 

@@ -133,7 +133,7 @@ export default function GenerarReporteForm({
             <div className="flex items-start gap-3">
               <Info className="mt-0.5 h-4 w-4" />
               <div>
-                Este tipo se deja como vista previa financiera. El backend no
+                Este tipo se deja como vista previa financiera. El sistema no
                 tiene generador de archivos configurado para exportarlo todavia.
               </div>
             </div>

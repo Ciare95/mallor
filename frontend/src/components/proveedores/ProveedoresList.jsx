@@ -174,7 +174,7 @@ export default function ProveedoresList({
           <EmptyState
             icon={Factory}
             title="No fue posible cargar proveedores"
-            description="Revisa filtros o la conexion del backend e intenta nuevamente."
+            description="Revisa filtros o la conexion del sistema e intenta nuevamente."
           />
         )}
 

@@ -185,7 +185,7 @@ export default function ClientesList({
           <EmptyState
             icon={Wallet}
             title="No fue posible cargar clientes"
-            description="Revisa filtros o la conexion del backend y vuelve a intentar."
+            description="Revisa filtros o la conexion del sistema y vuelve a intentar."
           />
         )}
 

@@ -4,6 +4,7 @@ import { normalizeCollection } from '../utils/ventas';
 const INFORMES_BASE = '/informes';
 const ESTADISTICAS_BASE = `${INFORMES_BASE}/estadisticas`;
 const CIERRES_BASE = `${INFORMES_BASE}/cierres`;
+const GASTOS_CAJA_BASE = `${INFORMES_BASE}/gastos-caja`;
 const REPORTES_BASE = `${INFORMES_BASE}/reportes`;
 
 const normalizeDateParam = (value) => {
@@ -82,6 +83,13 @@ export const obtenerCierreCaja = async (id) => {
   return response.data;
 };
 
+export const obtenerResumenCierrePeriodo = async (filtros = {}) => {
+  const response = await api.get(`${CIERRES_BASE}/resumen-periodo/`, {
+    params: cleanParams(filtros),
+  });
+  return response.data;
+};
+
 export const generarCierreCaja = async (datos) => {
   const response = await api.post(`${CIERRES_BASE}/generar/`, datos);
   return response.data;
@@ -90,6 +98,27 @@ export const generarCierreCaja = async (datos) => {
 export const actualizarCierreCaja = async (id, datos) => {
   const response = await api.put(`${CIERRES_BASE}/${id}/`, datos);
   return response.data;
+};
+
+export const listarGastosCaja = async (filtros = {}) => {
+  const response = await api.get(`${GASTOS_CAJA_BASE}/`, {
+    params: cleanParams(filtros),
+  });
+  return normalizeCollection(response.data);
+};
+
+export const crearGastoCaja = async (datos) => {
+  const response = await api.post(`${GASTOS_CAJA_BASE}/`, datos);
+  return response.data;
+};
+
+export const actualizarGastoCaja = async (id, datos) => {
+  const response = await api.put(`${GASTOS_CAJA_BASE}/${id}/`, datos);
+  return response.data;
+};
+
+export const eliminarGastoCaja = async (id) => {
+  await api.delete(`${GASTOS_CAJA_BASE}/${id}/`);
 };
 
 export const generarReporteInforme = async (datos) => {
@@ -154,8 +183,13 @@ export default {
   obtenerEstadisticasFinancierasInforme,
   listarCierresCaja,
   obtenerCierreCaja,
+  obtenerResumenCierrePeriodo,
   generarCierreCaja,
   actualizarCierreCaja,
+  listarGastosCaja,
+  crearGastoCaja,
+  actualizarGastoCaja,
+  eliminarGastoCaja,
   generarReporteInforme,
   listarReportesInforme,
   obtenerReporteInforme,

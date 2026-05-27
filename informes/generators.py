@@ -88,6 +88,20 @@ EXCEL_ALERT_FILL = PatternFill(
     start_color='FDE9E7',
     end_color='FDE9E7',
 )
+EXPENSE_LABELS = {
+    'compras_mercancia': 'Compras de mercancia',
+    'servicios_publicos': 'Servicios publicos',
+    'arriendos': 'Arriendos',
+    'salarios': 'Salarios',
+    'otros_gastos': 'Otros gastos',
+}
+PAYMENT_METHOD_LABELS = {
+    'EFECTIVO': 'Efectivo',
+    'TRANSFERENCIA': 'Transferencia',
+    'TARJETA': 'Tarjeta',
+    'CREDITO': 'Credito',
+}
+EXPENSE_PAYMENT_METHODS = ('EFECTIVO', 'TRANSFERENCIA')
 EXCEL_BORDER = Border(
     left=THIN_SIDE,
     right=THIN_SIDE,
@@ -611,6 +625,17 @@ class PDFReportGenerator(BaseReportGenerator):
         if not labels or not values:
             return None
 
+        chart_items = [
+            (label, float(value or 0))
+            for label, value in zip(labels, values)
+            if float(value or 0) > 0
+        ]
+        if not chart_items:
+            return None
+
+        chart_labels = [label for label, _ in chart_items]
+        chart_values = [value for _, value in chart_items]
+
         drawing = Drawing(460, 220)
         drawing.add(
             String(
@@ -627,8 +652,8 @@ class PDFReportGenerator(BaseReportGenerator):
         pie.y = 20
         pie.width = 170
         pie.height = 170
-        pie.data = list(values)
-        pie.labels = list(labels)
+        pie.data = chart_values
+        pie.labels = chart_labels
         pie.slices.strokeWidth = 0.5
         pie.sideLabels = True
 
@@ -639,11 +664,164 @@ class PDFReportGenerator(BaseReportGenerator):
             colors.HexColor('#C6E0F5'),
             colors.HexColor('#D9EAD3'),
         ]
-        for index, _ in enumerate(values):
+        for index, _ in enumerate(chart_values):
             pie.slices[index].fillColor = palette[index % len(palette)]
 
         drawing.add(pie)
         return drawing
+
+    @staticmethod
+    def _payment_method_label(value: Any) -> str:
+        normalized = str(value or '').upper()
+        return PAYMENT_METHOD_LABELS.get(normalized, normalized.title())
+
+    def _build_expense_rows(
+        self,
+        gastos_operativos: dict[str, Any],
+    ) -> list[list[str]]:
+        rows: list[list[str]] = []
+        compras = gastos_operativos.get('compras_mercancia', {})
+
+        if isinstance(compras, dict):
+            detalle = compras.get('detalle')
+            if isinstance(detalle, list) and detalle:
+                for item in detalle:
+                    if not isinstance(item, dict):
+                        continue
+                    monto = self._quantize(
+                        item.get('total', item.get('monto', 0)),
+                    )
+                    if monto <= ZERO:
+                        continue
+                    numero_factura = item.get('numero_factura') or '-'
+                    proveedor = item.get('proveedor') or 'Sin proveedor'
+                    rows.append([
+                        EXPENSE_LABELS['compras_mercancia'],
+                        self._format_currency(monto),
+                        self._payment_method_label(item.get('metodo_pago')),
+                        f'Factura {numero_factura} - {proveedor}',
+                    ])
+            else:
+                monto = self._quantize(compras.get('monto', 0))
+                if monto > ZERO:
+                    rows.append([
+                        EXPENSE_LABELS['compras_mercancia'],
+                        self._format_currency(monto),
+                        self._payment_method_label(compras.get('metodo_pago')),
+                        compras.get('descripcion') or 'Facturas del dia',
+                    ])
+
+        for key in (
+            'servicios_publicos',
+            'arriendos',
+            'salarios',
+            'otros_gastos',
+        ):
+            value = gastos_operativos.get(key, {})
+            if not isinstance(value, dict):
+                continue
+
+            detalle = value.get('detalle')
+            if isinstance(detalle, list) and detalle:
+                for item in detalle:
+                    if not isinstance(item, dict):
+                        continue
+                    monto = self._quantize(item.get('monto', 0))
+                    if monto <= ZERO:
+                        continue
+                    fecha = item.get('fecha_cierre')
+                    descripcion = (
+                        item.get('descripcion')
+                        or item.get('detalle')
+                        or '-'
+                    )
+                    if isinstance(descripcion, list):
+                        descripcion = '; '.join(
+                            str(entry.get('descripcion', entry))
+                            if isinstance(entry, dict) else str(entry)
+                            for entry in descripcion
+                        )
+                    detalle_text = (
+                        f'{fecha} - {descripcion}'
+                        if fecha else str(descripcion)
+                    )
+                    rows.append([
+                        EXPENSE_LABELS[key],
+                        self._format_currency(monto),
+                        self._payment_method_label(item.get('metodo_pago')),
+                        detalle_text,
+                    ])
+                continue
+
+            monto = self._quantize(value.get('monto', 0))
+            if monto <= ZERO:
+                continue
+
+            rows.append([
+                EXPENSE_LABELS[key],
+                self._format_currency(monto),
+                self._payment_method_label(value.get('metodo_pago')),
+                value.get('descripcion') or '-',
+            ])
+
+        return rows
+
+    def _build_expense_payment_rows(
+        self,
+        gastos_operativos: dict[str, Any],
+    ) -> list[list[str]]:
+        raw_summary = gastos_operativos.get('por_metodo_pago', {})
+        summary = raw_summary if isinstance(raw_summary, dict) else {}
+        totals = {
+            method: self._quantize(summary.get(method, 0))
+            for method in EXPENSE_PAYMENT_METHODS
+        }
+
+        if not any(value > ZERO for value in totals.values()):
+            compras = gastos_operativos.get('compras_mercancia', {})
+            if isinstance(compras, dict):
+                detalle = compras.get('detalle')
+                if isinstance(detalle, list):
+                    for item in detalle:
+                        if not isinstance(item, dict):
+                            continue
+                        method = str(item.get('metodo_pago') or '').upper()
+                        if method in totals:
+                            totals[method] += self._quantize(
+                                item.get('total', item.get('monto', 0)),
+                            )
+
+            for key in (
+                'servicios_publicos',
+                'arriendos',
+                'salarios',
+                'otros_gastos',
+            ):
+                value = gastos_operativos.get(key, {})
+                if not isinstance(value, dict):
+                    continue
+                detalle = value.get('detalle')
+                if isinstance(detalle, list):
+                    for item in detalle:
+                        if not isinstance(item, dict):
+                            continue
+                        method = str(item.get('metodo_pago') or 'EFECTIVO').upper()
+                        if method in totals:
+                            totals[method] += self._quantize(item.get('monto', 0))
+                    continue
+                method = str(value.get('metodo_pago') or 'EFECTIVO').upper()
+                if method in totals:
+                    totals[method] += self._quantize(value.get('monto', 0))
+
+        rows = [
+            [
+                self._payment_method_label(method),
+                self._format_currency(totals[method]),
+            ]
+            for method in EXPENSE_PAYMENT_METHODS
+        ]
+
+        return rows
 
     def _footer(self, canvas, document) -> None:
         canvas.saveState()
@@ -929,23 +1107,12 @@ class PDFReportGenerator(BaseReportGenerator):
             ['Credito', self._format_currency(cierre.total_credito)],
             ['Abonos efectivo', self._format_currency(cierre.total_abonos)],
         ]
-        gasto_rows = []
-        for key, value in cierre.gastos_operativos.items():
-            if key == 'total':
-                continue
-
-            if isinstance(value, dict):
-                monto = value.get('monto', 0)
-                descripcion = value.get('descripcion', '')
-            else:
-                monto = value
-                descripcion = ''
-
-            gasto_rows.append([
-                key.replace('_', ' ').title(),
-                self._format_currency(monto),
-                descripcion or '-',
-            ])
+        gastos_operativos = (
+            cierre.gastos_operativos
+            if isinstance(cierre.gastos_operativos, dict) else {}
+        )
+        gasto_rows = self._build_expense_rows(gastos_operativos)
+        gasto_method_rows = self._build_expense_payment_rows(gastos_operativos)
 
         categoria_rows = [
             [categoria, self._format_currency(total)]
@@ -1015,15 +1182,24 @@ class PDFReportGenerator(BaseReportGenerator):
         story.append(self._section_title('Gastos operativos'))
         story.append(
             self._data_table(
-                ('Concepto', 'Monto', 'Descripcion'),
-                gasto_rows or [['Sin gastos', '$0.00', '-']],
-                col_widths=[4.6 * cm, 3.2 * cm, 6.7 * cm],
+                ('Concepto', 'Monto', 'Metodo', 'Detalle'),
+                gasto_rows or [['Sin gastos', '$0.00', '-', '-']],
+                col_widths=[4.0 * cm, 3.0 * cm, 3.0 * cm, 5.2 * cm],
             ),
         )
         story.append(
             self._body(
                 'Total de gastos operativos: '
                 f'{self._format_currency(cierre.total_gastos)}',
+            ),
+        )
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(self._section_title('Gastos por metodo de pago'))
+        story.append(
+            self._data_table(
+                ('Metodo', 'Total gastado'),
+                gasto_method_rows,
+                col_widths=[8.5 * cm, 6.0 * cm],
             ),
         )
         story.append(self._section_title('Ventas por categoria'))
@@ -1068,6 +1244,147 @@ class PDFReportGenerator(BaseReportGenerator):
         return self._build_document(
             'Reporte de cierre de caja',
             filters,
+            story,
+            filename,
+        )
+
+    def generar_pdf_cierre_periodo(
+        self,
+        resumen: dict[str, Any],
+    ) -> GeneratedReportFile:
+        """
+        Genera un PDF consolidado de cierre para un rango de fechas.
+        """
+        fecha_inicio = resumen.get('fecha_inicio')
+        fecha_fin = resumen.get('fecha_fin')
+        gastos_operativos = (
+            resumen.get('gastos_operativos')
+            if isinstance(resumen.get('gastos_operativos'), dict) else {}
+        )
+        payment_rows = [
+            ['Efectivo', self._format_currency(resumen.get('total_efectivo'))],
+            ['Tarjeta', self._format_currency(resumen.get('total_tarjeta'))],
+            [
+                'Transferencia',
+                self._format_currency(resumen.get('total_transferencia')),
+            ],
+            ['Credito', self._format_currency(resumen.get('total_credito'))],
+            ['Abonos efectivo', self._format_currency(resumen.get('total_abonos'))],
+        ]
+        gasto_rows = self._build_expense_rows(gastos_operativos)
+        gasto_method_rows = self._build_expense_payment_rows(gastos_operativos)
+        ventas_por_categoria = resumen.get('ventas_por_categoria') or {}
+        categoria_rows = [
+            [categoria, self._format_currency(total)]
+            for categoria, total in sorted(
+                ventas_por_categoria.items(),
+                key=lambda item: item[1],
+                reverse=True,
+            )
+        ]
+
+        story: list[Any] = []
+        story.append(self._section_title('Control de efectivo consolidado'))
+        story.append(
+            self._metric_table(
+                [
+                    ['Concepto', 'Valor', 'Referencia'],
+                    [
+                        'Total ventas',
+                        self._format_currency(resumen.get('total_ventas')),
+                        f'{fecha_inicio} a {fecha_fin}',
+                    ],
+                    [
+                        'Efectivo esperado',
+                        self._format_currency(
+                            resumen.get('efectivo_esperado'),
+                        ),
+                        'Ventas en efectivo + abonos - gastos en efectivo',
+                    ],
+                    [
+                        'Efectivo real',
+                        self._format_currency(resumen.get('efectivo_real')),
+                        'Suma de cierres diarios del periodo',
+                    ],
+                    [
+                        'Diferencia',
+                        self._format_currency(resumen.get('diferencia')),
+                        (
+                            'Sobrante'
+                            if self._quantize(resumen.get('diferencia')) >= ZERO
+                            else 'Faltante'
+                        ),
+                    ],
+                ],
+            ),
+        )
+        story.append(self._section_title('Ventas por metodo de pago'))
+        story.append(
+            self._data_table(
+                ('Metodo', 'Total'),
+                payment_rows,
+                col_widths=[8.5 * cm, 6.0 * cm],
+            ),
+        )
+        metodo_chart = self._pie_chart(
+            'Composicion del periodo',
+            [row[0] for row in payment_rows],
+            [
+                float(self._quantize(resumen.get('total_efectivo'))),
+                float(self._quantize(resumen.get('total_tarjeta'))),
+                float(self._quantize(resumen.get('total_transferencia'))),
+                float(self._quantize(resumen.get('total_credito'))),
+                float(self._quantize(resumen.get('total_abonos'))),
+            ],
+        )
+        if metodo_chart is not None:
+            story.append(Spacer(1, 0.2 * cm))
+            story.append(metodo_chart)
+
+        story.append(self._section_title('Gastos operativos'))
+        story.append(
+            self._data_table(
+                ('Concepto', 'Monto', 'Metodo', 'Detalle'),
+                gasto_rows or [['Sin gastos', '$0.00', '-', '-']],
+                col_widths=[4.0 * cm, 3.0 * cm, 3.0 * cm, 5.2 * cm],
+            ),
+        )
+        story.append(
+            self._body(
+                'Total de gastos operativos: '
+                f'{self._format_currency(resumen.get("total_gastos"))}',
+            ),
+        )
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(self._section_title('Gastos por metodo de pago'))
+        story.append(
+            self._data_table(
+                ('Metodo', 'Total gastado'),
+                gasto_method_rows,
+                col_widths=[8.5 * cm, 6.0 * cm],
+            ),
+        )
+        story.append(self._section_title('Ventas por categoria'))
+        story.append(
+            self._data_table(
+                ('Categoria', 'Total'),
+                categoria_rows or [['Sin categoria', '$0.00']],
+                col_widths=[8.5 * cm, 6.0 * cm],
+            ),
+        )
+        if resumen.get('observaciones'):
+            story.append(self._section_title('Observaciones'))
+            story.append(self._body(resumen['observaciones']))
+
+        filename = self._build_filename(
+            'cierre-caja-periodo',
+            str(fecha_inicio),
+            str(fecha_fin),
+            extension='pdf',
+        )
+        return self._build_document(
+            'Reporte consolidado de cierre de caja',
+            [f'Periodo consultado: {fecha_inicio} a {fecha_fin}'],
             story,
             filename,
         )
@@ -2397,6 +2714,11 @@ def generar_pdf_ventas_periodo(
 def generar_pdf_cierre_caja(cierre_id: int) -> GeneratedReportFile:
     """Fachada funcional para PDF de cierre de caja."""
     return PDFReportGenerator().generar_pdf_cierre_caja(cierre_id)
+
+
+def generar_pdf_cierre_periodo(resumen: dict[str, Any]) -> GeneratedReportFile:
+    """Fachada funcional para PDF consolidado de cierre de caja."""
+    return PDFReportGenerator().generar_pdf_cierre_periodo(resumen)
 
 
 def generar_pdf_inventario_valorizado() -> GeneratedReportFile:

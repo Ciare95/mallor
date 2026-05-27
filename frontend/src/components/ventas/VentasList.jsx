@@ -221,7 +221,7 @@ export default function VentasList({
           <EmptyState
             icon={Slash}
             title="No fue posible cargar las ventas"
-            description="Verifica los filtros, la conexion del backend o intenta nuevamente."
+            description="Verifica los filtros, la conexion del sistema o intenta nuevamente."
           />
         )}
 

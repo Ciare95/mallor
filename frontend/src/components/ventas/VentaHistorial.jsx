@@ -24,7 +24,7 @@ export default function VentaHistorial({ ventaId }) {
       <EmptyState
         icon={PackageSearch}
         title="No fue posible cargar el historial"
-        description="Revisa la conexion con el backend o intenta nuevamente."
+        description="Revisa la conexion con el sistema o intenta nuevamente."
       />
     );
   }

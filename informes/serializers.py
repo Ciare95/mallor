@@ -7,7 +7,7 @@ from rest_framework import serializers
 from core.exceptions import InformeError
 from usuario.models import Usuario
 
-from .models import CierreCaja, Informe
+from .models import CierreCaja, GastoCaja, Informe
 
 
 class UsuarioInformeInfoSerializer(serializers.ModelSerializer):
@@ -146,12 +146,77 @@ class CierreCajaGenerateSerializer(BaseCierreCajaWriteSerializer):
     fecha = serializers.DateField()
 
 
+class CierreCajaPeriodoSerializer(serializers.Serializer):
+    """
+    Valida un rango de fechas para cierres consolidados.
+    """
+
+    fecha_inicio = serializers.DateField()
+    fecha_fin = serializers.DateField()
+
+    def validate(self, attrs):
+        if attrs['fecha_inicio'] > attrs['fecha_fin']:
+            raise serializers.ValidationError({
+                'fecha_fin': _(
+                    'La fecha de fin no puede ser anterior a la inicial.'
+                ),
+            })
+        return attrs
+
+
 class CierreCajaUpdateSerializer(BaseCierreCajaWriteSerializer):
     """
     Serializer para ajustes posteriores sobre un cierre existente.
     """
 
     fecha_cierre = serializers.DateField(required=False)
+
+
+class GastoCajaSerializer(serializers.ModelSerializer):
+    """
+    Serializer para gastos operativos registrados durante el dia.
+    """
+
+    usuario_registro_nombre = serializers.CharField(
+        source='usuario_registro.get_full_name',
+        read_only=True,
+    )
+
+    class Meta:
+        model = GastoCaja
+        fields = [
+            'id',
+            'fecha',
+            'descripcion',
+            'monto',
+            'metodo_pago',
+            'usuario_registro',
+            'usuario_registro_nombre',
+            'fecha_registro',
+            'fecha_actualizacion',
+        ]
+        read_only_fields = [
+            'id',
+            'usuario_registro',
+            'usuario_registro_nombre',
+            'fecha_registro',
+            'fecha_actualizacion',
+        ]
+
+    def validate_descripcion(self, value):
+        descripcion = str(value or '').strip()
+        if not descripcion:
+            raise serializers.ValidationError(
+                _('Debes indicar el detalle del gasto.'),
+            )
+        return descripcion
+
+    def validate_monto(self, value):
+        if value <= Decimal('0.00'):
+            raise serializers.ValidationError(
+                _('El valor del gasto debe ser mayor a cero.'),
+            )
+        return value
 
 
 class InformeListSerializer(serializers.ModelSerializer):

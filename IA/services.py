@@ -170,7 +170,7 @@ class IAService:
                 try:
                     metadatos = execute_tool(herramienta_usada, parametros, contexto)
                     try:
-                        if IAService._debe_responder_desde_backend(
+                        if IAService._debe_responder_desde_sistema(
                             herramienta_usada,
                         ):
                             respuesta = IAService._fallback_answer(
@@ -242,7 +242,7 @@ class IAService:
         return any(re.search(pattern, normalized) for pattern in SENSITIVE_PATTERNS)
 
     @staticmethod
-    def _debe_responder_desde_backend(herramienta: str) -> bool:
+    def _debe_responder_desde_sistema(herramienta: str) -> bool:
         return herramienta in {
             'resumen_ventas_periodo',
         }

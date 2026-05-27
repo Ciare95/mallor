@@ -191,7 +191,7 @@ function PrintInfo({ label, value }) {
 }
 
 function buildExpenseRows(gastosOperativos = {}) {
-  return [
+  const rows = [
     {
       key: 'compras_mercancia',
       label: 'Compras de mercancia',
@@ -201,31 +201,37 @@ function buildExpenseRows(gastosOperativos = {}) {
         'Detalle de facturas del dia',
       ),
     },
-    {
-      key: 'servicios_publicos',
-      label: 'Servicios publicos',
-      monto: gastosOperativos?.servicios_publicos?.monto || 0,
-      descripcion: extractExpenseDescription(gastosOperativos?.servicios_publicos),
-    },
-    {
-      key: 'arriendos',
-      label: 'Arriendos',
-      monto: gastosOperativos?.arriendos?.monto || 0,
-      descripcion: extractExpenseDescription(gastosOperativos?.arriendos),
-    },
-    {
-      key: 'salarios',
-      label: 'Salarios',
-      monto: gastosOperativos?.salarios?.monto || 0,
-      descripcion: extractExpenseDescription(gastosOperativos?.salarios),
-    },
-    {
-      key: 'otros_gastos',
-      label: 'Otros gastos',
-      monto: gastosOperativos?.otros_gastos?.monto || 0,
-      descripcion: extractExpenseDescription(gastosOperativos?.otros_gastos),
-    },
   ];
+  ['servicios_publicos', 'arriendos', 'salarios', 'otros_gastos'].forEach((key) => {
+    const expense = gastosOperativos?.[key];
+    if (!expense || typeof expense !== 'object') return;
+    const detail = Array.isArray(expense.detalle) ? expense.detalle : [];
+    const detailedItems = detail.filter(
+      (item) => item && typeof item === 'object' && (item.monto || item.total),
+    );
+    if (detailedItems.length > 0) {
+      detailedItems.forEach((item, index) => {
+        const metodo = formatPurchasePaymentMethod(
+          item.metodo_pago || expense.metodo_pago,
+        );
+        rows.push({
+          key: `${key}-${index}`,
+          label: 'Gasto',
+          monto: item.monto || item.total || 0,
+          descripcion: `${item.descripcion || item.detalle || '--'}${metodo ? ` - ${metodo}` : ''}`,
+        });
+      });
+      return;
+    }
+    rows.push({
+      key,
+      label: key.replaceAll('_', ' '),
+      monto: expense.monto || 0,
+      descripcion: extractExpenseDescription(expense),
+    });
+  });
+
+  return rows;
 }
 
 function extractExpenseDescription(expense, fallback = '') {

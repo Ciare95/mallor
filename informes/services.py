@@ -33,9 +33,9 @@ from empresa.context import get_empresa_actual_or_default
 from inventario.models import AbonoFacturaCompra, FacturaCompra
 from inventario.models import Producto
 from usuario.models import Usuario
-from ventas.models import DetalleVenta, Venta
+from ventas.models import Abono, DetalleVenta, Venta
 
-from .models import CierreCaja, Informe
+from .models import CierreCaja, GastoCaja, Informe
 
 
 ZERO = Decimal('0.00')
@@ -105,8 +105,17 @@ class CierreCajaService:
             return ZERO
 
     @staticmethod
-    def _quantize(value: Decimal) -> Decimal:
-        return (value or ZERO).quantize(QUANTIZER)
+    def _quantize(value: Any) -> Decimal:
+        if value in (None, '', [], {}):
+            return ZERO
+        if isinstance(value, Decimal):
+            decimal_value = value
+        else:
+            try:
+                decimal_value = Decimal(str(value))
+            except (InvalidOperation, TypeError, ValueError):
+                decimal_value = ZERO
+        return decimal_value.quantize(QUANTIZER)
 
     @staticmethod
     def _parse_date(value: Any, field_name: str) -> date:
@@ -398,6 +407,68 @@ class CierreCajaService:
         return gasto
 
     @staticmethod
+    def _serializar_gasto_caja(gasto: GastoCaja) -> Dict[str, Any]:
+        return {
+            'gasto_caja_id': gasto.id,
+            'descripcion': gasto.descripcion,
+            'monto': CierreCajaService._quantize(gasto.monto),
+            'metodo_pago': gasto.metodo_pago,
+            'fecha': gasto.fecha.isoformat(),
+        }
+
+    @staticmethod
+    def _obtener_gastos_caja_fecha(fecha_cierre: date) -> List[Dict[str, Any]]:
+        return [
+            CierreCajaService._serializar_gasto_caja(gasto)
+            for gasto in GastoCaja.objects.filter(
+                empresa=get_empresa_actual_or_default(),
+                fecha=fecha_cierre,
+            ).order_by('fecha_registro', 'id')
+        ]
+
+    @staticmethod
+    def _agregar_gastos_caja_persistidos(
+        gastos_input: Dict[str, Any],
+        fecha_cierre: date,
+    ) -> Dict[str, Any]:
+        gastos_caja = CierreCajaService._obtener_gastos_caja_fecha(
+            fecha_cierre,
+        )
+        if not gastos_caja:
+            return gastos_input
+
+        normalizado = dict(gastos_input)
+        otros_gastos = normalizado.get('otros_gastos', {})
+        otros_gastos = otros_gastos if isinstance(otros_gastos, dict) else {}
+        detalle = CierreCajaService._normalizar_detalle_gasto(otros_gastos)
+        ids_enviados = {
+            item.get('gasto_caja_id')
+            for item in detalle
+            if isinstance(item, dict) and item.get('gasto_caja_id')
+        }
+        detalle.extend(
+            item for item in gastos_caja
+            if item.get('gasto_caja_id') not in ids_enviados
+        )
+        total = sum(
+            (
+                CierreCajaService._coerce_decimal(
+                    item.get('monto', item.get('total', ZERO)),
+                )
+                for item in detalle
+                if isinstance(item, dict)
+            ),
+            start=ZERO,
+        )
+        normalizado['otros_gastos'] = {
+            **otros_gastos,
+            'monto': CierreCajaService._quantize(total),
+            'metodo_pago': otros_gastos.get('metodo_pago') or 'EFECTIVO',
+            'detalle': detalle,
+        }
+        return normalizado
+
+    @staticmethod
     def _serializar_gasto(gasto: Dict[str, Any]) -> Dict[str, Any]:
         serializado = {
             'monto': float(CierreCajaService._quantize(gasto['monto'])),
@@ -436,6 +507,22 @@ class CierreCajaService:
             gasto = gastos_operativos.get(key, {})
             if not isinstance(gasto, dict):
                 continue
+            detalle = gasto.get('detalle')
+            if isinstance(detalle, list) and detalle:
+                for item in detalle:
+                    if not isinstance(item, dict):
+                        continue
+                    metodo = str(
+                        item.get('metodo_pago')
+                        or gasto.get('metodo_pago')
+                        or 'EFECTIVO',
+                    ).upper()
+                    if metodo not in totales:
+                        continue
+                    totales[metodo] += CierreCajaService._coerce_decimal(
+                        item.get('monto', item.get('total', ZERO)),
+                    )
+                continue
             metodo = str(gasto.get('metodo_pago') or 'EFECTIVO').upper()
             if metodo not in totales:
                 continue
@@ -466,6 +553,10 @@ class CierreCajaService:
         gastos_input = (
             gastos_operativos
             if isinstance(gastos_operativos, dict) else {}
+        )
+        gastos_input = CierreCajaService._agregar_gastos_caja_persistidos(
+            gastos_input,
+            fecha_cierre,
         )
         gastos_previos = (
             gastos_existentes
@@ -528,6 +619,9 @@ class CierreCajaService:
             key: {
                 'monto': ZERO,
                 'detalle': [],
+                'por_metodo_pago': {
+                    metodo: ZERO for metodo in GASTO_METODOS_PAGO
+                },
             }
             for key in MANUAL_GASTO_KEYS
         }
@@ -539,15 +633,54 @@ class CierreCajaService:
             )
             for key in MANUAL_GASTO_KEYS:
                 raw_value = gastos_operativos.get(key, {})
+                if (
+                    isinstance(raw_value, dict)
+                    and raw_value.get('monto')
+                    and not raw_value.get('metodo_pago')
+                ):
+                    raw_value = {
+                        **raw_value,
+                        'metodo_pago': 'EFECTIVO',
+                    }
                 gasto = CierreCajaService._normalizar_gasto_manual(raw_value)
                 acumulados[key]['monto'] += gasto['monto']
-                if gasto['monto'] > ZERO or gasto['detalle']:
+                detalle_gasto = gasto.get('detalle', [])
+                detalle_con_metodo = [
+                    item for item in detalle_gasto
+                    if isinstance(item, dict) and item.get('metodo_pago')
+                ]
+                if detalle_con_metodo:
+                    for item in detalle_con_metodo:
+                        metodo = str(item.get('metodo_pago')).upper()
+                        if metodo in acumulados[key]['por_metodo_pago']:
+                            acumulados[key]['por_metodo_pago'][metodo] += (
+                                CierreCajaService._quantize(
+                                    item.get('monto', item.get('total', ZERO)),
+                                )
+                            )
+                else:
+                    metodo = str(gasto.get('metodo_pago') or 'EFECTIVO').upper()
+                    if metodo in acumulados[key]['por_metodo_pago']:
+                        acumulados[key]['por_metodo_pago'][metodo] += gasto['monto']
+                if detalle_con_metodo:
+                    for item in detalle_con_metodo:
+                        acumulados[key]['detalle'].append({
+                            'cierre_id': cierre.id,
+                            'fecha_cierre': cierre.fecha_cierre.isoformat(),
+                            'monto': CierreCajaService._quantize(
+                                item.get('monto', item.get('total', ZERO)),
+                            ),
+                            'metodo_pago': str(item.get('metodo_pago')).upper(),
+                            'descripcion': item.get('descripcion', ''),
+                        })
+                elif gasto['monto'] > ZERO or gasto['detalle']:
                     acumulados[key]['detalle'].append({
                         'cierre_id': cierre.id,
                         'fecha_cierre': cierre.fecha_cierre.isoformat(),
                         'monto': CierreCajaService._quantize(
                             gasto['monto'],
                         ),
+                        'metodo_pago': gasto.get('metodo_pago') or 'EFECTIVO',
                         'detalle': gasto['detalle'],
                     })
 
@@ -555,7 +688,49 @@ class CierreCajaService:
             acumulados[key]['monto'] = CierreCajaService._quantize(
                 acumulados[key]['monto'],
             )
+            acumulados[key]['por_metodo_pago'] = {
+                metodo: CierreCajaService._quantize(total)
+                for metodo, total in acumulados[key]['por_metodo_pago'].items()
+            }
 
+        return acumulados
+
+    @staticmethod
+    def _sumar_gastos_caja_sin_cierre(
+        acumulados: Dict[str, Dict[str, Any]],
+        fecha_inicio: date,
+        fecha_fin: date,
+        fechas_con_cierre: set[date],
+    ) -> Dict[str, Dict[str, Any]]:
+        gastos = GastoCaja.objects.filter(
+            empresa=get_empresa_actual_or_default(),
+            fecha__gte=fecha_inicio,
+            fecha__lte=fecha_fin,
+        ).exclude(fecha__in=fechas_con_cierre).order_by('fecha', 'fecha_registro')
+
+        for gasto in gastos:
+            monto = CierreCajaService._quantize(gasto.monto)
+            metodo = str(gasto.metodo_pago or 'EFECTIVO').upper()
+            acumulados['otros_gastos']['monto'] += monto
+            if metodo in acumulados['otros_gastos']['por_metodo_pago']:
+                acumulados['otros_gastos']['por_metodo_pago'][metodo] += monto
+            acumulados['otros_gastos']['detalle'].append({
+                'gasto_caja_id': gasto.id,
+                'fecha_cierre': gasto.fecha.isoformat(),
+                'monto': monto,
+                'metodo_pago': metodo,
+                'descripcion': gasto.descripcion,
+            })
+
+        acumulados['otros_gastos']['monto'] = CierreCajaService._quantize(
+            acumulados['otros_gastos']['monto'],
+        )
+        acumulados['otros_gastos']['por_metodo_pago'] = {
+            metodo: CierreCajaService._quantize(total)
+            for metodo, total in acumulados['otros_gastos'][
+                'por_metodo_pago'
+            ].items()
+        }
         return acumulados
 
     @staticmethod
@@ -811,10 +986,31 @@ class CierreCajaService:
                 cierres,
             )
         )
+        gastos_manuales = CierreCajaService._sumar_gastos_caja_sin_cierre(
+            gastos_manuales,
+            fecha_inicio_date,
+            fecha_fin_date,
+            {cierre.fecha_cierre for cierre in cierres},
+        )
         total = compras_mercancia['monto']
+        por_metodo_pago = {
+            metodo: ZERO for metodo in GASTO_METODOS_PAGO
+        }
+        for item in compras_mercancia.get('detalle', []):
+            metodo = str(item.get('metodo_pago') or '').upper()
+            if metodo in por_metodo_pago:
+                por_metodo_pago[metodo] += CierreCajaService._quantize(
+                    item.get('total', item.get('monto', 0)),
+                )
 
         for key in MANUAL_GASTO_KEYS:
             total += gastos_manuales[key]['monto']
+            for metodo, monto in gastos_manuales[key].get(
+                'por_metodo_pago',
+                {},
+            ).items():
+                if metodo in por_metodo_pago:
+                    por_metodo_pago[metodo] += monto
 
         return {
             'fecha_inicio': fecha_inicio_date,
@@ -825,6 +1021,178 @@ class CierreCajaService:
             'salarios': gastos_manuales['salarios'],
             'otros_gastos': gastos_manuales['otros_gastos'],
             'total': CierreCajaService._quantize(total),
+            'por_metodo_pago': {
+                metodo: CierreCajaService._quantize(total_metodo)
+                for metodo, total_metodo in por_metodo_pago.items()
+            },
+        }
+
+    @staticmethod
+    def generar_resumen_periodo(
+        fecha_inicio: Any,
+        fecha_fin: Any,
+    ) -> Dict[str, Any]:
+        fecha_inicio_date = CierreCajaService._parse_date(
+            fecha_inicio,
+            'fecha_inicio',
+        )
+        fecha_fin_date = CierreCajaService._parse_date(
+            fecha_fin,
+            'fecha_fin',
+        )
+        CierreCajaService._validar_rango_fechas(
+            fecha_inicio_date,
+            fecha_fin_date,
+        )
+        empresa = get_empresa_actual_or_default()
+        ventas = Venta.objects.filter(
+            empresa=empresa,
+            estado=Venta.Estado.TERMINADA,
+            fecha_venta__gte=_local_day_start_utc(fecha_inicio_date),
+            fecha_venta__lt=_next_local_day_start_utc(fecha_fin_date),
+        )
+        total_ventas = CierreCajaService._quantize(
+            ventas.aggregate(
+                total=Coalesce(
+                    Sum('total'),
+                    ZERO,
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+            )['total'],
+        )
+        total_efectivo = CierreCajaService._quantize(
+            ventas.filter(metodo_pago=Venta.MetodoPago.EFECTIVO).aggregate(
+                total=Coalesce(
+                    Sum('total'),
+                    ZERO,
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+            )['total'],
+        )
+        total_tarjeta = CierreCajaService._quantize(
+            ventas.filter(metodo_pago=Venta.MetodoPago.TARJETA).aggregate(
+                total=Coalesce(
+                    Sum('total'),
+                    ZERO,
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+            )['total'],
+        )
+        total_transferencia = CierreCajaService._quantize(
+            ventas.filter(
+                metodo_pago=Venta.MetodoPago.TRANSFERENCIA,
+            ).aggregate(
+                total=Coalesce(
+                    Sum('total'),
+                    ZERO,
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+            )['total'],
+        )
+        total_credito = CierreCajaService._quantize(
+            ventas.filter(metodo_pago=Venta.MetodoPago.CREDITO).aggregate(
+                total=Coalesce(
+                    Sum('total'),
+                    ZERO,
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+            )['total'],
+        )
+        total_abonos = CierreCajaService._quantize(
+            Abono.objects.filter(
+                venta__empresa=empresa,
+                venta__estado=Venta.Estado.TERMINADA,
+                fecha_abono__gte=_local_day_start_utc(fecha_inicio_date),
+                fecha_abono__lt=_next_local_day_start_utc(fecha_fin_date),
+                metodo_pago=Abono.MetodoPago.EFECTIVO,
+            ).aggregate(
+                total=Coalesce(
+                    Sum('monto_abonado'),
+                    ZERO,
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+            )['total'],
+        )
+        gastos = CierreCajaService.calcular_gastos_periodo(
+            fecha_inicio_date,
+            fecha_fin_date,
+        )
+        gastos_por_metodo = gastos.get('por_metodo_pago', {})
+        efectivo_esperado = max(
+            total_efectivo
+            + total_abonos
+            - CierreCajaService._quantize(
+                gastos_por_metodo.get('EFECTIVO', ZERO),
+            ),
+            ZERO,
+        )
+        cierres = list(
+            CierreCajaService._queryset_base().filter(
+                fecha_cierre__gte=fecha_inicio_date,
+                fecha_cierre__lte=fecha_fin_date,
+            ).order_by('fecha_cierre')
+        )
+        efectivo_real = CierreCajaService._quantize(
+            sum((cierre.efectivo_real for cierre in cierres), ZERO),
+        )
+        ventas_por_categoria = (
+            DetalleVenta.objects.filter(
+                venta__empresa=empresa,
+                venta__estado=Venta.Estado.TERMINADA,
+                venta__fecha_venta__gte=_local_day_start_utc(
+                    fecha_inicio_date,
+                ),
+                venta__fecha_venta__lt=_next_local_day_start_utc(
+                    fecha_fin_date,
+                ),
+            )
+            .values('producto__categoria__nombre')
+            .annotate(
+                total=Coalesce(
+                    Sum('total'),
+                    ZERO,
+                    output_field=DecimalField(max_digits=14, decimal_places=2),
+                ),
+            )
+        )
+        return {
+            'id': None,
+            'tipo_cierre': 'MENSUAL',
+            'fecha_inicio': fecha_inicio_date.isoformat(),
+            'fecha_fin': fecha_fin_date.isoformat(),
+            'fecha_cierre': fecha_fin_date.isoformat(),
+            'fecha_registro': timezone.now().isoformat(),
+            'total_ventas': float(total_ventas),
+            'total_efectivo': float(total_efectivo),
+            'total_tarjeta': float(total_tarjeta),
+            'total_transferencia': float(total_transferencia),
+            'total_credito': float(total_credito),
+            'total_abonos': float(total_abonos),
+            'total_gastos': float(CierreCajaService._quantize(gastos['total'])),
+            'gastos_operativos': CierreCajaService._to_json_safe(gastos),
+            'ventas_por_categoria': {
+                item['producto__categoria__nombre'] or 'Sin categoria': float(
+                    CierreCajaService._quantize(item['total']),
+                )
+                for item in ventas_por_categoria
+            },
+            'efectivo_esperado': float(efectivo_esperado),
+            'efectivo_real': float(efectivo_real),
+            'diferencia': float(efectivo_real - efectivo_esperado),
+            'observaciones': (
+                f'Consolidado mensual generado desde {fecha_inicio_date} '
+                f'hasta {fecha_fin_date}. Incluye {len(cierres)} cierres '
+                'diarios registrados para efectivo real y gastos manuales.'
+            ),
+            'cierres_incluidos': [
+                {
+                    'id': cierre.id,
+                    'fecha_cierre': cierre.fecha_cierre.isoformat(),
+                    'efectivo_real': float(cierre.efectivo_real),
+                    'diferencia': float(cierre.diferencia),
+                }
+                for cierre in cierres
+            ],
         }
 
 
@@ -2436,6 +2804,16 @@ class InformeService:
             }
 
         if tipo_informe == Informe.TipoInforme.CIERRE_CAJA:
+            if cierre_id is None and fecha_inicio != fecha_fin:
+                return {
+                    'cierre_caja_periodo': (
+                        CierreCajaService.generar_resumen_periodo(
+                            fecha_inicio,
+                            fecha_fin,
+                        )
+                    ),
+                }
+
             cierre = CierreCajaService.obtener_detalle_cierre(
                 InformeService._resolve_cierre_id(
                     cierre_id,
@@ -2463,6 +2841,7 @@ class InformeService:
     ):
         from .generators import (
             generar_pdf_cierre_caja,
+            generar_pdf_cierre_periodo,
             generar_pdf_cuentas_por_cobrar,
             generar_pdf_inventario_valorizado,
             generar_pdf_ventas_periodo,
@@ -2482,6 +2861,14 @@ class InformeService:
             return generar_pdf_cuentas_por_cobrar()
 
         if tipo_informe == Informe.TipoInforme.CIERRE_CAJA:
+            if cierre_id is None and fecha_inicio != fecha_fin:
+                return generar_pdf_cierre_periodo(
+                    CierreCajaService.generar_resumen_periodo(
+                        fecha_inicio,
+                        fecha_fin,
+                    ),
+                )
+
             return generar_pdf_cierre_caja(
                 InformeService._resolve_cierre_id(
                     cierre_id,
