@@ -462,9 +462,17 @@ class DetalleVenta(models.Model):
     producto = models.ForeignKey(
         'inventario.Producto',
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name='detalles_venta',
         verbose_name=_('producto'),
         help_text=_('Producto vendido.'),
+    )
+    producto_temporal_nombre = models.CharField(
+        _('nombre de producto temporal'),
+        max_length=200,
+        blank=True,
+        help_text=_('Nombre del producto temporal registrado solo en la venta.'),
     )
     cantidad = models.DecimalField(
         _('cantidad'),
@@ -530,8 +538,12 @@ class DetalleVenta(models.Model):
         ]
 
     def __str__(self):
+        producto_nombre = (
+            self.producto.nombre
+            if self.producto_id else self.producto_temporal_nombre
+        )
         return (
-            f"{self.venta.numero_venta} - {self.producto.nombre} x "
+            f"{self.venta.numero_venta} - {producto_nombre} x "
             f"{self.cantidad}"
         )
 
@@ -587,6 +599,12 @@ class DetalleVenta(models.Model):
             })
 
         if not self.producto_id:
+            if not self.producto_temporal_nombre.strip():
+                raise ValidationError({
+                    'producto_temporal_nombre': _(
+                        'El nombre del producto temporal es obligatorio.'
+                    ),
+                })
             return
 
         cantidad_requerida = self.cantidad

@@ -53,6 +53,23 @@ class ProductoVentaInfoSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+def build_producto_temporal_info(detalle: DetalleVenta) -> dict:
+    return {
+        'id': f'temporal-{detalle.id}',
+        'codigo_interno': None,
+        'codigo_interno_formateado': '',
+        'codigo_barras': '',
+        'nombre': detalle.producto_temporal_nombre,
+        'marca': '',
+        'precio_venta': detalle.precio_unitario,
+        'es_producto_especial': False,
+        'es_producto_temporal': True,
+        'iva': Decimal('0.00'),
+        'unidad_medida_codigo': '94',
+        'estandar_codigo': '999',
+    }
+
+
 class ClienteVentaInfoSerializer(serializers.ModelSerializer):
     """
     Informacion resumida del cliente para respuestas de ventas.
@@ -99,11 +116,13 @@ class DetalleVentaSerializer(serializers.ModelSerializer):
     Serializer completo de detalle de venta con informacion del producto.
     """
 
-    producto = ProductoVentaInfoSerializer(read_only=True)
+    producto = serializers.SerializerMethodField()
     producto_id = serializers.PrimaryKeyRelatedField(
         queryset=Producto.objects.all(),
         source='producto',
         write_only=True,
+        required=False,
+        allow_null=True,
     )
 
     class Meta:
@@ -114,6 +133,7 @@ class DetalleVentaSerializer(serializers.ModelSerializer):
             'venta',
             'producto',
             'producto_id',
+            'producto_temporal_nombre',
             'cantidad',
             'precio_unitario',
             'subtotal',
@@ -134,6 +154,11 @@ class DetalleVentaSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
 
+    def get_producto(self, obj):
+        if obj.producto_id:
+            return ProductoVentaInfoSerializer(obj.producto).data
+        return build_producto_temporal_info(obj)
+
 
 class DetalleVentaCreateSerializer(serializers.ModelSerializer):
     """
@@ -142,6 +167,13 @@ class DetalleVentaCreateSerializer(serializers.ModelSerializer):
 
     producto = serializers.PrimaryKeyRelatedField(
         queryset=Producto.objects.all(),
+        required=False,
+        allow_null=True,
+    )
+    producto_temporal_nombre = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=200,
     )
     precio_unitario = serializers.DecimalField(
         max_digits=12,
@@ -153,6 +185,7 @@ class DetalleVentaCreateSerializer(serializers.ModelSerializer):
         model = DetalleVenta
         fields = [
             'producto',
+            'producto_temporal_nombre',
             'cantidad',
             'precio_unitario',
             'descuento',
@@ -180,14 +213,41 @@ class DetalleVentaCreateSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, attrs):
-        producto = attrs['producto']
+        producto = attrs.get('producto')
+        producto_temporal_nombre = str(
+            attrs.get('producto_temporal_nombre') or '',
+        ).strip()
+        if producto is None and not producto_temporal_nombre:
+            raise serializers.ValidationError({
+                'producto': _(
+                    'Debe seleccionar un producto o indicar un producto temporal.'
+                ),
+            })
+        if producto is not None and producto_temporal_nombre:
+            raise serializers.ValidationError({
+                'producto_temporal_nombre': _(
+                    'No mezcles producto de inventario con producto temporal.'
+                ),
+            })
+
         precio_definido = 'precio_unitario' in attrs
-        precio_unitario = attrs.get('precio_unitario', producto.precio_venta)
+        precio_unitario = attrs.get(
+            'precio_unitario',
+            producto.precio_venta if producto is not None else None,
+        )
+        if precio_unitario is None:
+            raise serializers.ValidationError({
+                'precio_unitario': _(
+                    'El precio es obligatorio para productos temporales.'
+                ),
+            })
         cantidad = attrs['cantidad']
         descuento = attrs.get('descuento', Decimal('0.00'))
         subtotal = cantidad * precio_unitario
 
         if (
+            producto is not None
+            and
             not producto.es_producto_especial
             and precio_definido
             and precio_unitario.quantize(Decimal('0.01'))
@@ -207,6 +267,7 @@ class DetalleVentaCreateSerializer(serializers.ModelSerializer):
             })
 
         attrs['precio_unitario'] = precio_unitario
+        attrs['producto_temporal_nombre'] = producto_temporal_nombre
         return attrs
 
 
@@ -374,7 +435,10 @@ class VentaCreateSerializer(serializers.ModelSerializer):
         subtotal = Decimal('0.00')
 
         for detalle in detalles:
-            producto = detalle['producto']
+            producto = detalle.get('producto')
+            if producto is None:
+                subtotal += detalle['cantidad'] * detalle['precio_unitario']
+                continue
             if producto.es_producto_especial:
                 subtotal += detalle['cantidad'] * detalle['precio_unitario']
                 continue

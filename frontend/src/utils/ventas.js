@@ -241,6 +241,17 @@ export const createLineItem = (producto, overrides = {}) => ({
   descuento: overrides.descuento ?? 0,
 });
 
+export const createTemporaryProduct = ({ nombre, precio }) => ({
+  id: `tmp-product-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  nombre: String(nombre || '').trim(),
+  codigo_interno: 'Temporal',
+  codigo_barras: '',
+  precio_venta: Number(precio || 0),
+  es_producto_especial: false,
+  es_producto_temporal: true,
+  iva: 0,
+});
+
 export const isPersistedClient = (cliente) =>
   typeof cliente?.id === 'number' && !cliente?.esTemporal;
 
@@ -278,7 +289,12 @@ export const buildVentaPayload = (draft) => {
     caja_sesion: draft?.cajaSesionId || undefined,
     observaciones: observaciones.filter(Boolean).join('\n'),
     detalles: totals.lines.map((item) => ({
-      producto: item.producto.id,
+      producto: item.producto.es_producto_temporal
+        ? undefined
+        : item.producto.id,
+      producto_temporal_nombre: item.producto.es_producto_temporal
+        ? item.producto.nombre
+        : undefined,
       cantidad: toDecimalString(item.cantidad),
       precio_unitario: toDecimalString(item.precio_unitario),
       descuento: toDecimalString(item.descuento || 0),

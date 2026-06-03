@@ -70,7 +70,7 @@ def actualizar_stock_y_venta_al_guardar_detalle(
     """
     Actualiza el stock del producto y recalcula la venta.
     """
-    if instance.producto.es_producto_especial:
+    if not instance.producto_id or instance.producto.es_producto_especial:
         _recalcular_totales_venta(instance.venta_id)
         return
 
@@ -104,7 +104,7 @@ def restaurar_stock_y_venta_al_eliminar_detalle(sender, instance, **kwargs):
     """
     Restaura el stock del producto y recalcula la venta.
     """
-    if not instance.producto.es_producto_especial:
+    if instance.producto_id and not instance.producto.es_producto_especial:
         instance.producto.actualizar_stock(instance.cantidad)
     _recalcular_totales_venta(instance.venta_id)
 

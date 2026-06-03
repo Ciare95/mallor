@@ -127,17 +127,28 @@ def _validate_empresa(venta: Venta) -> None:
 def _validate_detalles_articulo_617(venta: Venta) -> None:
     for detalle in venta.detalles.select_related('producto').all():
         producto = detalle.producto
-        if not producto.nombre:
+        nombre = (
+            producto.nombre
+            if producto is not None else detalle.producto_temporal_nombre
+        )
+        unidad_medida_codigo = (
+            producto.unidad_medida_codigo if producto is not None else '94'
+        )
+        estandar_codigo = (
+            producto.estandar_codigo if producto is not None else '999'
+        )
+        iva = producto.iva if producto is not None else Decimal('0.00')
+        if not nombre:
             raise FacturacionValidacionError(
                 'Cada item debe tener descripcion para facturar.',
                 code='factus_item_descripcion',
             )
-        if not producto.unidad_medida_codigo:
+        if not unidad_medida_codigo:
             raise FacturacionValidacionError(
                 'Cada item debe tener unidad de medida DIAN/Factus.',
                 code='factus_item_unidad_medida',
             )
-        if not producto.estandar_codigo:
+        if not estandar_codigo:
             raise FacturacionValidacionError(
                 'Cada item debe tener codigo estandar DIAN/Factus.',
                 code='factus_item_estandar',
@@ -147,7 +158,7 @@ def _validate_detalles_articulo_617(venta: Venta) -> None:
                 'Cada item debe tener valor unitario mayor que cero.',
                 code='factus_item_valor_unitario',
             )
-        if producto.iva is None:
+        if iva is None:
             raise FacturacionValidacionError(
                 'Cada item debe tener IVA definido, incluso si es 0%.',
                 code='factus_item_iva',
@@ -216,15 +227,28 @@ def build_factus_bill_payload(
     items = []
     for detalle in venta.detalles.select_related('producto').all():
         producto = detalle.producto
-        code_reference = producto.codigo_barras or producto.codigo_interno_formateado
+        if producto is not None:
+            code_reference = (
+                producto.codigo_barras or producto.codigo_interno_formateado
+            )
+            item_name = producto.nombre
+            item_iva = producto.iva
+            unit_measure_code = producto.unidad_medida_codigo
+            standard_code = producto.estandar_codigo
+        else:
+            code_reference = f'TEMP-{detalle.id}'
+            item_name = detalle.producto_temporal_nombre
+            item_iva = Decimal('0.00')
+            unit_measure_code = '94'
+            standard_code = '999'
         taxes = [{
             'code': TAX_CODE_IVA,
-            'rate': _format_decimal(producto.iva),
+            'rate': _format_decimal(item_iva),
         }]
 
         items.append({
             'code_reference': code_reference,
-            'name': producto.nombre,
+            'name': item_name,
             'quantity': _format_decimal(detalle.cantidad),
             'discount_rate': _format_decimal(
                 (detalle.descuento / detalle.subtotal * 100)
@@ -232,8 +256,8 @@ def build_factus_bill_payload(
                 else Decimal('0.00')
             ),
             'price': _format_decimal(detalle.precio_unitario),
-            'unit_measure_code': producto.unidad_medida_codigo,
-            'standard_code': producto.estandar_codigo,
+            'unit_measure_code': unit_measure_code,
+            'standard_code': standard_code,
             'taxes': taxes,
         })
 

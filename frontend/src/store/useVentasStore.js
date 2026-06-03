@@ -262,6 +262,16 @@ export const useVentasStore = create((set) => ({
         });
       }
 
+      if (producto.es_producto_temporal) {
+        return updateActivePrecuentaDraft(state, {
+          ...state.draft,
+          items: [
+            ...state.draft.items,
+            createLineItem(producto, overrides),
+          ],
+        });
+      }
+
       const existing = state.draft.items.find(
         (item) => item.producto.id === producto.id,
       );

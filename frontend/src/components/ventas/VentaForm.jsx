@@ -29,6 +29,7 @@ import MunicipioLookupField from '../forms/MunicipioLookupField';
 import {
   calculateVentaTotals,
   CONSUMIDOR_FINAL,
+  createTemporaryProduct,
   getSuggestedCashAmounts,
 } from '../../utils/ventas';
 import {
@@ -73,6 +74,12 @@ export default function VentaForm({
   const [pendingSpecialProduct, setPendingSpecialProduct] = useState(null);
   const [specialPrice, setSpecialPrice] = useState('');
   const [specialPriceError, setSpecialPriceError] = useState('');
+  const [showTemporaryProductModal, setShowTemporaryProductModal] = useState(false);
+  const [temporaryProductForm, setTemporaryProductForm] = useState({
+    nombre: '',
+    precio: '',
+  });
+  const [temporaryProductError, setTemporaryProductError] = useState('');
   const productSearchRef = useRef(null);
   const lastCobroSignalRef = useRef(0);
   const lastSubmitSignalRef = useRef(0);
@@ -233,6 +240,35 @@ export default function VentaForm({
     clearProductSearch();
   };
 
+  const closeTemporaryProductModal = () => {
+    setShowTemporaryProductModal(false);
+    setTemporaryProductForm({ nombre: '', precio: '' });
+    setTemporaryProductError('');
+    requestAnimationFrame(() => {
+      productSearchRef.current?.focus();
+    });
+  };
+
+  const submitTemporaryProduct = (event) => {
+    event.preventDefault();
+    const nombre = temporaryProductForm.nombre.trim();
+    const precio = Math.round(Number(temporaryProductForm.precio || 0));
+
+    if (!nombre) {
+      setTemporaryProductError('El nombre es obligatorio.');
+      return;
+    }
+    if (!Number.isFinite(precio) || precio <= 0) {
+      setTemporaryProductError('El precio debe ser mayor que cero.');
+      return;
+    }
+
+    const productoTemporal = createTemporaryProduct({ nombre, precio });
+    onAddProduct(productoTemporal, { precio_unitario: precio });
+    closeTemporaryProductModal();
+    clearProductSearch();
+  };
+
   const submitWithState = (estado) => {
     if (disabled) {
       return;
@@ -350,6 +386,14 @@ export default function VentaForm({
                   />
                 </div>
               </label>
+              <button
+                type="button"
+                onClick={() => setShowTemporaryProductModal(true)}
+                className="app-button-secondary min-h-11 w-full justify-center sm:w-auto"
+              >
+                <Sparkles className="h-4 w-4" />
+                Producto temporal
+              </button>
             </div>
 
             <div className="mt-3">
@@ -738,6 +782,77 @@ export default function VentaForm({
         applyCashSuggestion={applyCashSuggestion}
         setCashManualOverride={setCashManualOverride}
       />
+
+      {showTemporaryProductModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/42 px-4">
+          <form
+            onSubmit={submitTemporaryProduct}
+            className="w-full max-w-sm rounded-xl border border-app bg-white p-5 shadow-2xl"
+          >
+            <div className="eyebrow">Venta rapida</div>
+            <h3 className="mt-2 text-lg font-semibold text-main">
+              Producto temporal
+            </h3>
+            <p className="mt-1 text-[12px] leading-5 text-soft">
+              Esta linea queda registrada solo en la venta.
+            </p>
+            <label className="mt-4 block space-y-1">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-muted">
+                Nombre
+              </span>
+              <input
+                autoFocus
+                type="text"
+                value={temporaryProductForm.nombre}
+                onChange={(event) => {
+                  setTemporaryProductForm((current) => ({
+                    ...current,
+                    nombre: event.target.value,
+                  }));
+                  setTemporaryProductError('');
+                }}
+                className="app-input min-h-11"
+              />
+            </label>
+            <label className="mt-4 block space-y-1">
+              <span className="text-[10px] uppercase tracking-[0.2em] text-muted">
+                Precio
+              </span>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={temporaryProductForm.precio}
+                onChange={(event) => {
+                  setTemporaryProductForm((current) => ({
+                    ...current,
+                    precio: event.target.value,
+                  }));
+                  setTemporaryProductError('');
+                }}
+                className="app-input min-h-11"
+              />
+            </label>
+            {temporaryProductError && (
+              <p className="mt-2 text-[12px] font-semibold text-[var(--danger-text)]">
+                {temporaryProductError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeTemporaryProductModal}
+                className="app-button-secondary min-h-10"
+              >
+                Cancelar
+              </button>
+              <button type="submit" className="app-button-primary min-h-10">
+                Agregar
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {pendingSpecialProduct && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/42 px-4">

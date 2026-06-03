@@ -233,6 +233,40 @@ class _VentaInventarioService:
 
         for detalle in detalles_data:
             producto = detalle.get('producto')
+            producto_temporal_nombre = str(
+                detalle.get('producto_temporal_nombre') or '',
+            ).strip()
+            if producto is None and producto_temporal_nombre:
+                cantidad = detalle.get('cantidad')
+                precio_unitario = detalle.get('precio_unitario')
+                descuento = detalle.get('descuento', Decimal('0.00'))
+
+                if cantidad is None or cantidad <= Decimal('0.00'):
+                    raise VentaError(
+                        _('La cantidad del producto temporal debe ser mayor que cero.'),
+                        code='detalle_cantidad_invalida',
+                    )
+                if precio_unitario is None or precio_unitario <= Decimal('0.00'):
+                    raise VentaError(
+                        _('El precio del producto temporal debe ser mayor que cero.'),
+                        code='detalle_precio_invalido',
+                    )
+                subtotal = cantidad * precio_unitario
+                if descuento < Decimal('0.00') or descuento > subtotal:
+                    raise VentaError(
+                        _('El descuento del producto temporal no es valido.'),
+                        code='detalle_descuento_invalido',
+                    )
+
+                detalles_normalizados.append({
+                    'producto': None,
+                    'producto_temporal_nombre': producto_temporal_nombre,
+                    'cantidad': cantidad.quantize(QUANTIZER),
+                    'precio_unitario': precio_unitario.quantize(QUANTIZER),
+                    'descuento': descuento.quantize(QUANTIZER),
+                })
+                continue
+
             if isinstance(producto, Producto):
                 producto_id = producto.pk
             else:
@@ -334,9 +368,13 @@ class _VentaInventarioService:
 
         if detalles_actuales:
             for detalle in detalles_actuales:
+                if not detalle.producto_id:
+                    continue
                 stock_actual[detalle.producto_id] += detalle.cantidad
 
         for detalle in detalles_data:
+            if detalle.get('producto') is None:
+                continue
             if detalle['producto'].es_producto_especial:
                 continue
             stock_requerido[detalle['producto'].id] += detalle['cantidad']
@@ -375,10 +413,12 @@ class _VentaInventarioService:
             subtotal_detalle = detalle['cantidad'] * detalle['precio_unitario']
             subtotal += subtotal_detalle
             descuento_detalles += detalle['descuento']
-            impuestos += (
-                subtotal_detalle *
-                (detalle['producto'].iva / Decimal('100'))
-            )
+            producto = detalle.get('producto')
+            if producto is not None:
+                impuestos += (
+                    subtotal_detalle *
+                    (producto.iva / Decimal('100'))
+                )
 
         total = subtotal + impuestos - descuento_detalles - descuento_global
         return {
@@ -643,15 +683,16 @@ class VentaService:
 
         for detalle_data in detalles_data:
             detalle_creacion = detalle_data.copy()
-            detalle_creacion['producto'] = Producto.objects.get(
-                pk=detalle_data['producto'].pk,
-                empresa=empresa,
-            )
+            if detalle_data.get('producto') is not None:
+                detalle_creacion['producto'] = Producto.objects.get(
+                    pk=detalle_data['producto'].pk,
+                    empresa=empresa,
+                )
             detalle = DetalleVenta.objects.create(
                 venta=venta,
                 **detalle_creacion,
             )
-            if detalle.producto.es_producto_especial:
+            if not detalle.producto_id or detalle.producto.es_producto_especial:
                 continue
             _VentaInventarioService.registrar_historial_salida(
                 detalle=detalle,
@@ -802,7 +843,7 @@ class VentaService:
 
         if detalles_data is not None:
             for detalle in detalles_actuales:
-                if detalle.producto.es_producto_especial:
+                if not detalle.producto_id or detalle.producto.es_producto_especial:
                     detalle.delete()
                     continue
                 _VentaInventarioService.registrar_historial_entrada(
@@ -823,15 +864,16 @@ class VentaService:
 
             for detalle_data in detalles_data:
                 detalle_creacion = detalle_data.copy()
-                detalle_creacion['producto'] = Producto.objects.get(
-                    pk=detalle_data['producto'].pk,
-                    empresa=venta.empresa,
-                )
+                if detalle_data.get('producto') is not None:
+                    detalle_creacion['producto'] = Producto.objects.get(
+                        pk=detalle_data['producto'].pk,
+                        empresa=venta.empresa,
+                    )
                 detalle = DetalleVenta.objects.create(
                     venta=venta,
                     **detalle_creacion,
                 )
-                if detalle.producto.es_producto_especial:
+                if not detalle.producto_id or detalle.producto.es_producto_especial:
                     continue
                 _VentaInventarioService.registrar_historial_salida(
                     detalle=detalle,
@@ -869,6 +911,8 @@ class VentaService:
         detalles = list(venta.detalles.all())
 
         for detalle in detalles:
+            if not detalle.producto_id:
+                continue
             producto = Producto.objects.select_for_update().get(
                 pk=detalle.producto_id,
                 empresa=venta.empresa,
@@ -934,7 +978,7 @@ class VentaService:
         detalles = list(venta.detalles.select_related('producto'))
 
         for detalle in detalles:
-            if detalle.producto.es_producto_especial:
+            if not detalle.producto_id or detalle.producto.es_producto_especial:
                 continue
             _VentaInventarioService.registrar_historial_entrada(
                 producto=detalle.producto,

@@ -623,6 +623,40 @@ class VentaServiceTest(TestCase):
             HistorialInventario.objects.filter(venta=venta).exists(),
         )
 
+    def test_producto_temporal_se_registra_solo_en_venta(self):
+        total_productos = Producto.objects.count()
+
+        venta = VentaService.crear_venta(
+            data={
+                'cliente': self.cliente,
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'detalles': [
+                    {
+                        'producto_temporal_nombre': 'Servicio express',
+                        'cantidad': Decimal('1.00'),
+                        'precio_unitario': Decimal('18000.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        self.producto.refresh_from_db()
+        detalle = venta.detalles.get()
+        serializado = DetalleVentaSerializer(detalle).data
+
+        self.assertEqual(Producto.objects.count(), total_productos)
+        self.assertEqual(self.producto.existencias, Decimal('10.00'))
+        self.assertEqual(venta.total, Decimal('18000.00'))
+        self.assertIsNone(detalle.producto_id)
+        self.assertEqual(detalle.producto_temporal_nombre, 'Servicio express')
+        self.assertEqual(serializado['producto']['nombre'], 'Servicio express')
+        self.assertTrue(serializado['producto']['es_producto_temporal'])
+        self.assertFalse(
+            HistorialInventario.objects.filter(venta=venta).exists(),
+        )
+
     def test_producto_especial_requiere_precio_en_venta(self):
         producto_especial = Producto.objects.create(
             nombre='Producto variable sin precio',

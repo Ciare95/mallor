@@ -304,7 +304,7 @@
 
 .thermal-ticket__product-meta {
   margin-top: 1px;
-  color: rgba(17, 17, 17, 0.72);
+  color: #333;
   font-size: 0.92em;
 }
 
@@ -322,7 +322,7 @@
 }
 
 .thermal-ticket__label {
-  color: rgba(17, 17, 17, 0.82);
+  color: #111;
 }
 
 .thermal-ticket__total-row {
@@ -342,7 +342,7 @@
 .thermal-ticket__legal {
   font-size: 0.87em;
   line-height: 1.42;
-  color: rgba(17, 17, 17, 0.9);
+  color: #111;
 }
 
 .thermal-ticket__custom-footer {
@@ -390,7 +390,7 @@
 .thermal-ticket__muted-center {
   margin-top: 4px;
   text-align: center;
-  color: rgba(17, 17, 17, 0.82);
+  color: #111;
 }
 
 .thermal-ticket__cufe-section {
@@ -475,6 +475,10 @@
   .thermal-ticket-sheet {
     box-shadow: none;
     margin: 0 auto;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color: #000;
+    font-weight: 500;
   }
 
   .thermal-ticket-sheet.preview {
