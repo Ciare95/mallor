@@ -1269,6 +1269,57 @@ class FacturacionElectronicaTest(TestCase):
 
         self.assertEqual(exc.exception.code, 'factus_empresa_direccion')
 
+    def test_build_factus_bill_payload_consumidor_final(self):
+        venta = VentaService.crear_venta(
+            data={
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'factura_electronica': True,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('1.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        payload = build_factus_bill_payload(venta, self.rango.factus_id)
+
+        customer = payload['customer']
+        self.assertEqual(customer['identification'], '222222222222')
+        self.assertEqual(customer['names'], 'Consumidor Final')
+        self.assertEqual(customer['identification_document_code'], '13')
+        self.assertEqual(customer['legal_organization_code'], '2')
+        self.assertEqual(customer['tribute_code'], 'ZZ')
+        self.assertEqual(customer['municipality_code'], self.empresa.municipio_codigo)
+        self.assertEqual(customer['address'], self.empresa.direccion)
+        self.assertEqual(customer['email'], '')
+        self.assertFalse(payload['send_email'])
+
+    def test_build_factus_bill_payload_consumidor_final_send_email_siempre_false(self):
+        venta = VentaService.crear_venta(
+            data={
+                'estado': Venta.Estado.TERMINADA,
+                'metodo_pago': Venta.MetodoPago.EFECTIVO,
+                'factura_electronica': True,
+                'detalles': [
+                    {
+                        'producto': self.producto,
+                        'cantidad': Decimal('1.00'),
+                    }
+                ],
+            },
+            usuario=self.usuario,
+        )
+
+        payload = build_factus_bill_payload(
+            venta, self.rango.factus_id, send_email=True
+        )
+
+        self.assertFalse(payload['send_email'])
+
     def test_emitir_factura_persiste_documento_y_sincroniza_venta(self):
         venta = self._crear_venta_facturable()
         service = FacturacionElectronicaService(adapter=self._build_adapter())

@@ -14,6 +14,8 @@ DOCUMENT_CODE = '01'
 OPERATION_TYPE = '10'
 TAX_CODE_IVA = '01'
 
+CONSUMIDOR_FINAL_IDENTIFICATION = '222222222222'
+
 TIPO_DOCUMENTO_MAP = {
     'CC': '13',
     'NIT': '31',
@@ -60,6 +62,30 @@ def build_reference_code(venta: Venta) -> str:
     return f'MLR-E{empresa_id}-V{venta.id}-{timestamp}'
 
 
+def _is_consumidor_final(cliente) -> bool:
+    return (
+        cliente is not None
+        and str(cliente.numero_documento or '').strip() == CONSUMIDOR_FINAL_IDENTIFICATION
+    )
+
+
+def _build_consumidor_final_customer(empresa: Empresa) -> Dict[str, Any]:
+    return {
+        'identification_document_code': '13',
+        'identification': CONSUMIDOR_FINAL_IDENTIFICATION,
+        'dv': '',
+        'company': 'Consumidor Final',
+        'trade_name': 'Consumidor Final',
+        'names': 'Consumidor Final',
+        'address': empresa.direccion or 'No especificada',
+        'email': '',
+        'phone': '',
+        'legal_organization_code': '2',
+        'tribute_code': 'ZZ',
+        'municipality_code': empresa.municipio_codigo or '11001',
+    }
+
+
 def _validate_cliente(venta: Venta) -> None:
     cliente = venta.cliente
     if cliente is None:
@@ -67,6 +93,9 @@ def _validate_cliente(venta: Venta) -> None:
             'La venta no tiene cliente asociado.',
             code='factus_cliente_requerido',
         )
+
+    if _is_consumidor_final(cliente):
+        return
 
     if not cliente.numero_documento:
         raise FacturacionValidacionError(
@@ -217,12 +246,32 @@ def build_factus_bill_payload(
 
     payment_form = PAYMENT_FORM_MAP[venta.metodo_pago]
     payment_method_code = PAYMENT_METHOD_MAP[venta.metodo_pago]
-    customer_name = cliente.get_nombre_completo()
-    company_name = cliente.razon_social or customer_name
-    identification_code = TIPO_DOCUMENTO_MAP.get(
-        cliente.tipo_documento,
-        '13',
-    )
+
+    if _is_consumidor_final(cliente):
+        customer = _build_consumidor_final_customer(venta.empresa)
+        effective_send_email = False
+    else:
+        customer_name = cliente.get_nombre_completo()
+        company_name = cliente.razon_social or customer_name
+        identification_code = TIPO_DOCUMENTO_MAP.get(cliente.tipo_documento, '13')
+        customer = {
+            'identification_document_code': identification_code,
+            'identification': cliente.numero_documento,
+            'dv': cliente.digito_verificacion or '',
+            'company': company_name,
+            'trade_name': cliente.nombre_comercial or customer_name,
+            'names': cliente.nombre or customer_name,
+            'address': cliente.direccion,
+            'email': cliente.email or '',
+            'phone': cliente.telefono,
+            'legal_organization_code': LEGAL_ORGANIZATION_MAP.get(
+                cliente.tipo_cliente,
+                '2',
+            ),
+            'tribute_code': TRIBUTE_CODE_MAP[bool(cliente.responsable_iva)],
+            'municipality_code': cliente.municipio_codigo,
+        }
+        effective_send_email = send_email and bool(cliente.email)
 
     items = []
     for detalle in venta.detalles.select_related('producto').all():
@@ -266,7 +315,7 @@ def build_factus_bill_payload(
         'document': DOCUMENT_CODE,
         'numbering_range_id': numbering_range_id,
         'operation_type': OPERATION_TYPE,
-        'send_email': send_email and bool(cliente.email),
+        'send_email': effective_send_email,
         'payment_details': [{
             'payment_form': payment_form,
             'payment_method_code': payment_method_code,
@@ -275,23 +324,7 @@ def build_factus_bill_payload(
             'due_date': due_date.isoformat(),
         }],
         'observation': venta.observaciones or '',
-        'customer': {
-            'identification_document_code': identification_code,
-            'identification': cliente.numero_documento,
-            'dv': cliente.digito_verificacion or '',
-            'company': company_name,
-            'trade_name': cliente.nombre_comercial or customer_name,
-            'names': cliente.nombre or customer_name,
-            'address': cliente.direccion,
-            'email': cliente.email or '',
-            'phone': cliente.telefono,
-            'legal_organization_code': LEGAL_ORGANIZATION_MAP.get(
-                cliente.tipo_cliente,
-                '2',
-            ),
-            'tribute_code': TRIBUTE_CODE_MAP[bool(cliente.responsable_iva)],
-            'municipality_code': cliente.municipio_codigo,
-        },
+        'customer': customer,
         'items': items,
     }
     return payload
