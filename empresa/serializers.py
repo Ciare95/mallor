@@ -393,6 +393,10 @@ class EmpresaUsuarioSerializer(serializers.ModelSerializer):
         source='usuario.is_active',
         read_only=True,
     )
+    usuario_is_superuser = serializers.BooleanField(
+        source='usuario.is_superuser',
+        read_only=True,
+    )
 
     class Meta:
         model = EmpresaUsuario
@@ -405,6 +409,7 @@ class EmpresaUsuarioSerializer(serializers.ModelSerializer):
             'usuario_email',
             'usuario_phone',
             'usuario_activo',
+            'usuario_is_superuser',
             'rol',
             'activo',
         ]
@@ -417,6 +422,7 @@ class EmpresaUsuarioSerializer(serializers.ModelSerializer):
             'usuario_email',
             'usuario_phone',
             'usuario_activo',
+            'usuario_is_superuser',
         ]
 
 

@@ -44,6 +44,8 @@ const buildEditForm = (membresia) => {
 export default function EmpresaUsuariosPage() {
   const queryClient = useQueryClient();
   const empresaActiva = useAppStore((state) => state.empresaActiva);
+  const currentUser = useAppStore((state) => state.user);
+  const currentUserIsSuperuser = Boolean(currentUser?.is_superuser || currentUser?.is_staff);
   const { toasts, toast, closeToast } = useToast();
   const [form, setForm] = useState(EMPTY_USER);
   const [rol, setRol] = useState('EMPLEADO');
@@ -213,67 +215,82 @@ export default function EmpresaUsuariosPage() {
         )}
         {!usuariosQuery.isLoading && !usuariosQuery.isError && (
           <div className="grid gap-3">
-            {membresias.map((membresia) => (
-              <article
-                key={membresia.id}
-                className="grid gap-3 rounded-xl border border-app bg-white/75 p-4 lg:grid-cols-[1fr_0.4fr_0.4fr_auto]"
-              >
-                <div>
-                  <div className="text-[14px] font-semibold text-main">
-                    {membresia.usuario_nombre || membresia.usuario_username}
-                  </div>
-                  <div className="mt-1 text-[12px] text-soft">
-                    {membresia.usuario_email}
-                  </div>
-                </div>
-                <label className="app-field">
-                  <span className="app-field-label">Rol</span>
-                  <select
-                    value={membresia.rol}
-                    onChange={(event) =>
-                      actualizarMutation.mutate({
-                        membresiaId: membresia.id,
-                        payload: { rol: event.target.value },
-                      })
-                    }
-                    className="app-select min-h-10"
+            {membresias
+              .filter((membresia) => currentUserIsSuperuser || !membresia.usuario_is_superuser)
+              .map((membresia) => {
+                const esSuperusuario = Boolean(membresia.usuario_is_superuser);
+                return (
+                  <article
+                    key={membresia.id}
+                    className="grid gap-3 rounded-xl border border-app bg-white/75 p-4 lg:grid-cols-[1fr_0.4fr_0.4fr_auto]"
                   >
-                    {ROLE_OPTIONS.map(([label, value]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="flex items-center">
-                  <StatusBadge status={membresia.activo ? 'ACTIVO' : 'INACTIVO'} />
-                </div>
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => openEditModal(membresia)}
-                    className="app-button-secondary min-h-10"
-                  >
-                    <PencilLine className="h-4 w-4" />
-                    Editar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      actualizarMutation.mutate({
-                        membresiaId: membresia.id,
-                        payload: { activo: !membresia.activo },
-                      })
-                    }
-                    className="app-button-secondary min-h-10"
-                    disabled={actualizarMutation.isPending}
-                  >
-                    <Save className="h-4 w-4" />
-                    {membresia.activo ? 'Inactivar' : 'Activar'}
-                  </button>
-                </div>
-              </article>
-            ))}
+                    <div>
+                      <div className="text-[14px] font-semibold text-main">
+                        {membresia.usuario_nombre || membresia.usuario_username}
+                      </div>
+                      <div className="mt-1 text-[12px] text-soft">
+                        {membresia.usuario_email}
+                      </div>
+                    </div>
+                    <div className="app-field">
+                      <span className="app-field-label">Rol</span>
+                      {esSuperusuario ? (
+                        <div className="app-select min-h-10 flex items-center text-[13px] font-semibold text-main">
+                          Superusuario
+                        </div>
+                      ) : (
+                        <select
+                          value={membresia.rol}
+                          onChange={(event) =>
+                            actualizarMutation.mutate({
+                              membresiaId: membresia.id,
+                              payload: { rol: event.target.value },
+                            })
+                          }
+                          className="app-select min-h-10"
+                        >
+                          {ROLE_OPTIONS.map(([label, value]) => (
+                            <option key={value} value={value}>
+                              {label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    <div className="flex items-center">
+                      <StatusBadge status={membresia.activo ? 'ACTIVO' : 'INACTIVO'} />
+                    </div>
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {!esSuperusuario && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => openEditModal(membresia)}
+                            className="app-button-secondary min-h-10"
+                          >
+                            <PencilLine className="h-4 w-4" />
+                            Editar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              actualizarMutation.mutate({
+                                membresiaId: membresia.id,
+                                payload: { activo: !membresia.activo },
+                              })
+                            }
+                            className="app-button-secondary min-h-10"
+                            disabled={actualizarMutation.isPending}
+                          >
+                            <Save className="h-4 w-4" />
+                            {membresia.activo ? 'Inactivar' : 'Activar'}
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
           </div>
         )}
       </SectionShell>
