@@ -52,6 +52,7 @@ import {
   resolveFacturaErrorMessage,
 } from '../../utils/ventas';
 import { ThermalTicketPreviewModal } from './ThermalTicket';
+import { printSoporteEmailFactura } from './SoporteEmailFactura';
 import CuentasPorCobrar from './CuentasPorCobrar';
 import ReportesVentas from './ReportesVentas';
 import VentaDetail from './VentaDetail';
@@ -306,6 +307,12 @@ export default function VentasPage() {
     onSuccess: (venta, variables) => {
       invalidateVentas();
       toast.success(`Venta ${venta.numero_venta} registrada`);
+      if (
+        venta.factura_electronica
+        && venta.factura_documento?.status === 'ERROR'
+      ) {
+        ofrecerSoporteEmail(venta);
+      }
       if (draft.imprimirTicket) {
         openTicketPreview({
           venta,
@@ -393,6 +400,18 @@ export default function VentasPage() {
     },
   });
 
+  const ofrecerSoporteEmail = (venta) => {
+    if (
+      venta?.factura_electronica
+      && window.confirm(
+        'Hubo un error al emitir la factura electronica.\n\n'
+        + '¿Desea imprimir el soporte de autorización de entrega por correo?',
+      )
+    ) {
+      printSoporteEmailFactura({ venta, empresa: empresaActiva });
+    }
+  };
+
   const emitirFacturaMutation = useMutation({
     mutationFn: (venta) => emitirFacturaVenta(venta.id),
     onSuccess: async (_, venta) => {
@@ -404,8 +423,9 @@ export default function VentasPage() {
           : 'Emision electronica procesada',
       );
     },
-    onError: (error) => {
+    onError: (error, venta) => {
       toast.error(extractApiError(error, 'No fue posible emitir la factura'));
+      ofrecerSoporteEmail(venta);
     },
   });
 
@@ -416,8 +436,9 @@ export default function VentasPage() {
       await refreshVentaDetail(venta.id);
       toast.success('Se reintento la emision electronica');
     },
-    onError: (error) => {
+    onError: (error, venta) => {
       toast.error(extractApiError(error, 'No fue posible reintentar la factura'));
+      ofrecerSoporteEmail(venta);
     },
   });
 
@@ -826,6 +847,9 @@ export default function VentasPage() {
               venta,
               settings: getPreferredTicketSettings(),
             })
+          }
+          onPrintSoporteEmail={(venta) =>
+            printSoporteEmailFactura({ venta, empresa: empresaActiva })
           }
           abonoSubmitting={registrarAbonoMutation.isPending}
           abonoError={abonoError}

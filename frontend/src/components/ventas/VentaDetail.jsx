@@ -8,6 +8,7 @@ import {
   FilePenLine,
   Loader2,
   Mail,
+  MailCheck,
   RotateCcw,
   ReceiptText,
   Slash,
@@ -43,6 +44,7 @@ export default function VentaDetail({
   onEnviarFacturaEmail,
   onCrearNotaCredito,
   onOpenTicketPreview,
+  onPrintSoporteEmail,
   abonoSubmitting,
   abonoError,
 }) {
@@ -176,6 +178,17 @@ export default function VentaDetail({
               <Eye className="h-4 w-4" />
               Tirilla
             </button>
+            {venta.factura_electronica && (
+              <button
+                type="button"
+                onClick={() => onPrintSoporteEmail?.(venta)}
+                className="app-button-secondary min-h-10"
+                title="Imprimir soporte de autorización de entrega por correo"
+              >
+                <MailCheck className="h-4 w-4" />
+                Soporte email
+              </button>
+            )}
             {factura?.status === 'ERROR' && (
               <button
                 type="button"
