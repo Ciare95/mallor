@@ -34,6 +34,8 @@ export function canAccessRoute(route, { role, user } = {}) {
     case 'informes':
     case 'ia':
       return !isEmpleadoRole(role);
+    case 'empresas-admin':
+      return false;
     default:
       return true;
   }

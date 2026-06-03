@@ -154,7 +154,7 @@ export default function Layout() {
       label: 'Empresas SaaS',
       icon: Settings,
       end: false,
-      hidden: !esUsuarioInterno,
+      hidden: !canAccessRoute('empresas-admin', { role: rolEmpresa, user }),
     },
     { path: '/about', label: 'Acerca', icon: FileText, end: false },
   ].filter((item) => !item.hidden);

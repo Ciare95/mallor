@@ -73,7 +73,14 @@ export const router = createBrowserRouter([
             path: 'mi-empresa/configuracion',
             element: withSuspense(MiEmpresaConfiguracionPage),
           },
-          { path: 'empresas-admin', element: withSuspense(EmpresasAdminPage) },
+          {
+            path: 'empresas-admin',
+            element: (
+              <RoleRoute route="empresas-admin">
+                {withSuspense(EmpresasAdminPage)}
+              </RoleRoute>
+            ),
+          },
           { path: 'inventario', element: withSuspense(ProductosPage) },
           { path: 'ventas', element: withSuspense(VentasPage) },
           { path: 'clientes', element: withSuspense(ClientesPage) },
