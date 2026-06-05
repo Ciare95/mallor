@@ -25,11 +25,24 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller waitress
+          pip install pyinstaller
+
+      - name: Construir frontend React (necesario para collectstatic)
+        run: npm install --prefix frontend && npm run build --prefix frontend
+
+      - name: Ejecutar collectstatic
+        env:
+          MALLOR_MODE: local
+          MALLOR_LOCAL_SERVER: "true"
+          DATABASE_URL: sqlite:///tmp_build.db
+          DB_SSL_REQUIRE: "false"
+          DEBUG: "false"
+          SECURE_SSL_REDIRECT: "false"
+          SECRET_KEY: build-secret-key-ci
+        run: python manage.py collectstatic --noinput --clear
 
       - name: Compilar sidecar con PyInstaller
-        run: pyinstaller mallor-server.spec
-        # mallor-server.spec se crea en el cambio django-pyinstaller-sidecar
+        run: pyinstaller mallor-server.spec --noconfirm
 
       - name: Verificar binario generado
         run: |
