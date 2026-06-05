@@ -23,6 +23,12 @@ pub fn run() {
                 }
             });
 
+            // Esperar a que el sidecar esté listo y navegar la ventana
+            let nav_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                wait_for_sidecar_and_navigate(nav_handle).await;
+            });
+
             // Verificar actualizaciones en paralelo (no bloquea el arranque)
             let updater_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -33,6 +39,38 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error al ejecutar la aplicación Tauri");
+}
+
+async fn wait_for_sidecar_and_navigate(app: tauri::AppHandle) {
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    eprintln!("[mallor] esperando que el servidor esté listo en localhost:8765...");
+
+    for attempt in 0u32..120 {
+        // Espera 2 segundos e intenta conectar por TCP (sin bloquear el executor)
+        let ready = tauri::async_runtime::spawn_blocking(|| {
+            std::thread::sleep(Duration::from_secs(2));
+            TcpStream::connect_timeout(
+                &"127.0.0.1:8765".parse().unwrap(),
+                Duration::from_secs(1),
+            )
+            .is_ok()
+        })
+        .await
+        .unwrap_or(false);
+
+        if ready {
+            eprintln!("[mallor] servidor listo tras {}s — navegando", attempt * 2);
+            if let Some(window) = app.get_webview_window("main") {
+                let url = tauri::Url::parse("http://localhost:8765/").unwrap();
+                let _ = window.navigate(url);
+            }
+            return;
+        }
+    }
+
+    eprintln!("[mallor] timeout: el sidecar no arrancó en 4 minutos");
 }
 
 async fn start_sidecar(
