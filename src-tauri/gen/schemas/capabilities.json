@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Permisos para la ventana principal de Mallor Local","local":true,"windows":["main"],"permissions":["core:default",{"identifier":"shell:allow-execute","allow":[{"args":true,"name":"mallor-server","sidecar":true}]},"shell:allow-kill","updater:allow-check","updater:allow-download-and-install","dialog:allow-message"]}}

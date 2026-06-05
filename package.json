@@ -6,10 +6,20 @@
     "dev": "cd frontend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build",
-    "install:frontend": "cd frontend && npm install"
+    "install:frontend": "cd frontend && npm install",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "workspaces": [],
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-updater": "^2"
   }
 }

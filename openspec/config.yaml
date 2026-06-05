@@ -1,0 +1,74 @@
+schema: spec-driven
+
+context: |
+  Project: Mallor — Sistema de Gestión Empresarial (ERP/POS) híbrido web/escritorio
+
+  Backend:
+    - Django 6.0.4 + Django REST Framework 3.17
+    - Autenticación JWT con djangorestframework-simplejwt + blacklist
+    - CORS con django-cors-headers
+    - Archivos estáticos con whitenoise (sirve el frontend React en modo local)
+    - Base de datos cloud: PostgreSQL via dj-database-url (Render)
+    - Base de datos local: SQLite
+    - Modelo de usuario personalizado: usuario.Usuario
+    - Apps Django: empresa, usuario, offline, cliente, fabricante, IA, informes, inventario, proveedor, ventas, empresas
+
+  Frontend:
+    - React 19 + Vite 8
+    - Estado global: Zustand 5
+    - Fetching de datos: TanStack Query 5 + Axios
+    - Routing: React Router v7
+    - Estilos: Tailwind CSS 3
+    - Testing: Vitest + @testing-library/react + MSW
+
+  Arquitectura híbrida (ya implementada en settings.py):
+    - MALLOR_MODE = 'cloud' es SaaS web en Render
+    - MALLOR_MODE = 'local' es servidor LAN/escritorio local
+    - MALLOR_LOCAL_SERVER = true hace que Django sirva el build de React via whitenoise
+    - MALLOR_LAN_HOST es el hostname de red local para ALLOWED_HOSTS
+    - El mismo codebase corre en ambos modos sin cambios de código
+
+  App offline/local ya implementada (offline/models.py):
+    - LocalConfig: modo local/cloud, URL del cloud, política offline, printer config
+    - LocalDevice: fingerprinting de dispositivo, versión de app
+    - POSTerminal: gestión de terminales físicos
+    - CajaSesion: sesiones de caja con estados ABIERTA/CERRADA
+    - SyncOutbox: patrón outbox para sync local a cloud
+    - LocalLicense: licencias ACTIVE/GRACE/EXPIRED/REVOKED
+    - ConnectivityLog: historial de conectividad Cloud y Factus
+    - run_local_worker: comando Django que verifica conectividad, procesa outbox y reintenta facturas cada 30s
+
+  Objetivo Mallor Local (aplicación de escritorio):
+    - Empaquetado con Tauri 2.0 (Rust, WebView del sistema Edge en Windows)
+    - Backend como sidecar PyInstaller que inicia Waitress en localhost:8765
+    - Frontend React build embebido, servido por whitenoise desde Django
+    - Base de datos SQLite en APPDATA del usuario
+    - Plataforma objetivo: Windows primario
+    - Distribucion: instalador .msi via GitHub Releases con Tauri updater
+
+  Testing:
+    - Backend: pytest + pytest-django + pytest-cov + factory-boy + Faker
+    - Frontend: Vitest + Testing Library + MSW
+    - Linting: ruff (Python), eslint (JS/React)
+
+  Despliegue cloud: Render con gunicorn, whitenoise, PostgreSQL
+  Despliegue local: instalador .msi de Windows via GitHub Releases
+
+rules:
+  proposal:
+    - "Especificar si el cambio afecta solo cloud, solo local o ambos modos"
+    - "Si hay migraciones incluir estrategia separada para SQLite local y PostgreSQL cloud"
+    - "Indicar si el cambio requiere recompilar el sidecar Django con PyInstaller"
+    - "Indicar si el cambio requiere recompilar el bundle de Tauri"
+  design:
+    - "Para cambios de backend indicar la app Django afectada y si requiere migración"
+    - "Para cambios de frontend aclarar si el estado va en Zustand o en TanStack Query"
+    - "Para cambios de Tauri o sidecar especificar el protocolo HTTP a localhost sin IPC directo"
+    - "Si toca SQLite local considerar concurrencia limitada a un usuario a la vez"
+    - "Si toca PostgreSQL cloud considerar migraciones sin downtime"
+  tasks:
+    - "Máximo 2 horas de trabajo por tarea"
+    - "Tareas de backend antes que las de frontend cuando comparten contrato de API"
+    - "Cada tarea funcional incluye una sub-tarea de test con pytest o Vitest"
+    - "Separar tareas que requieran rebuild de Tauri de las que no lo requieran"
+    - "Tareas de Rust y Tauri van al final por ser las más costosas de compilar"

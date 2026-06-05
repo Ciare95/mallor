@@ -1,0 +1,11 @@
+{
+  "version": "v0.1.0",
+  "notes": "Primera versión de Mallor Local",
+  "pub_date": "2025-01-01T00:00:00Z",
+  "platforms": {
+    "windows-x86_64": {
+      "signature": "",
+      "url": "https://github.com/Ciare95/mallor/releases/download/v0.1.0/Mallor.Local_0.1.0_x64_en-US.msi.zip"
+    }
+  }
+}

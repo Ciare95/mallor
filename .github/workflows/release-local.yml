@@ -1,0 +1,134 @@
+name: Release Mallor Local
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  # ─── Job 1: Compilar sidecar Django con PyInstaller ──────────────────────────
+  build-sidecar:
+    name: Build Django Sidecar (Windows)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instalar dependencias Python
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller waitress
+
+      - name: Compilar sidecar con PyInstaller
+        run: pyinstaller mallor-server.spec
+        # mallor-server.spec se crea en el cambio django-pyinstaller-sidecar
+
+      - name: Verificar binario generado
+        run: |
+          if (!(Test-Path "dist/mallor-server/mallor-server.exe")) {
+            Write-Error "El sidecar no se generó correctamente"
+            exit 1
+          }
+          Write-Host "Sidecar generado: $(Get-Item dist/mallor-server/mallor-server.exe | Select-Object -ExpandProperty Length) bytes"
+
+      - name: Subir sidecar como artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mallor-server-windows
+          path: dist/mallor-server/
+          retention-days: 1
+
+  # ─── Job 2: Compilar bundle Tauri + crear Release ────────────────────────────
+  build-tauri:
+    name: Build Tauri MSI + GitHub Release
+    runs-on: windows-latest
+    needs: build-sidecar
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Configurar Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Descargar sidecar compilado
+        uses: actions/download-artifact@v4
+        with:
+          name: mallor-server-windows
+          path: src-tauri/binaries/mallor-server-temp/
+
+      - name: Copiar sidecar con nombre de target triple
+        run: |
+          $sidecarDir = "src-tauri/binaries"
+          $source = "src-tauri/binaries/mallor-server-temp"
+          # Copiar todos los archivos del sidecar al directorio de binarios
+          Copy-Item -Path "$source\*" -Destination $sidecarDir -Recurse -Force
+          # Renombrar el exe principal con el target triple requerido por Tauri
+          Rename-Item -Path "$sidecarDir\mallor-server.exe" `
+                      -NewName "mallor-server-x86_64-pc-windows-msvc.exe"
+          Remove-Item -Path "$sidecarDir\mallor-server-temp" -Recurse -Force
+          Write-Host "Sidecar listo en: $sidecarDir"
+
+      - name: Instalar dependencias npm (raíz)
+        run: npm install
+
+      - name: Instalar dependencias npm (frontend)
+        run: npm install --prefix frontend
+
+      - name: Compilar frontend React
+        run: npm run build --prefix frontend
+
+      - name: Compilar bundle Tauri MSI
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Mallor Local ${{ github.ref_name }}"
+          releaseBody: |
+            ## Mallor Local ${{ github.ref_name }}
+
+            Descarga e instala `Mallor.Local_*_x64_en-US.msi`.
+
+            > **Nota:** Windows puede mostrar una advertencia de SmartScreen.
+            > Haz clic en "Más información" → "Ejecutar de todas formas" para continuar.
+
+            ### Cambios
+            Ver [CHANGELOG](https://github.com/Ciare95/mallor/blob/main/CHANGELOG.md)
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonKeepUniversal: false
+          args: --bundles msi
