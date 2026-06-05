@@ -38,6 +38,9 @@
     "externalBin": [
       "binaries/mallor-server"
     ],
+    "resources": {
+      "binaries/_internal": "_internal"
+    },
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
