@@ -8,7 +8,7 @@ import {
   crearLicenciaAdmin,
   revocarLicenciaAdmin,
 } from '../../services/licencias.service';
-import { listarEmpresas } from '../../services/empresas.service';
+import { listarEmpresasAdmin } from '../../services/empresas.service';
 
 const STATUS_LABEL = {
   ACTIVE: 'Activa',
@@ -183,8 +183,8 @@ export default function AdminLicenciasPage() {
   });
 
   const { data: empresas } = useQuery({
-    queryKey: ['empresas-all'],
-    queryFn: () => listarEmpresas({ page_size: 200 }),
+    queryKey: ['empresas-admin-all'],
+    queryFn: listarEmpresasAdmin,
   });
 
   const revocarMutation = useMutation({
