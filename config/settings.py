@@ -288,6 +288,7 @@ FACTUS_CONFIG = {
     'VERIFY_SSL': _get_bool_env('FACTUS_VERIFY_SSL', True),
 }
 MALLOR_DATA_ENCRYPTION_KEY = os.getenv('MALLOR_DATA_ENCRYPTION_KEY', '')
+MALLOR_CLOUD_BASE_URL = os.getenv('MALLOR_CLOUD_BASE_URL', 'https://mallor.onrender.com/').rstrip('/')
 
 DEEPSEEK_API_KEY = os.getenv('DEEPSEEK_API_KEY', '')
 DEEPSEEK_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com/v1')
@@ -322,6 +323,11 @@ LOGGING = {
         'mallor.ia': {
             'handlers': ['console'],
             'level': os.getenv('IA_LOG_LEVEL', 'INFO'),
+            'propagate': False,
+        },
+        'mallor.sync': {
+            'handlers': ['console'],
+            'level': os.getenv('SYNC_LOG_LEVEL', 'INFO'),
             'propagate': False,
         },
     },

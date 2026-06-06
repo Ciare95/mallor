@@ -5,6 +5,8 @@ import ProtectedRoute from '../components/ProtectedRoute';
 import RoleRoute from '../components/RoleRoute';
 
 const LoginPage = lazy(() => import('../pages/LoginPage'));
+const ActivacionWizardPage = lazy(() => import('../pages/ActivacionWizardPage'));
+const AdminLicenciasPage = lazy(() => import('../pages/admin/AdminLicenciasPage'));
 const HomePage = lazy(() => import('../pages/HomePage'));
 const AboutPage = lazy(() => import('../pages/AboutPage'));
 const UsuariosPage = lazy(() => import('../pages/usuarios/UsuariosPage'));
@@ -48,6 +50,11 @@ export const router = createBrowserRouter([
     path: '/',
     element: <ProtectedRoute />,
     children: [
+      // Wizard de activación — sin sidebar
+      {
+        path: 'activar',
+        element: withSuspense(ActivacionWizardPage),
+      },
       {
         element: <Layout />,
         children: [
@@ -138,6 +145,14 @@ export const router = createBrowserRouter([
             element: (
               <RoleRoute route="ia">
                 {withSuspense(IAPage)}
+              </RoleRoute>
+            ),
+          },
+          {
+            path: 'admin/licencias',
+            element: (
+              <RoleRoute route="admin-licencias">
+                {withSuspense(AdminLicenciasPage)}
               </RoleRoute>
             ),
           },

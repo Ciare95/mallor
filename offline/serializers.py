@@ -1,6 +1,10 @@
+import secrets
+import string
 from decimal import Decimal
 
 from rest_framework import serializers
+
+from empresa.models import Empresa
 
 from .models import (
     CajaSesion,
@@ -108,3 +112,60 @@ class LocalLicenseSerializer(serializers.ModelSerializer):
         from django.utils import timezone
 
         return bool(obj.support_until and obj.support_until >= timezone.localdate())
+
+
+def _generar_license_key(plan_prefix: str) -> str:
+    chars = string.ascii_uppercase + string.digits
+    seg1 = ''.join(secrets.choice(chars) for _ in range(8))
+    seg2 = ''.join(secrets.choice(chars) for _ in range(4))
+    return f'MALLOR-{plan_prefix}-{seg1}-{seg2}'
+
+
+class LocalLicenseAdminSerializer(serializers.ModelSerializer):
+    empresa_id = serializers.PrimaryKeyRelatedField(
+        queryset=Empresa.objects.filter(activo=True),
+        source='empresa',
+        write_only=True,
+    )
+    empresa_nombre = serializers.SerializerMethodField(read_only=True)
+    support_active = serializers.SerializerMethodField(read_only=True)
+    license_key = serializers.CharField(read_only=True)
+
+    class Meta:
+        model = LocalLicense
+        fields = [
+            'id',
+            'uuid',
+            'empresa_id',
+            'empresa_nombre',
+            'license_key',
+            'plan',
+            'status',
+            'purchased_at',
+            'support_until',
+            'support_active',
+            'last_validated_at',
+            'metadata',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id', 'uuid', 'license_key', 'last_validated_at', 'created_at', 'updated_at',
+        ]
+
+    def get_empresa_nombre(self, obj):
+        return obj.empresa.razon_social if obj.empresa_id else ''
+
+    def get_support_active(self, obj):
+        from django.utils import timezone
+        return bool(obj.support_until and obj.support_until >= timezone.localdate())
+
+    def create(self, validated_data):
+        plan = validated_data.get('plan', 'HYBRID')
+        prefix = plan[:3].upper() if plan else 'LOC'
+        validated_data['license_key'] = _generar_license_key(prefix)
+        return super().create(validated_data)
+
+
+class LicenseActivarSerializer(serializers.Serializer):
+    license_key = serializers.CharField(max_length=120, trim_whitespace=True)

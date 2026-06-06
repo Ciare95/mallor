@@ -1,8 +1,10 @@
+import logging
 import socket
 import time
 from decimal import Decimal
 from typing import Any, Dict, Optional
 
+import requests
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Q
@@ -15,9 +17,12 @@ from .models import (
     CajaSesion,
     ConnectivityLog,
     LocalConfig,
+    LocalLicense,
     POSTerminal,
     SyncOutbox,
 )
+
+logger = logging.getLogger('mallor.sync')
 
 
 def is_local_mode() -> bool:
@@ -105,17 +110,15 @@ class OfflineService:
     def build_sale_payload(venta: Venta) -> Dict[str, Any]:
         return {
             'uuid': str(venta.uuid),
-            'id': venta.id,
             'numero_venta': venta.numero_venta,
             'empresa_id': venta.empresa_id,
-            'terminal_id': venta.terminal_id,
-            'caja_sesion_id': venta.caja_sesion_id,
-            'cliente_id': venta.cliente_id,
             'fecha_venta': venta.fecha_venta.isoformat() if venta.fecha_venta else None,
             'subtotal': str(venta.subtotal),
             'descuento': str(venta.descuento),
             'impuestos': str(venta.impuestos),
             'total': str(venta.total),
+            'total_abonado': str(venta.total_abonado),
+            'saldo_pendiente': str(venta.saldo_pendiente),
             'estado': venta.estado,
             'estado_pago': venta.estado_pago,
             'metodo_pago': venta.metodo_pago,
@@ -125,8 +128,12 @@ class OfflineService:
             'detalles': [
                 {
                     'uuid': str(detalle.uuid),
-                    'producto_uuid': str(detalle.producto.uuid),
-                    'producto_id': detalle.producto_id,
+                    'producto_uuid': str(detalle.producto.uuid) if detalle.producto_id else '',
+                    'producto_nombre': (
+                        detalle.producto.nombre
+                        if detalle.producto_id
+                        else detalle.producto_temporal_nombre
+                    ),
                     'cantidad': str(detalle.cantidad),
                     'precio_unitario': str(detalle.precio_unitario),
                     'subtotal': str(detalle.subtotal),
@@ -223,6 +230,67 @@ class OfflineService:
                 if caja else None
             ),
             'counts': OfflineService.pending_counts(empresa),
+            'setup_completed': OfflineService.is_setup_completed(empresa),
+        }
+
+    @staticmethod
+    def is_setup_completed(empresa=None) -> bool:
+        """True when running in cloud mode or when a valid local license exists."""
+        if getattr(settings, 'MALLOR_MODE', 'cloud') != 'local':
+            return True
+        empresa = empresa or get_empresa_actual_or_default()
+        return LocalLicense.objects.filter(
+            empresa=empresa,
+            status__in=[LocalLicense.Status.ACTIVE, LocalLicense.Status.GRACE],
+        ).exists()
+
+    @staticmethod
+    def activar_licencia(empresa, license_key: str) -> Dict[str, Any]:
+        """
+        Validates license_key against the cloud, then persists LocalLicense
+        and enables sync in LocalConfig. Called from the activation wizard.
+        """
+        cloud_base = getattr(settings, 'MALLOR_CLOUD_BASE_URL', 'https://mallor.com')
+        verify_url = f'{cloud_base}/api/offline/licenses/verify/'
+        try:
+            resp = requests.get(
+                verify_url,
+                params={'key': license_key},
+                timeout=10,
+            )
+        except requests.RequestException as exc:
+            raise ValueError(f'No se pudo conectar al servidor de Mallor: {exc}') from exc
+
+        if resp.status_code == 404 or not resp.json().get('valid'):
+            raise ValueError('Clave de activación inválida o expirada.')
+        if resp.status_code >= 400:
+            raise ValueError(f'Error del servidor cloud: {resp.status_code}')
+
+        data = resp.json()
+
+        LocalLicense.objects.update_or_create(
+            empresa=empresa,
+            defaults={
+                'license_key': license_key,
+                'plan': data.get('plan', 'HYBRID'),
+                'status': data.get('status', LocalLicense.Status.ACTIVE),
+                'support_until': data.get('support_until'),
+                'purchased_at': data.get('purchased_at'),
+                'last_validated_at': timezone.now(),
+                'metadata': {'empresa_razon_social': data.get('empresa_razon_social', '')},
+            },
+        )
+
+        config = LocalConfig.get_for_empresa(empresa)
+        config.cloud_api_url = cloud_base
+        config.sync_enabled = True
+        config.save(update_fields=['cloud_api_url', 'sync_enabled', 'updated_at'])
+
+        return {
+            'activated': True,
+            'empresa_nombre': data.get('empresa_razon_social', ''),
+            'plan': data.get('plan', 'HYBRID'),
+            'support_until': data.get('support_until'),
         }
 
     @staticmethod

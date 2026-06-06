@@ -35,7 +35,8 @@ export function canAccessRoute(route, { role, user } = {}) {
     case 'ia':
       return !isEmpleadoRole(role);
     case 'empresas-admin':
-      return false;
+    case 'admin-licencias':
+      return false; // only isAdminInterno (checked above) may access these
     default:
       return true;
   }

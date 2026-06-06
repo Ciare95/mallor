@@ -1,23 +1,30 @@
 from decimal import Decimal
 
-from rest_framework import permissions, status, viewsets
+from django.conf import settings
+from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from empresa.context import get_empresa_actual_or_default
+from empresa.context import get_empresa_actual_or_default, reset_empresa_actual, set_empresa_actual
+from empresa.services import EmpresaService
 from ventas.facturacion_services import FacturacionElectronicaService
 from ventas.models import VentaFacturaElectronica
 
+from .authentication import SyncTokenAuthentication
 from .models import CajaSesion, LocalLicense, POSTerminal, SyncOutbox
 from .serializers import (
     AbrirCajaSerializer,
     CajaSesionSerializer,
     CerrarCajaSerializer,
+    LicenseActivarSerializer,
+    LocalLicenseAdminSerializer,
     LocalLicenseSerializer,
     POSTerminalSerializer,
     SyncOutboxSerializer,
 )
 from .services import OfflineService
+from .sync_ingest import SyncIngestService
 
 
 def _terminal_params(request):
@@ -163,3 +170,127 @@ class OfflineViewSet(viewsets.ViewSet):
         if license_obj is None:
             return Response({'license': None})
         return Response(LocalLicenseSerializer(license_obj).data)
+
+    @action(detail=False, methods=['post'], url_path='activar')
+    def activar(self, request):
+        """Activates a hybrid license from the local desktop wizard."""
+        serializer = LicenseActivarSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        empresa = get_empresa_actual_or_default()
+        try:
+            result = OfflineService.activar_licencia(
+                empresa,
+                serializer.validated_data['license_key'],
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(result)
+
+
+class LicenseVerifyView(APIView):
+    """
+    GET /api/offline/licenses/verify/?key=<license_key>
+
+    Public endpoint (cloud-side only) used by local instances to validate
+    their license before activation and during periodic checks.
+    """
+
+    authentication_classes = []
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        if getattr(settings, 'MALLOR_MODE', 'cloud') == 'local':
+            return Response(
+                {'error': 'Este endpoint solo está disponible en el servidor cloud.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        key = request.query_params.get('key', '').strip()
+        if not key:
+            return Response({'valid': False, 'status': 'NOT_FOUND'}, status=status.HTTP_404_NOT_FOUND)
+
+        license_obj = (
+            LocalLicense.objects.select_related('empresa')
+            .filter(license_key=key)
+            .first()
+        )
+        if license_obj is None:
+            return Response({'valid': False, 'status': 'NOT_FOUND'}, status=status.HTTP_404_NOT_FOUND)
+
+        cloud_base = getattr(settings, 'MALLOR_CLOUD_BASE_URL', '')
+        is_valid = license_obj.status in [LocalLicense.Status.ACTIVE, LocalLicense.Status.GRACE]
+        return Response({
+            'valid': is_valid,
+            'status': license_obj.status,
+            'plan': license_obj.plan,
+            'empresa_razon_social': license_obj.empresa.razon_social if license_obj.empresa_id else '',
+            'cloud_api_url': cloud_base,
+            'support_until': license_obj.support_until,
+            'purchased_at': license_obj.purchased_at,
+        })
+
+
+class LicenseAdminViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    Admin CRUD for LocalLicense. Only accessible to Mallor staff (is_staff / is_superuser).
+    Cloud-side only.
+    """
+
+    serializer_class = LocalLicenseAdminSerializer
+    permission_classes = [permissions.IsAuthenticated]
+    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+
+    def get_queryset(self):
+        EmpresaService.validar_admin_interno(self.request.user)
+        return LocalLicense.objects.select_related('empresa').order_by('-created_at')
+
+    def perform_create(self, serializer):
+        EmpresaService.validar_admin_interno(self.request.user)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        EmpresaService.validar_admin_interno(self.request.user)
+        serializer.save()
+
+    @action(detail=True, methods=['post'], url_path='revocar')
+    def revocar(self, request, pk=None):
+        EmpresaService.validar_admin_interno(request.user)
+        license_obj = self.get_object()
+        license_obj.status = LocalLicense.Status.REVOKED
+        license_obj.save(update_fields=['status', 'updated_at'])
+        return Response(LocalLicenseAdminSerializer(license_obj).data)
+
+
+class SyncIngestView(APIView):
+    """
+    POST /api/offline/sync/ingest/
+
+    Receives sync events pushed from a local Mallor instance.
+    Authenticated via 'Authorization: SyncToken <license_key>'.
+    """
+
+    authentication_classes = [SyncTokenAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        events = request.data.get('events')
+        if not isinstance(events, list):
+            return Response(
+                {'error': "'events' must be a list"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        empresa = request.auth.empresa
+        # Set empresa context so helpers like Cliente.get_consumidor_final() resolve correctly
+        ctx_token = set_empresa_actual(empresa)
+        try:
+            result = SyncIngestService().process_events(empresa, request.user, events)
+        finally:
+            reset_empresa_actual(ctx_token)
+
+        return Response(result)

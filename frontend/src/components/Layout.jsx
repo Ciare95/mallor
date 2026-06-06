@@ -9,11 +9,14 @@ import {
   FileText,
   FlaskConical,
   Home,
+  KeyRound,
   LogOut,
   PackageSearch,
   PieChart,
   ReceiptText,
   Server,
+  ShieldCheck,
+  ShieldOff,
   Sparkles,
   Settings,
   UserRound,
@@ -33,6 +36,7 @@ import {
   isAdminInterno,
 } from '../utils/roleAccess';
 import { obtenerEstadoOffline } from '../services/offline.service';
+import { obtenerLicencia } from '../services/licencias.service';
 
 export default function Layout() {
   const location = useLocation();
@@ -64,6 +68,15 @@ export default function Layout() {
   const offlineStatus = offlineStatusQuery.data;
   const isLocalMode = offlineStatus?.mode === 'local';
   const isOffline = isLocalMode && !offlineStatus?.online;
+
+  const licenciaQuery = useQuery({
+    queryKey: ['licencia-status', empresaActivaId],
+    queryFn: obtenerLicencia,
+    enabled: isLocalMode,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+  const licencia = licenciaQuery.data?.license ?? null;
 
   useEffect(() => {
     const empresasDisponibles = empresasQuery.data?.results ?? [];
@@ -156,6 +169,13 @@ export default function Layout() {
       end: false,
       hidden: !canAccessRoute('empresas-admin', { role: rolEmpresa, user }),
     },
+    {
+      path: '/admin/licencias',
+      label: 'Licencias',
+      icon: KeyRound,
+      end: false,
+      hidden: !canAccessRoute('admin-licencias', { role: rolEmpresa, user }),
+    },
     { path: '/about', label: 'Acerca', icon: FileText, end: false },
   ].filter((item) => !item.hidden);
 
@@ -232,6 +252,44 @@ export default function Layout() {
               })}
             </div>
           </nav>
+
+          {isLocalMode && licencia && (
+            <div className="border-t border-app px-3 py-3">
+              {sidebarOpen ? (
+                <div
+                  className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${
+                    licencia.status === 'ACTIVE'
+                      ? 'bg-emerald-500/10 text-emerald-700'
+                      : licencia.status === 'GRACE'
+                      ? 'bg-amber-500/10 text-amber-700'
+                      : 'bg-danger/10 text-danger'
+                  }`}
+                >
+                  {licencia.status === 'ACTIVE' || licencia.status === 'GRACE' ? (
+                    <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                  ) : (
+                    <ShieldOff className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span className="font-semibold">
+                    Licencia{' '}
+                    {licencia.status === 'ACTIVE'
+                      ? 'activa'
+                      : licencia.status === 'GRACE'
+                      ? 'en gracia'
+                      : 'inactiva'}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex justify-center">
+                  {licencia.status === 'ACTIVE' ? (
+                    <ShieldCheck className="h-4 w-4 text-emerald-600" title="Licencia activa" />
+                  ) : (
+                    <ShieldOff className="h-4 w-4 text-danger" title={`Licencia ${licencia.status}`} />
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="border-t border-app px-3 py-4">
             <button

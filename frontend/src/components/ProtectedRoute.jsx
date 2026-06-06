@@ -1,33 +1,49 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { obtenerEstadoOffline } from '../services/offline.service';
 
 export default function ProtectedRoute() {
   const location = useLocation();
+  const navigate = useNavigate();
   const { authReady, isAuthenticated, restoreSession } = useAuth();
   const [checking, setChecking] = useState(!authReady);
 
   useEffect(() => {
     let active = true;
-    if (authReady || isAuthenticated) {
+
+    async function init() {
+      if (!authReady && !isAuthenticated) {
+        try {
+          await restoreSession();
+        } catch {
+          // not authenticated — handled below
+        }
+      }
+
+      if (!active) return;
       setChecking(false);
-      return () => {
-        active = false;
-      };
     }
 
-    restoreSession()
-      .catch(() => null)
-      .finally(() => {
-        if (active) {
-          setChecking(false);
-        }
-      });
-
+    init();
     return () => {
       active = false;
     };
   }, [authReady, isAuthenticated, restoreSession]);
+
+  // After auth is ready, check if local setup is complete (only once, not on /activar itself)
+  useEffect(() => {
+    if (!isAuthenticated || checking) return;
+    if (location.pathname === '/activar') return;
+
+    obtenerEstadoOffline()
+      .then((data) => {
+        if (data?.local_server && data?.setup_completed === false) {
+          navigate('/activar', { replace: true });
+        }
+      })
+      .catch(() => null);
+  }, [isAuthenticated, checking, location.pathname, navigate]);
 
   if (checking) {
     return (
