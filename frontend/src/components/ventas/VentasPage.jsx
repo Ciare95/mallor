@@ -965,7 +965,7 @@ function LocalPosStatusPanel({
             <button
               type="button"
               onClick={onOpenCash}
-              disabled={isLoading || openCashLoading || !status?.terminal}
+              disabled={isLoading || openCashLoading}
               className="app-button-primary min-h-10"
             >
               {openCashLoading ? 'Abriendo...' : 'Abrir caja'}

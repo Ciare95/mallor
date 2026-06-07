@@ -52,6 +52,8 @@ export default function ActivacionWizardPage() {
       }
       localStorage.setItem('mallor_wizard_done', '1');
     }
+    // Limpiar terminal ID de instalaciones previas para evitar IDs stale
+    localStorage.removeItem('mallor_terminal_id');
     navigate('/', { replace: true });
   }
 

@@ -44,9 +44,14 @@ class OfflineService:
         empresa = empresa or get_empresa_actual_or_default()
         queryset = POSTerminal.objects.filter(empresa=empresa, is_active=True)
         if terminal_id:
-            return queryset.filter(pk=terminal_id).first()
-        if terminal_code:
-            return queryset.filter(code=terminal_code).first()
+            terminal = queryset.filter(pk=terminal_id).first()
+            if terminal is not None:
+                return terminal
+            # ID stale (reinstalación o BD nueva) — caer al auto-create
+        elif terminal_code:
+            terminal = queryset.filter(code=terminal_code).first()
+            if terminal is not None:
+                return terminal
         terminal = queryset.order_by('id').first()
         if terminal is not None:
             return terminal
