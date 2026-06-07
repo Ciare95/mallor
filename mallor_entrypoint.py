@@ -21,7 +21,7 @@ def _configure_env(data_dir: str) -> None:
     os.environ["DATABASE_URL"] = f"sqlite:///{db_path}"
     os.environ["MEDIA_ROOT"] = os.path.join(data_dir, "media")
     os.environ["DEBUG"] = "false"
-    os.environ.setdefault("MALLOR_CLOUD_BASE_URL", "https://mallor.com")
+    os.environ.setdefault("MALLOR_CLOUD_BASE_URL", "https://mallor.onrender.com")
     os.environ["DB_SSL_REQUIRE"] = "false"
     os.environ["SECURE_SSL_REDIRECT"] = "false"
     os.environ["SESSION_COOKIE_SECURE"] = "false"

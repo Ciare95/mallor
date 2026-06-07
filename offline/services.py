@@ -267,7 +267,7 @@ class OfflineService:
         Validates license_key against the cloud, then persists LocalLicense
         and enables sync in LocalConfig. Called from the activation wizard.
         """
-        cloud_base = getattr(settings, 'MALLOR_CLOUD_BASE_URL', 'https://mallor.com')
+        cloud_base = getattr(settings, 'MALLOR_CLOUD_BASE_URL', 'https://mallor.onrender.com')
         verify_url = f'{cloud_base}/api/offline/licenses/verify/'
         try:
             resp = requests.get(
