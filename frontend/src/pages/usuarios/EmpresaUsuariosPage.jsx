@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Loader2, PencilLine, Save, UserPlus, X } from 'lucide-react';
+import { KeyRound, Loader2, PencilLine, Save, UserPlus, X } from 'lucide-react';
 import {
   actualizarUsuarioEmpresa,
   crearUsuarioEmpresa,
@@ -145,15 +145,19 @@ export default function EmpresaUsuariosPage() {
       return;
     }
 
+    const usuarioPayload = {
+      username: editForm.username,
+      email: editForm.email,
+      first_name: editForm.first_name,
+      last_name: editForm.last_name,
+      phone: editForm.phone || '',
+    };
+    if (editForm.password) {
+      usuarioPayload.password = editForm.password;
+    }
     editarMutation.mutate({
       membresia: editingMembership,
-      usuarioPayload: {
-        username: editForm.username,
-        email: editForm.email,
-        first_name: editForm.first_name,
-        last_name: editForm.last_name,
-        phone: editForm.phone || '',
-      },
+      usuarioPayload,
       membresiaPayload: {
         rol: editRol,
         activo: editingMembership.activo,
@@ -331,6 +335,7 @@ export default function EmpresaUsuariosPage() {
           }}
           onSubmit={handleEditSubmit}
           isPending={editarMutation.isPending}
+          allowPasswordChange
         />
       )}
 
@@ -364,7 +369,11 @@ function UserModal({
   onSubmit,
   isPending,
   includePassword = false,
+  allowPasswordChange = false,
 }) {
+  const [showPasswordFields, setShowPasswordFields] = useState(false);
+  const showPassword = includePassword || showPasswordFields;
+
   return (
     <div
       className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-950/55 px-4 py-8 backdrop-blur-sm"
@@ -433,20 +442,36 @@ function UserModal({
                 ))}
               </select>
             </label>
-            {includePassword && (
+            {allowPasswordChange && !includePassword && (
+              <div className="md:col-span-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordFields((v) => !v);
+                    onFieldChange('password', '');
+                    onFieldChange('confirm_password', '');
+                  }}
+                  className="flex items-center gap-2 text-sm font-semibold text-soft hover:text-main transition"
+                >
+                  <KeyRound className="h-4 w-4" />
+                  {showPasswordFields ? 'Cancelar cambio de contraseña' : 'Cambiar contraseña'}
+                </button>
+              </div>
+            )}
+            {showPassword && (
               <>
                 <Field
-                  label="Password"
+                  label="Nueva contraseña"
                   type="password"
                   value={form.password}
-                  required
+                  required={includePassword}
                   onChange={(value) => onFieldChange('password', value)}
                 />
                 <Field
-                  label="Confirmar password"
+                  label="Confirmar contraseña"
                   type="password"
                   value={form.confirm_password}
-                  required
+                  required={includePassword}
                   onChange={(value) =>
                     onFieldChange('confirm_password', value)
                   }
