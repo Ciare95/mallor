@@ -225,11 +225,14 @@ class LicenseVerifyView(APIView):
 
         cloud_base = getattr(settings, 'MALLOR_CLOUD_BASE_URL', '')
         is_valid = license_obj.status in [LocalLicense.Status.ACTIVE, LocalLicense.Status.GRACE]
+        emp = license_obj.empresa
         return Response({
             'valid': is_valid,
             'status': license_obj.status,
             'plan': license_obj.plan,
-            'empresa_razon_social': license_obj.empresa.razon_social if license_obj.empresa_id else '',
+            'empresa_razon_social': emp.razon_social if emp else '',
+            'empresa_nombre_comercial': emp.nombre_comercial if emp else '',
+            'empresa_nit': emp.nit if emp else '',
             'cloud_api_url': cloud_base,
             'support_until': license_obj.support_until,
             'purchased_at': license_obj.purchased_at,

@@ -288,6 +288,18 @@ class OfflineService:
 
         data = resp.json()
 
+        # Actualizar datos de la empresa local con los del cloud
+        razon_social = data.get('empresa_razon_social', '')
+        nombre_comercial = data.get('empresa_nombre_comercial', '') or razon_social
+        nit = data.get('empresa_nit', '')
+        if razon_social:
+            empresa.razon_social = razon_social
+        if nombre_comercial:
+            empresa.nombre_comercial = nombre_comercial
+        if nit and empresa.nit == '000000000':
+            empresa.nit = nit
+        empresa.save()
+
         LocalLicense.objects.update_or_create(
             empresa=empresa,
             defaults={
@@ -297,7 +309,7 @@ class OfflineService:
                 'support_until': data.get('support_until'),
                 'purchased_at': data.get('purchased_at'),
                 'last_validated_at': timezone.now(),
-                'metadata': {'empresa_razon_social': data.get('empresa_razon_social', '')},
+                'metadata': {'empresa_razon_social': razon_social},
             },
         )
 
@@ -308,7 +320,7 @@ class OfflineService:
 
         return {
             'activated': True,
-            'empresa_nombre': data.get('empresa_razon_social', ''),
+            'empresa_nombre': nombre_comercial or razon_social,
             'plan': data.get('plan', 'HYBRID'),
             'support_until': data.get('support_until'),
         }
