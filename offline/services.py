@@ -273,10 +273,13 @@ class OfflineService:
             resp = requests.get(
                 verify_url,
                 params={'key': license_key},
-                timeout=10,
+                timeout=30,
             )
-        except requests.RequestException as exc:
-            raise ValueError(f'No se pudo conectar al servidor de Mallor: {exc}') from exc
+        except requests.RequestException:
+            raise ValueError(
+                'No se pudo conectar al servidor de Mallor. '
+                'Verifica tu conexión a internet e inténtalo de nuevo.'
+            )
 
         if resp.status_code == 404 or not resp.json().get('valid'):
             raise ValueError('Clave de activación inválida o expirada.')
