@@ -149,7 +149,7 @@ export const router = createBrowserRouter([
             ),
           },
           {
-            path: 'admin/licencias',
+            path: 'panel/licencias',
             element: (
               <RoleRoute route="admin-licencias">
                 {withSuspense(AdminLicenciasPage)}

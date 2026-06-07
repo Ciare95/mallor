@@ -98,7 +98,7 @@ El cliente trabaja en la app desktop y sus datos se sincronizan automáticamente
 1. Inicia sesión como staff en la app cloud.
 2. Crea la empresa del cliente en **Admin → Empresas SaaS** (igual que Plan Cloud).
 3. Crea el usuario propietario del cliente en cloud.
-4. Ve a **Admin → Licencias** (`/admin/licencias`).
+4. Ve a **Panel → Licencias** (`/panel/licencias`).
 5. Haz clic en **"Nueva licencia"**:
    - Selecciona la empresa del cliente.
    - Plan: **Híbrido (Local + Cloud)**.
@@ -222,7 +222,7 @@ Usa esta tabla para verificar que cada plan está correctamente configurado ante
 - El equipo del cliente no tiene internet para conectar a `mallor.com`.
 
 **Solución:**
-1. Verifica en `/admin/licencias` que la licencia tiene estado **Activa**.
+1. Verifica en `/panel/licencias` que la licencia tiene estado **Activa**.
 2. Copia la clave directamente con el botón de copiar (no tipearla).
 3. Verifica que el equipo puede navegar a `https://mallor.com`.
 
@@ -246,7 +246,7 @@ Usa esta tabla para verificar que cada plan está correctamente configurado ante
 **Causa:** La licencia fue marcada como `REVOKED` o `EXPIRED` en el servidor cloud.
 
 **Solución:**
-1. Entra al panel `/admin/licencias` en cloud.
+1. Entra al panel `/panel/licencias` en cloud.
 2. Si la licencia expiró por soporte, actualiza la fecha `support_until` con `PATCH`.
 3. Si fue revocada por error, cambia el `status` a `ACTIVE` directamente desde el Django admin: `http://mallor.com/admin/offline/locallicense/`.
 4. En la app local, la próxima validación del worker (máx 60 min) actualizará el estado. Para forzar: reiniciar la app.

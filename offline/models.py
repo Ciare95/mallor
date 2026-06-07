@@ -48,6 +48,7 @@ class LocalConfig(models.Model):
     )
     sync_enabled = models.BooleanField(default=False)
     invoice_retry_enabled = models.BooleanField(default=True)
+    wizard_completed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -10,6 +10,11 @@ export const obtenerLicencia = async () => {
   return response.data;
 };
 
+export const completarWizardLocal = async () => {
+  const response = await api.post('/offline/wizard/completar/');
+  return response.data;
+};
+
 // Admin (cloud staff only)
 export const listarLicenciasAdmin = async () => {
   const response = await api.get('/offline/admin/licenses/');

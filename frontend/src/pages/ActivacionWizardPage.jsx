@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle, Key, Loader2, WifiOff, Zap } from 'lucide-react';
-import { activarLicencia } from '../services/licencias.service';
+import { activarLicencia, completarWizardLocal } from '../services/licencias.service';
 
 const STEP = {
   BIENVENIDA: 1,
@@ -43,7 +43,15 @@ export default function ActivacionWizardPage() {
     setStep(STEP.LOCAL_CONFIRMADO);
   }
 
-  function handleContinuar() {
+  async function handleContinuar() {
+    if (step === STEP.LOCAL_CONFIRMADO) {
+      try {
+        await completarWizardLocal();
+      } catch {
+        // Si falla el endpoint no bloqueamos al usuario — el localStorage sirve de respaldo
+      }
+      localStorage.setItem('mallor_wizard_done', '1');
+    }
     navigate('/', { replace: true });
   }
 

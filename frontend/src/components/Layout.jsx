@@ -170,7 +170,7 @@ export default function Layout() {
       hidden: !canAccessRoute('empresas-admin', { role: rolEmpresa, user }),
     },
     {
-      path: '/admin/licencias',
+      path: '/panel/licencias',
       label: 'Licencias',
       icon: KeyRound,
       end: false,

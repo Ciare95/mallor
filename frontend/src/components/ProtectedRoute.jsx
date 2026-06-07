@@ -36,6 +36,8 @@ export default function ProtectedRoute() {
     if (!isAuthenticated || checking) return;
     if (location.pathname === '/activar') return;
 
+    if (localStorage.getItem('mallor_wizard_done') === '1') return;
+
     obtenerEstadoOffline()
       .then((data) => {
         if (data?.local_server && data?.setup_completed === false) {

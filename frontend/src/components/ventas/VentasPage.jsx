@@ -924,6 +924,7 @@ function LocalPosStatusPanel({
   const counts = status?.counts || {};
   const offline = status?.mode === 'local' && !status?.online;
   const caja = status?.caja;
+  const syncEnabled = Boolean(status?.sync_enabled);
 
   return (
     <section className="surface border-amber-200 bg-amber-50/60 px-4 py-3">
@@ -948,11 +949,16 @@ function LocalPosStatusPanel({
           </div>
         </div>
 
-        <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[520px]">
-          <LocalStatusMetric label="Sync" value={counts.sync_pending || 0} />
-          <LocalStatusMetric label="Facturas" value={counts.invoice_pending || 0} />
-          <LocalStatusMetric label="Errores" value={(counts.sync_errors || 0) + (counts.invoice_errors || 0)} />
-        </div>
+        {syncEnabled && (
+          <div className="grid gap-2 sm:grid-cols-3 xl:min-w-[520px]">
+            <LocalStatusMetric label="Sync" value={counts.sync_pending || 0} />
+            <LocalStatusMetric label="Facturas" value={counts.invoice_pending || 0} />
+            <LocalStatusMetric
+              label="Errores"
+              value={(counts.sync_errors || 0) + (counts.invoice_errors || 0)}
+            />
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
           {!caja && (
@@ -965,23 +971,27 @@ function LocalPosStatusPanel({
               {openCashLoading ? 'Abriendo...' : 'Abrir caja'}
             </button>
           )}
-          <button
-            type="button"
-            onClick={onRetrySync}
-            disabled={retryLoading}
-            className="app-button-secondary min-h-10"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Sync
-          </button>
-          <button
-            type="button"
-            onClick={onRetryInvoices}
-            disabled={retryLoading}
-            className="app-button-secondary min-h-10"
-          >
-            Facturas
-          </button>
+          {syncEnabled && (
+            <>
+              <button
+                type="button"
+                onClick={onRetrySync}
+                disabled={retryLoading}
+                className="app-button-secondary min-h-10"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Sync
+              </button>
+              <button
+                type="button"
+                onClick={onRetryInvoices}
+                disabled={retryLoading}
+                className="app-button-secondary min-h-10"
+              >
+                Facturas
+              </button>
+            </>
+          )}
         </div>
       </div>
     </section>

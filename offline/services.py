@@ -229,20 +229,32 @@ class OfflineService:
                 }
                 if caja else None
             ),
+            'sync_enabled': config.sync_enabled,
             'counts': OfflineService.pending_counts(empresa),
             'setup_completed': OfflineService.is_setup_completed(empresa),
         }
 
     @staticmethod
     def is_setup_completed(empresa=None) -> bool:
-        """True when running in cloud mode or when a valid local license exists."""
+        """True when running in cloud mode, when a valid local license exists,
+        or when the user explicitly completed the wizard in local-only mode."""
         if getattr(settings, 'MALLOR_MODE', 'cloud') != 'local':
             return True
         empresa = empresa or get_empresa_actual_or_default()
-        return LocalLicense.objects.filter(
+        if LocalLicense.objects.filter(
             empresa=empresa,
             status__in=[LocalLicense.Status.ACTIVE, LocalLicense.Status.GRACE],
-        ).exists()
+        ).exists():
+            return True
+        config = LocalConfig.get_for_empresa(empresa)
+        return config.wizard_completed
+
+    @staticmethod
+    def completar_wizard_local(empresa) -> None:
+        """Marks the setup wizard as done for local-only mode (no license)."""
+        config = LocalConfig.get_for_empresa(empresa)
+        config.wizard_completed = True
+        config.save(update_fields=['wizard_completed', 'updated_at'])
 
     @staticmethod
     def activar_licencia(empresa, license_key: str) -> Dict[str, Any]:

@@ -186,6 +186,13 @@ class OfflineViewSet(viewsets.ViewSet):
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(result)
 
+    @action(detail=False, methods=['post'], url_path='wizard/completar')
+    def wizard_completar(self, request):
+        """Marks the setup wizard as done for local-only mode (no license key)."""
+        empresa = get_empresa_actual_or_default()
+        OfflineService.completar_wizard_local(empresa)
+        return Response({'wizard_completed': True})
+
 
 class LicenseVerifyView(APIView):
     """
