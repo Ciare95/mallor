@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
+import certifi
 
 block_cipher = None
 
@@ -24,6 +25,8 @@ a = Analysis(
         ("staticfiles", "staticfiles"),
         # Módulos de configuración de Django
         ("config", "config"),
+        # CA bundle de certifi para que requests pueda verificar TLS (ej. mallor.onrender.com)
+        (certifi.where(), "certifi"),
     ],
     hiddenimports=[
         # Backends de base de datos

@@ -13,6 +13,14 @@ def _get_data_dir() -> str:
     return data_dir
 
 
+def _configure_ssl() -> None:
+    """Point requests/httpx to the certifi bundle inside the PyInstaller bundle."""
+    if getattr(sys, 'frozen', False):
+        ca_bundle = os.path.join(sys._MEIPASS, 'certifi', 'cacert.pem')
+        os.environ.setdefault('REQUESTS_CA_BUNDLE', ca_bundle)
+        os.environ.setdefault('SSL_CERT_FILE', ca_bundle)
+
+
 def _configure_env(data_dir: str) -> None:
     db_path = os.path.join(data_dir, "db.sqlite3").replace("\\", "/")
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
@@ -65,6 +73,7 @@ def _start_worker() -> None:
 def main() -> None:
     data_dir = _get_data_dir()
     print(f"[mallor] Directorio de datos: {data_dir}", flush=True)
+    _configure_ssl()
     _configure_env(data_dir)
     _setup_django()
     _run_migrations()
