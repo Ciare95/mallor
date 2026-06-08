@@ -292,11 +292,20 @@ class UsuarioCreateSerializer(serializers.ModelSerializer):
 class UsuarioUpdateSerializer(serializers.ModelSerializer):
     """
     Serializer para actualización de usuarios.
-    
-    Permite actualizar información básica del usuario sin modificar
-    campos sensibles como password (se maneja en endpoint separado).
+
+    Permite actualizar información básica del usuario. Si se incluye
+    'password', se actualiza la contraseña; si se omite o es vacío, no se modifica.
     """
-    
+
+    password = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        write_only=True,
+        min_length=8,
+        help_text=_('Nueva contraseña del usuario (opcional)')
+    )
+
     email = serializers.EmailField(
         required=False,
         validators=[EmailValidator()],
@@ -335,6 +344,7 @@ class UsuarioUpdateSerializer(serializers.ModelSerializer):
             'role',
             'phone',
             'is_active',
+            'password',
         ]
         extra_kwargs = {
             'first_name': {
