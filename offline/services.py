@@ -11,6 +11,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from empresa.context import get_empresa_actual_or_default
+from empresa.models import EmpresaUsuario
 from ventas.models import Venta, VentaFacturaElectronica
 
 from .models import (
@@ -317,6 +318,39 @@ class OfflineService:
         config.cloud_api_url = cloud_base
         config.sync_enabled = True
         config.save(update_fields=['cloud_api_url', 'sync_enabled', 'updated_at'])
+
+        # Crear usuarios del cloud localmente con contraseña temporal mallor1234
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        for u_data in data.get('usuarios', []):
+            username = u_data.get('username', '').strip()
+            email = u_data.get('email', '').strip()
+            if not username or not email:
+                continue
+            usuario, created = User.objects.get_or_create(
+                username=username,
+                defaults={
+                    'email': email,
+                    'first_name': u_data.get('first_name', ''),
+                    'last_name': u_data.get('last_name', ''),
+                },
+            )
+            if not created:
+                usuario.email = email
+                usuario.first_name = u_data.get('first_name', usuario.first_name)
+                usuario.last_name = u_data.get('last_name', usuario.last_name)
+                usuario.save(update_fields=['email', 'first_name', 'last_name'])
+            if created:
+                usuario.set_password('mallor1234')
+                usuario.save(update_fields=['password'])
+            if hasattr(usuario, 'phone') and u_data.get('phone'):
+                usuario.phone = u_data['phone']
+                usuario.save(update_fields=['phone'])
+            EmpresaUsuario.objects.get_or_create(
+                empresa=empresa,
+                usuario=usuario,
+                defaults={'rol': u_data.get('rol', EmpresaUsuario.Rol.EMPLEADO), 'activo': True},
+            )
 
         return {
             'activated': True,
