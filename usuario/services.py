@@ -380,8 +380,8 @@ class UsuarioService:
             >>> UsuarioService.validar_permisos(usuario_empleado, 'crear_usuario')
             False
         """
-        # Administradores tienen acceso completo
-        if usuario.is_admin:
+        # Superusuarios y administradores tienen acceso completo
+        if usuario.is_superuser or usuario.is_staff or usuario.is_admin:
             return True
         
         # Empleados tienen permisos limitados

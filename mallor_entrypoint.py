@@ -57,7 +57,10 @@ def _seed_superuser() -> None:
     User = get_user_model()
     if not User.objects.filter(is_superuser=True).exists():
         print("[mallor] Creando superusuario semilla admin/mallor1234...", flush=True)
-        User.objects.create_superuser(username="admin", password="mallor1234", email="")
+        User.objects.create_superuser(
+            username="admin", password="mallor1234", email="",
+            role=User.Rol.ADMIN,
+        )
         print("[mallor] Superusuario creado.", flush=True)
 
 
