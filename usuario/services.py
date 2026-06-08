@@ -255,11 +255,17 @@ class UsuarioService:
             if usuario_solicitante and not usuario_solicitante.is_admin:
                 raise PermisoDenegadoError(_("desactivar administradores"))
         
+        # Extraer password antes de iterar (requiere set_password, no setattr)
+        password = data.pop('password', None)
+
         # Actualizar campos
         for campo, valor in data.items():
             if hasattr(usuario, campo):
                 setattr(usuario, campo, valor)
-        
+
+        if password:
+            usuario.set_password(password)
+
         # Guardar cambios
         usuario.save()
         return usuario
