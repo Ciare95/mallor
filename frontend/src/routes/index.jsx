@@ -5,6 +5,8 @@ import ProtectedRoute from '../components/ProtectedRoute';
 import RoleRoute from '../components/RoleRoute';
 
 const LoginPage = lazy(() => import('../pages/LoginPage'));
+const ForgotPasswordPage = lazy(() => import('../pages/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('../pages/ResetPasswordPage'));
 const ActivacionWizardPage = lazy(() => import('../pages/ActivacionWizardPage'));
 const AdminLicenciasPage = lazy(() => import('../pages/admin/AdminLicenciasPage'));
 const HomePage = lazy(() => import('../pages/HomePage'));
@@ -45,6 +47,14 @@ export const router = createBrowserRouter([
   {
     path: '/login',
     element: withSuspense(LoginPage),
+  },
+  {
+    path: '/forgot-password',
+    element: withSuspense(ForgotPasswordPage),
+  },
+  {
+    path: '/reset-password',
+    element: withSuspense(ResetPasswordPage),
   },
   {
     path: '/',

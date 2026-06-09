@@ -1,4 +1,7 @@
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.exceptions import PermissionDenied
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 from django.utils.translation import gettext_lazy as _
 from rest_framework import serializers
 from rest_framework_simplejwt.exceptions import TokenError
@@ -73,4 +76,31 @@ class LogoutSerializer(serializers.Serializer):
         request = self.context['request']
         refresh = AuthService.extract_refresh_from_request(request)
         attrs['refresh'] = refresh
+        return attrs
+
+
+class ForgotPasswordSerializer(serializers.Serializer):
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return value.lower().strip()
+
+
+class ResetPasswordSerializer(serializers.Serializer):
+    uid = serializers.CharField()
+    token = serializers.CharField()
+    new_password = serializers.CharField(min_length=8, write_only=True, trim_whitespace=False)
+
+    def validate(self, attrs):
+        try:
+            uid = force_str(urlsafe_base64_decode(attrs['uid']))
+            user = Usuario.objects.get(pk=uid)
+        except (TypeError, ValueError, Usuario.DoesNotExist):
+            raise serializers.ValidationError({'uid': _('Enlace de recuperación inválido.')})
+
+        generator = PasswordResetTokenGenerator()
+        if not generator.check_token(user, attrs['token']):
+            raise serializers.ValidationError({'token': _('El enlace ha expirado o ya fue usado.')})
+
+        attrs['user'] = user
         return attrs

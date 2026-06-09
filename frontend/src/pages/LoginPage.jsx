@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, LockKeyhole, LogIn } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import mallorLogo from '../assets/mallor-logo.png';
@@ -176,6 +176,15 @@ export default function LoginPage() {
                 <LogIn className="h-4 w-4" />
                 {loading ? 'Validando...' : 'Entrar'}
               </button>
+
+              <div className="text-center">
+                <Link
+                  to="/forgot-password"
+                  className="text-[12px] font-semibold text-soft transition hover:text-main"
+                >
+                  ¿Olvidaste tu contraseña?
+                </Link>
+              </div>
             </div>
             </form>
           </div>

@@ -24,9 +24,25 @@ export const obtenerSesionActual = async () => {
   return response.data;
 };
 
+export const forgotPassword = async (email) => {
+  const response = await api.post('/auth/forgot-password/', { email });
+  return response.data;
+};
+
+export const resetPassword = async ({ uid, token, newPassword }) => {
+  const response = await api.post('/auth/reset-password/', {
+    uid,
+    token,
+    new_password: newPassword,
+  });
+  return response.data;
+};
+
 export default {
   login,
   refreshSession,
   logout,
   obtenerSesionActual,
+  forgotPassword,
+  resetPassword,
 };

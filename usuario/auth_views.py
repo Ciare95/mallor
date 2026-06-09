@@ -1,4 +1,9 @@
+from django.conf import settings
+from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.exceptions import PermissionDenied
+from django.core.mail import send_mail
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -6,11 +11,14 @@ from rest_framework_simplejwt.exceptions import TokenError
 
 from empresa.services import EmpresaService
 from usuario.auth_serializers import (
+    ForgotPasswordSerializer,
     LoginSerializer,
     LogoutSerializer,
     RefreshSerializer,
+    ResetPasswordSerializer,
 )
 from usuario.auth_services import AuthService
+from usuario.models import Usuario
 
 
 class LoginView(APIView):
@@ -109,5 +117,65 @@ class MeView(APIView):
 
         return Response(
             AuthService.build_session_payload(request.user, empresa),
+            status=status.HTTP_200_OK,
+        )
+
+
+class ForgotPasswordView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = ForgotPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        email = serializer.validated_data['email']
+
+        try:
+            user = Usuario.objects.get(email__iexact=email)
+        except Usuario.DoesNotExist:
+            # Respuesta idéntica para no revelar si el email existe
+            return Response(
+                {'detail': 'Si el correo existe, recibirás las instrucciones en breve.'},
+                status=status.HTTP_200_OK,
+            )
+
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = PasswordResetTokenGenerator().make_token(user)
+        reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}"
+
+        send_mail(
+            subject='Recuperar contraseña — Mallor',
+            message=(
+                f'Hola {user.get_full_name() or user.username},\n\n'
+                f'Haz clic en el siguiente enlace para crear una nueva contraseña:\n\n'
+                f'{reset_url}\n\n'
+                f'Este enlace expira en 24 horas y solo puede usarse una vez.\n\n'
+                f'Si no solicitaste esto, ignora este mensaje.'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+
+        return Response(
+            {'detail': 'Si el correo existe, recibirás las instrucciones en breve.'},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ResetPasswordView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = ResetPasswordSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data['user']
+        user.set_password(serializer.validated_data['new_password'])
+        user.save(update_fields=['password'])
+
+        return Response(
+            {'detail': 'Contraseña actualizada correctamente.'},
             status=status.HTTP_200_OK,
         )
