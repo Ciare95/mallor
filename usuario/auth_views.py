@@ -149,19 +149,25 @@ class ForgotPasswordView(APIView):
         token = PasswordResetTokenGenerator().make_token(user)
         reset_url = f"{settings.FRONTEND_URL}/reset-password?uid={uid}&token={token}"
 
-        send_mail(
-            subject='Recuperar contraseña — Mallor',
-            message=(
-                f'Hola {user.get_full_name() or user.username},\n\n'
-                f'Haz clic en el siguiente enlace para crear una nueva contraseña:\n\n'
-                f'{reset_url}\n\n'
-                f'Este enlace expira en 24 horas y solo puede usarse una vez.\n\n'
-                f'Si no solicitaste esto, ignora este mensaje.'
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
-        )
+        try:
+            send_mail(
+                subject='Recuperar contraseña — Mallor',
+                message=(
+                    f'Hola {user.get_full_name() or user.username},\n\n'
+                    f'Haz clic en el siguiente enlace para crear una nueva contraseña:\n\n'
+                    f'{reset_url}\n\n'
+                    f'Este enlace expira en 24 horas y solo puede usarse una vez.\n\n'
+                    f'Si no solicitaste esto, ignora este mensaje.'
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+        except Exception:
+            return Response(
+                {'detail': 'No fue posible enviar el correo. Verifica la configuración de email del servidor.'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         return Response(
             {'detail': 'Si el usuario existe y tiene correo registrado, recibirás las instrucciones en breve.'},
