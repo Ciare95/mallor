@@ -80,10 +80,7 @@ class LogoutSerializer(serializers.Serializer):
 
 
 class ForgotPasswordSerializer(serializers.Serializer):
-    email = serializers.EmailField()
-
-    def validate_email(self, value):
-        return value.lower().strip()
+    username = serializers.CharField(max_length=150)
 
 
 class ResetPasswordSerializer(serializers.Serializer):

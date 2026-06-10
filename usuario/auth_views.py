@@ -128,14 +128,20 @@ class ForgotPasswordView(APIView):
     def post(self, request):
         serializer = ForgotPasswordSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data['email']
+        username = serializer.validated_data['username']
 
         try:
-            user = Usuario.objects.get(email__iexact=email)
+            user = Usuario.objects.get(username=username)
         except Usuario.DoesNotExist:
-            # Respuesta idéntica para no revelar si el email existe
+            # Respuesta idéntica para no revelar si el usuario existe
             return Response(
-                {'detail': 'Si el correo existe, recibirás las instrucciones en breve.'},
+                {'detail': 'Si el usuario existe y tiene correo registrado, recibirás las instrucciones en breve.'},
+                status=status.HTTP_200_OK,
+            )
+
+        if not user.email:
+            return Response(
+                {'detail': 'Si el usuario existe y tiene correo registrado, recibirás las instrucciones en breve.'},
                 status=status.HTTP_200_OK,
             )
 
@@ -158,7 +164,7 @@ class ForgotPasswordView(APIView):
         )
 
         return Response(
-            {'detail': 'Si el correo existe, recibirás las instrucciones en breve.'},
+            {'detail': 'Si el usuario existe y tiene correo registrado, recibirás las instrucciones en breve.'},
             status=status.HTTP_200_OK,
         )
 

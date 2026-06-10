@@ -6,7 +6,7 @@ import mallorLogo from '../assets/mallor-logo.png';
 import mallorLogoDark from '../assets/mallor-logo-dark.png';
 
 export default function ForgotPasswordPage() {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
@@ -14,14 +14,14 @@ export default function ForgotPasswordPage() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setError('');
-    if (!email.trim()) {
-      setError('Ingresa tu correo electrónico.');
+    if (!username.trim()) {
+      setError('Ingresa tu nombre de usuario.');
       return;
     }
 
     setLoading(true);
     try {
-      await forgotPassword(email.trim());
+      await forgotPassword(username.trim());
       setSent(true);
     } catch {
       setError('No fue posible enviar el correo. Intenta de nuevo.');
@@ -55,14 +55,14 @@ export default function ForgotPasswordPage() {
                 </div>
                 <h2 className="mt-4 section-title">Recuperar contraseña</h2>
                 <p className="mt-1 text-[13px] text-muted">
-                  Ingresa tu correo y te enviaremos un enlace para crear una nueva contraseña.
+                  Ingresa tu usuario y enviaremos las instrucciones al correo registrado en tu cuenta.
                 </p>
               </div>
 
               {sent ? (
                 <div className="space-y-4">
                   <div className="rounded-lg border border-green-200 bg-green-50 px-3.5 py-3 text-[13px] font-semibold text-green-700">
-                    Si el correo está registrado, recibirás las instrucciones en breve. Revisa también tu carpeta de spam.
+                    Si el usuario existe y tiene correo registrado, recibirás las instrucciones en breve. Revisa también tu carpeta de spam.
                   </div>
                   <Link
                     to="/login"
@@ -75,13 +75,13 @@ export default function ForgotPasswordPage() {
               ) : (
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <label className="app-field">
-                    <span className="app-field-label">Correo electrónico</span>
+                    <span className="app-field-label">Usuario</span>
                     <input
                       className="app-input"
-                      type="email"
-                      autoComplete="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
+                      type="text"
+                      autoComplete="username"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
                     />
                   </label>
 
