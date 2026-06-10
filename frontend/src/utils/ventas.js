@@ -88,13 +88,104 @@ export const extractApiError = (error, fallback = 'Ocurrio un error') => {
   return formatApiErrorValue(data) || fallback;
 };
 
+const FIELD_LABELS = {
+  password: 'Contraseña',
+  confirm_password: 'Confirmar contraseña',
+  email: 'Correo electrónico',
+  username: 'Usuario',
+  nombre: 'Nombre',
+  apellido: 'Apellido',
+  telefono: 'Teléfono',
+  direccion: 'Dirección',
+  nit: 'NIT',
+  razon_social: 'Razón social',
+  propietario: 'Propietario',
+  non_field_errors: '',
+};
+
+const translateDjangoMessage = (msg) => {
+  const exact = {
+    // Campos generales
+    'This field may not be blank.': 'Este campo no puede estar vacío.',
+    'This field is required.': 'Este campo es requerido.',
+    'This field may not be null.': 'Este campo no puede ser nulo.',
+    'A valid integer is required.': 'Se requiere un número entero válido.',
+    'A valid number is required.': 'Se requiere un número válido.',
+    'Enter a valid URL.': 'Ingresa una URL válida.',
+    'Enter a valid email address.': 'Ingresa un correo electrónico válido.',
+    'Enter a valid date.': 'Ingresa una fecha válida.',
+    'Enter a valid time.': 'Ingresa una hora válida.',
+    'Enter a valid date/time.': 'Ingresa una fecha y hora válida.',
+    'Enter a whole number.': 'Ingresa un número entero.',
+    'Enter a number.': 'Ingresa un número.',
+    // Unicidad
+    'This field must be unique.': 'Este valor ya está registrado.',
+    'The fields must make a unique set.': 'Esta combinación de campos ya existe.',
+    // Usuarios y autenticación
+    'A user with that username already exists.': 'Ya existe un usuario con ese nombre de usuario.',
+    'A user with that email already exists.': 'Ya existe un usuario con ese correo electrónico.',
+    'Unable to log in with provided credentials.': 'Credenciales incorrectas.',
+    'No active account found with the given credentials.': 'No se encontró una cuenta activa con esas credenciales.',
+    // Contraseñas
+    'This password is too short. It must contain at least 8 characters.': 'La contraseña es muy corta. Debe tener al menos 8 caracteres.',
+    'This password is too common.': 'La contraseña es demasiado común.',
+    'This password is entirely numeric.': 'La contraseña no puede ser solo números.',
+    'The two password fields didn\'t match.': 'Las contraseñas no coinciden.',
+    'Passwords do not match.': 'Las contraseñas no coinciden.',
+    // Valores numéricos
+    'Ensure this value is greater than or equal to 0.': 'El valor debe ser mayor o igual a 0.',
+    'Ensure this value is less than or equal to 0.': 'El valor debe ser menor o igual a 0.',
+  };
+  if (exact[msg]) return exact[msg];
+
+  let m = msg.match(/Ensure this field has at least (\d+) characters?\./);
+  if (m) return `Debe tener al menos ${m[1]} caracteres.`;
+
+  m = msg.match(/Ensure this field has no more than (\d+) characters?\./);
+  if (m) return `No puede tener más de ${m[1]} caracteres.`;
+
+  m = msg.match(/Ensure this value has at least (\d+) characters?\./);
+  if (m) return `Debe tener al menos ${m[1]} caracteres.`;
+
+  m = msg.match(/Ensure this value has no more than (\d+) characters?\./);
+  if (m) return `No puede tener más de ${m[1]} caracteres.`;
+
+  m = msg.match(/Ensure this value is greater than or equal to (.+)\./);
+  if (m) return `El valor debe ser mayor o igual a ${m[1]}.`;
+
+  m = msg.match(/Ensure this value is less than or equal to (.+)\./);
+  if (m) return `El valor debe ser menor o igual a ${m[1]}.`;
+
+  m = msg.match(/Ensure this value is greater than (.+)\./);
+  if (m) return `El valor debe ser mayor que ${m[1]}.`;
+
+  m = msg.match(/Ensure this value is less than (.+)\./);
+  if (m) return `El valor debe ser menor que ${m[1]}.`;
+
+  m = msg.match(/Invalid pk "(.+)" - object does not exist\./);
+  if (m) return `El elemento seleccionado no existe.`;
+
+  m = msg.match(/Object with .+ does not exist\./);
+  if (m) return `El elemento seleccionado no existe.`;
+
+  return msg;
+};
+
+const getFieldLabel = (path) => {
+  if (!path) return '';
+  const lastKey = path.split('.').pop();
+  return FIELD_LABELS[lastKey] ?? lastKey;
+};
+
 const formatApiErrorValue = (value, path = '') => {
   if (value === undefined || value === null || value === '') {
     return '';
   }
 
   if (typeof value === 'string') {
-    return path ? `${path}: ${value}` : value;
+    const label = getFieldLabel(path);
+    const message = translateDjangoMessage(value);
+    return label ? `${label}: ${message}` : message;
   }
 
   if (Array.isArray(value)) {
@@ -119,7 +210,7 @@ const formatApiErrorValue = (value, path = '') => {
     return messages.join(' | ');
   }
 
-  return path ? `${path}: ${value}` : String(value);
+  return path ? `${getFieldLabel(path)}: ${value}` : String(value);
 };
 
 export const resolveFacturaErrorMessage = (factura) => {
