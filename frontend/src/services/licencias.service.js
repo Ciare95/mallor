@@ -35,3 +35,7 @@ export const revocarLicenciaAdmin = async (id) => {
   const response = await api.post(`/offline/admin/licenses/${id}/revocar/`);
   return response.data;
 };
+
+export const eliminarLicenciaAdmin = async (id) => {
+  await api.delete(`/offline/admin/licenses/${id}/`);
+};

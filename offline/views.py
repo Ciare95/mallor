@@ -268,7 +268,7 @@ class LicenseAdminViewSet(
 
     serializer_class = LocalLicenseAdminSerializer
     permission_classes = [permissions.IsAuthenticated]
-    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_queryset(self):
         EmpresaService.validar_admin_interno(self.request.user)
@@ -281,6 +281,17 @@ class LicenseAdminViewSet(
     def perform_update(self, serializer):
         EmpresaService.validar_admin_interno(self.request.user)
         serializer.save()
+
+    def destroy(self, request, *args, **kwargs):
+        EmpresaService.validar_admin_interno(request.user)
+        license_obj = self.get_object()
+        if license_obj.status != LocalLicense.Status.REVOKED:
+            return Response(
+                {'detail': 'Solo se pueden eliminar licencias revocadas.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        license_obj.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'], url_path='revocar')
     def revocar(self, request, pk=None):

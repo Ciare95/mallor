@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CheckCircle, Copy, Key, PlusCircle, ShieldOff, XCircle } from 'lucide-react';
+import { CheckCircle, Copy, Key, PlusCircle, ShieldOff, Trash2, XCircle } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import useToast from '../../hooks/useToast';
 import Toast from '../../components/ui/Toast';
@@ -7,6 +7,7 @@ import {
   listarLicenciasAdmin,
   crearLicenciaAdmin,
   revocarLicenciaAdmin,
+  eliminarLicenciaAdmin,
 } from '../../services/licencias.service';
 import { listarEmpresasAdmin } from '../../services/empresas.service';
 
@@ -196,6 +197,15 @@ export default function AdminLicenciasPage() {
     onError: () => toast.error('No se pudo revocar la licencia.'),
   });
 
+  const eliminarMutation = useMutation({
+    mutationFn: (id) => eliminarLicenciaAdmin(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-licencias'] });
+      toast.success('Licencia eliminada.');
+    },
+    onError: () => toast.error('No se pudo eliminar la licencia.'),
+  });
+
   function handleCreada(license) {
     queryClient.invalidateQueries({ queryKey: ['admin-licencias'] });
     setShowModal(false);
@@ -205,6 +215,11 @@ export default function AdminLicenciasPage() {
   function handleRevocar(license) {
     if (!window.confirm(`¿Revocar la licencia de ${license.empresa_nombre}? Esta acción deshabilitará el sync en el equipo del cliente.`)) return;
     revocarMutation.mutate(license.id);
+  }
+
+  function handleEliminar(license) {
+    if (!window.confirm(`¿Eliminar permanentemente la licencia de ${license.empresa_nombre}? Esta acción no se puede deshacer.`)) return;
+    eliminarMutation.mutate(license.id);
   }
 
   const rows = Array.isArray(licencias) ? licencias : (licencias?.results ?? []);
@@ -268,16 +283,29 @@ export default function AdminLicenciasPage() {
                       <CopiarKeyBtn licenseKey={lic.license_key} />
                     </td>
                     <td className="px-4 py-3">
-                      {lic.status !== 'REVOKED' && (
-                        <button
-                          onClick={() => handleRevocar(lic)}
-                          title="Revocar licencia"
-                          className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-danger/80 hover:bg-danger/10 hover:text-danger transition"
-                        >
-                          <ShieldOff className="h-3.5 w-3.5" />
-                          Revocar
-                        </button>
-                      )}
+                      <div className="flex items-center gap-1">
+                        {lic.status !== 'REVOKED' && (
+                          <button
+                            onClick={() => handleRevocar(lic)}
+                            title="Revocar licencia"
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-danger/80 hover:bg-danger/10 hover:text-danger transition"
+                          >
+                            <ShieldOff className="h-3.5 w-3.5" />
+                            Revocar
+                          </button>
+                        )}
+                        {lic.status === 'REVOKED' && (
+                          <button
+                            onClick={() => handleEliminar(lic)}
+                            title="Eliminar licencia"
+                            disabled={eliminarMutation.isPending}
+                            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs text-danger/80 hover:bg-danger/10 hover:text-danger transition disabled:opacity-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Eliminar
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
