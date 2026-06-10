@@ -1,11 +1,12 @@
 import api from './api';
 
-export const login = async ({ username, password, rememberMe, empresaId }) => {
+export const login = async ({ username, password, rememberMe, empresaId, turnstileToken }) => {
   const response = await api.post('/auth/login/', {
     username,
     password,
     remember_me: rememberMe,
     empresa_id: empresaId || undefined,
+    cf_turnstile_response: turnstileToken || '',
   });
   return response.data;
 };

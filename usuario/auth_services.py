@@ -29,6 +29,37 @@ class AuthService:
         return request.META.get('REMOTE_ADDR', 'unknown')
 
     @staticmethod
+    def verify_turnstile(request, token: str) -> None:
+        import requests as http_requests
+        from django.conf import settings as django_settings
+
+        if not django_settings.TURNSTILE_ENABLED or not django_settings.TURNSTILE_SECRET_KEY:
+            return
+        if not token:
+            raise serializers.ValidationError(
+                {'detail': 'Se requiere completar la verificación de seguridad.'},
+            )
+        try:
+            resp = http_requests.post(
+                'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+                data={
+                    'secret': django_settings.TURNSTILE_SECRET_KEY,
+                    'response': token,
+                    'remoteip': AuthService.get_client_ip(request),
+                },
+                timeout=5,
+            )
+            result = resp.json()
+        except Exception:
+            raise serializers.ValidationError(
+                {'detail': 'No fue posible verificar la seguridad. Intente de nuevo.'},
+            )
+        if not result.get('success'):
+            raise serializers.ValidationError(
+                {'detail': 'Verificación de seguridad fallida. Recargue la página e intente de nuevo.'},
+            )
+
+    @staticmethod
     def _rate_limit_key(request, username: str) -> str:
         ip = AuthService.get_client_ip(request)
         normalized = (username or '').strip().lower()

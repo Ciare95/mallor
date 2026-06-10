@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, LockKeyhole, LogIn } from 'lucide-react';
+import { Turnstile } from '@marsidev/react-turnstile';
 import { useAuth } from '../hooks/useAuth';
 import mallorLogo from '../assets/mallor-logo.png';
 import mallorLogoDark from '../assets/mallor-logo-dark.png';
@@ -18,6 +19,11 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileRef = useRef(null);
+
+  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
+  const captchaReady = !siteKey || Boolean(turnstileToken);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -33,6 +39,7 @@ export default function LoginPage() {
         username: form.username.trim(),
         password: form.password,
         rememberMe: form.rememberMe,
+        turnstileToken,
       });
       const empresaActiva = session.empresas?.find(
         (item) => String(item.id) === String(session.empresa_activa),
@@ -46,6 +53,8 @@ export default function LoginPage() {
         { replace: true },
       );
     } catch (requestError) {
+      turnstileRef.current?.reset();
+      setTurnstileToken('');
       setError(
         requestError.response?.data?.detail
         || requestError.response?.data?.non_field_errors?.[0]
@@ -162,6 +171,17 @@ export default function LoginPage() {
                 />
               </label>
 
+              {siteKey && (
+                <Turnstile
+                  ref={turnstileRef}
+                  siteKey={siteKey}
+                  onSuccess={(token) => setTurnstileToken(token)}
+                  onExpire={() => setTurnstileToken('')}
+                  onError={() => setTurnstileToken('')}
+                  options={{ theme: 'auto', size: 'flexible', language: 'es' }}
+                />
+              )}
+
               {error && (
                 <div className="rounded-lg border border-red-200 bg-red-50 px-3.5 py-3 text-[12px] font-semibold text-red-700">
                   {error}
@@ -170,7 +190,7 @@ export default function LoginPage() {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !captchaReady}
                 className="app-button-primary min-h-11 w-full"
               >
                 <LogIn className="h-4 w-4" />

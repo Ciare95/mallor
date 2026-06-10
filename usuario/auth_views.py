@@ -26,6 +26,10 @@ class LoginView(APIView):
     authentication_classes = []
 
     def post(self, request):
+        AuthService.verify_turnstile(
+            request,
+            request.data.get('cf_turnstile_response', ''),
+        )
         serializer = LoginSerializer(
             data=request.data,
             context={'request': request},
