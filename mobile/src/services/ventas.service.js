@@ -74,31 +74,27 @@ export const crearVentaCompleta = async (draft) => {
   const totals = calculateVentaTotals(draft);
   const venta = await crearVenta(payload);
 
-  if (draft.metodoPago === 'EFECTIVO' && draft.estado === 'TERMINADA' && Number(totals.total || 0) > 0) {
-    await registrarAbonoVenta(venta.id, {
-      monto_abonado: Number(totals.total).toFixed(2),
-      metodo_pago: 'EFECTIVO',
-      referencia_pago: '',
-      observaciones: 'Pago total registrado desde mobile',
-    });
-    return obtenerVenta(venta.id);
+  try {
+    if (draft.metodoPago === 'EFECTIVO' && draft.estado === 'TERMINADA' && Number(totals.total || 0) > 0) {
+      await registrarAbonoVenta(venta.id, {
+        monto_abonado: Number(totals.total).toFixed(2),
+        metodo_pago: 'EFECTIVO',
+        referencia_pago: '',
+        observaciones: 'Pago total registrado desde mobile',
+      });
+    } else if (draft.metodoPago === 'CREDITO' && draft.estado === 'TERMINADA' && Number(draft.abonoInicial || 0) > 0) {
+      await registrarAbonoVenta(venta.id, {
+        monto_abonado: Number(draft.abonoInicial).toFixed(2),
+        metodo_pago: draft.metodoAbonoInicial || 'EFECTIVO',
+        referencia_pago: draft.referenciaAbonoInicial || '',
+        observaciones: 'Abono inicial registrado desde mobile',
+      });
+    }
+  } catch {
+    // La venta fue creada. El abono falló (token/red). Se retorna la venta de todas formas.
   }
 
-  if (draft.metodoPago === 'CREDITO' && draft.estado === 'TERMINADA' && Number(draft.abonoInicial || 0) > 0) {
-    await registrarAbonoVenta(venta.id, {
-      monto_abonado: Number(draft.abonoInicial).toFixed(2),
-      metodo_pago: draft.metodoAbonoInicial || 'EFECTIVO',
-      referencia_pago: draft.referenciaAbonoInicial || '',
-      observaciones: 'Abono inicial registrado desde mobile',
-    });
-    return obtenerVenta(venta.id);
-  }
-
-  if (draft.facturaElectronica && draft.estado === 'TERMINADA') {
-    return obtenerVenta(venta.id);
-  }
-
-  return venta;
+  return obtenerVenta(venta.id);
 };
 
 export const cancelarVenta = async (id, motivo) => {

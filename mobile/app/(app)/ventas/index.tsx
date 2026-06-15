@@ -47,13 +47,13 @@ export default function VentasScreen() {
             )}
             onEndReached={() => hasNextPage && fetchNextPage()}
             onEndReachedThreshold={0.4}
+            contentContainerStyle={ventas.length > 0 ? { paddingTop: Spacing.sm, paddingBottom: 90 } : { flex: 1 }}
             ListEmptyComponent={
               <View style={styles.empty}>
                 <Text style={styles.emptyText}>Sin ventas</Text>
               </View>
             }
             ListFooterComponent={isFetchingNextPage ? <ActivityIndicator style={{ margin: Spacing.md }} /> : null}
-            contentContainerStyle={ventas.length === 0 ? { flex: 1 } : undefined}
           />
         )}
 
@@ -66,17 +66,20 @@ export default function VentasScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Colors.canvas },
-  filterBar: { backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border, maxHeight: 48 },
+  filterBar: { backgroundColor: Colors.surface, borderBottomWidth: 1, borderBottomColor: Colors.border, maxHeight: 52 },
   filterContent: { paddingHorizontal: Spacing.md, gap: Spacing.sm, alignItems: 'center' },
-  chip: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 4, borderWidth: 1, borderColor: Colors.border },
+  chip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
   chipActive: { backgroundColor: Colors.ctaBg, borderColor: Colors.ctaBg },
-  chipText: Typography.secondary,
-  chipTextActive: { color: Colors.ctaText },
+  chipText: { ...Typography.secondary, fontWeight: '500' },
+  chipTextActive: { color: Colors.ctaText, fontWeight: '600' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   emptyText: Typography.secondary,
   fab: {
     position: 'absolute', bottom: Spacing.lg, right: Spacing.md,
-    backgroundColor: Colors.ctaBg, borderRadius: 6, paddingHorizontal: Spacing.md, paddingVertical: 10,
+    backgroundColor: Colors.ctaBg, borderRadius: 999,
+    paddingHorizontal: 20, paddingVertical: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 5,
   },
-  fabText: { ...Typography.body, color: Colors.ctaText, fontWeight: '600' },
+  fabText: { ...Typography.body, color: Colors.ctaText, fontWeight: '700' },
 });

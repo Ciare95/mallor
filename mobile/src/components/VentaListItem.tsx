@@ -1,11 +1,18 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Badge } from './Badge';
-import { Colors, Spacing, Typography } from '../theme';
+import { Colors, Radius, Spacing, Typography } from '../theme';
 import { getVentaEstadoBadge } from '../utils/ventas';
 
 interface Props {
-  venta: { id: number; numero_venta: string; fecha_venta: string; cliente?: { nombre_completo: string } | null; total: string; estado: string };
+  venta: {
+    id: number;
+    numero_venta: string;
+    fecha_venta: string;
+    cliente?: { nombre_completo: string } | null;
+    total: string;
+    estado: string;
+  };
   onPress: () => void;
 }
 
@@ -15,12 +22,12 @@ export function VentaListItem({ venta, onPress }: Props) {
   const fecha = venta.fecha_venta?.slice(0, 10) ?? '';
 
   return (
-    <Pressable style={styles.container} onPress={onPress}>
-      <View style={styles.row}>
-        <Text style={styles.numero}>#{venta.numero_venta}</Text>
+    <Pressable style={styles.card} onPress={onPress} android_ripple={{ color: '#f5f5f5' }}>
+      <View style={styles.topRow}>
+        <Text style={styles.numero}>{venta.numero_venta}</Text>
         <Text style={styles.total}>${Number(venta.total).toLocaleString('es-CO')}</Text>
       </View>
-      <View style={styles.row}>
+      <View style={styles.midRow}>
         <Text style={styles.cliente} numberOfLines={1}>{cliente}</Text>
         <Badge label={venta.estado} tone={tone} />
       </View>
@@ -30,17 +37,23 @@ export function VentaListItem({ venta, onPress }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: {
+  card: {
     backgroundColor: Colors.surface,
-    paddingVertical: 14,
-    paddingHorizontal: Spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-    gap: 4,
+    marginHorizontal: Spacing.md,
+    marginVertical: 5,
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  numero: { ...Typography.body, fontWeight: '600' },
-  total: { ...Typography.body, fontWeight: '600' },
-  cliente: { ...Typography.secondary, flex: 1, marginRight: Spacing.sm },
-  fecha: { ...Typography.secondary },
+  topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  numero: { ...Typography.body, fontWeight: '700' },
+  total: { fontSize: 18, fontWeight: '700', color: Colors.textPrimary },
+  midRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
+  cliente: { ...Typography.secondary, flex: 1 },
+  fecha: Typography.secondary,
 });
