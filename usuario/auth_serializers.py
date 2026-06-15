@@ -79,6 +79,31 @@ class LogoutSerializer(serializers.Serializer):
         return attrs
 
 
+class MobileLoginSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=150)
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
+    empresa_id = serializers.IntegerField(required=False, min_value=1)
+
+    def validate(self, attrs):
+        request = self.context['request']
+        username = attrs['username']
+        password = attrs['password']
+        empresa_id = attrs.get('empresa_id')
+
+        try:
+            user = AuthService.authenticate_user(request, username, password)
+            empresa = AuthService.resolve_login_empresa(user, empresa_id)
+        except AuthRateLimitError as exc:
+            raise serializers.ValidationError({'detail': str(exc)}) from exc
+        except PermissionDenied:
+            raise
+
+        attrs['user'] = user
+        attrs['empresa'] = empresa
+        attrs['tokens'] = AuthService.issue_tokens(user, remember_me=True)
+        return attrs
+
+
 class ForgotPasswordSerializer(serializers.Serializer):
     username = serializers.CharField(max_length=150)
 

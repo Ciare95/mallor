@@ -14,6 +14,7 @@ from usuario.auth_serializers import (
     ForgotPasswordSerializer,
     LoginSerializer,
     LogoutSerializer,
+    MobileLoginSerializer,
     RefreshSerializer,
     ResetPasswordSerializer,
 )
@@ -195,3 +196,23 @@ class ResetPasswordView(APIView):
             {'detail': 'Contraseña actualizada correctamente.'},
             status=status.HTTP_200_OK,
         )
+
+
+class MobileLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def post(self, request):
+        serializer = MobileLoginSerializer(
+            data=request.data,
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data['user']
+        empresa = serializer.validated_data['empresa']
+        tokens = serializer.validated_data['tokens']
+
+        payload = AuthService.build_session_payload(user, empresa, tokens)
+        payload['refresh'] = tokens['refresh']
+        return Response(payload, status=status.HTTP_200_OK)

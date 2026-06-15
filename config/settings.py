@@ -351,6 +351,11 @@ if MALLOR_LAN_HOST:
 if RENDER_EXTERNAL_HOSTNAME:
     CORS_ALLOWED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
 
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^exp://.*$",
+    r"^capacitor://.*$",
+]
+
 CSRF_TRUSTED_ORIGINS = _get_csv_env('CSRF_TRUSTED_ORIGINS', [
     "http://localhost:3000",
     "http://127.0.0.1:3000",

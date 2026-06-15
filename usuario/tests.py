@@ -30,6 +30,63 @@ class UsuarioMeApiTest(TestCase):
 
 
 @pytest.mark.django_db
+def test_mobile_login_exitoso():
+    client = APIClient()
+    empresa = EmpresaFactory(razon_social='Empresa Mobile')
+    user = UsuarioFactory(username='vendedor_mobile', password='Secret123', role=Usuario.Rol.EMPLEADO)
+    EmpresaUsuarioFactory(empresa=empresa, usuario=user, rol=EmpresaUsuario.Rol.EMPLEADO, activo=True)
+
+    response = client.post(
+        '/api/auth/mobile/login/',
+        {'username': 'vendedor_mobile', 'password': 'Secret123'},
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert 'access' in response.data
+    assert 'refresh' in response.data
+    assert 'user' in response.data
+
+
+@pytest.mark.django_db
+def test_mobile_login_credenciales_invalidas():
+    client = APIClient()
+    UsuarioFactory(username='vendedor_bad', password='Secret123', role=Usuario.Rol.EMPLEADO)
+
+    response = client.post(
+        '/api/auth/mobile/login/',
+        {'username': 'vendedor_bad', 'password': 'wrong'},
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+@pytest.mark.django_db
+def test_mobile_login_rate_limit(settings):
+    from django.core.cache import cache
+    cache.clear()
+    client = APIClient()
+    UsuarioFactory(username='vendedor_rate', password='Secret123', role=Usuario.Rol.EMPLEADO)
+
+    for _ in range(5):
+        client.post(
+            '/api/auth/mobile/login/',
+            {'username': 'vendedor_rate', 'password': 'wrong'},
+            format='json',
+        )
+
+    response = client.post(
+        '/api/auth/mobile/login/',
+        {'username': 'vendedor_rate', 'password': 'Secret123'},
+        format='json',
+    )
+
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    cache.clear()
+
+
+@pytest.mark.django_db
 def test_admin_puede_listar_usuarios_con_filtros():
     client = APIClient()
     empresa = EmpresaFactory(razon_social='Empresa Usuarios')
