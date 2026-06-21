@@ -4,6 +4,7 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -57,7 +58,11 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.inner}>
-        <Text style={styles.title}>Mallor</Text>
+        <Image
+          source={require('../../assets/logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
+        />
 
         <View style={styles.form}>
           <View style={styles.field}>
@@ -121,9 +126,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xl,
   },
-  title: {
-    ...Typography.title,
-    fontSize: 32,
+  logo: {
+    width: 160,
+    height: 120,
+    alignSelf: 'center',
     marginBottom: Spacing.xl,
   },
   form: { gap: Spacing.lg },
