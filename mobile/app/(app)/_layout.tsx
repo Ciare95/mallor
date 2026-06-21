@@ -52,6 +52,17 @@ export default function AppLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="inventario"
+        options={{
+          title: 'Inventario',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="cube-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen name="inventario/[id]" options={{ href: null }} />
+      <Tabs.Screen name="inventario/categorias" options={{ href: null }} />
     </Tabs>
   );
 }

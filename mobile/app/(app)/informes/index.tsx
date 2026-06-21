@@ -67,10 +67,11 @@ export default function InformesScreen() {
     queryFn: () => obtenerDashboardEstadisticas(filtros),
   });
 
-  const totalVentas = data?.total_ventas ?? data?.ventas_totales ?? 0;
-  const numTransacciones = data?.numero_ventas ?? data?.total_transacciones ?? 0;
-  const ticketPromedio = numTransacciones > 0 ? (totalVentas / numTransacciones) : 0;
-  const topProductos: any[] = data?.top_productos ?? data?.productos_mas_vendidos ?? [];
+  const resumen = data?.ventas?.resumen;
+  const totalVentas = resumen?.total_ventas ?? 0;
+  const numTransacciones = resumen?.cantidad_ventas ?? 0;
+  const ticketPromedio = resumen?.ticket_promedio ?? 0;
+  const topProductos: any[] = data?.productos_destacados ?? [];
 
   return (
     <View style={styles.screen}>
@@ -167,7 +168,7 @@ export default function InformesScreen() {
                     <Text style={[Typography.body, { flex: 1 }]} numberOfLines={1}>
                       {p.nombre ?? p.producto__nombre ?? `Producto ${i + 1}`}
                     </Text>
-                    <Text style={Typography.secondary}>{p.total_vendido ?? p.cantidad ?? 0} uds.</Text>
+                    <Text style={Typography.secondary}>{p.cantidad_vendida ?? p.total_vendido ?? 0} uds.</Text>
                   </View>
                 ))}
               </View>
