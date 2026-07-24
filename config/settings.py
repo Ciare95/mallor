@@ -146,12 +146,12 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': 'django.db.backends.mysql',
         'NAME': os.getenv('DB_NAME', 'mallor'),
-        'USER': os.getenv('DB_USER', 'postgres'),
+        'USER': os.getenv('DB_USER', 'root'),
         'PASSWORD': os.getenv('DB_PASSWORD', ''),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
+        'HOST': os.getenv('DB_HOST', '127.0.0.1'),
+        'PORT': os.getenv('DB_PORT', '3306'),
     }
 }
 
@@ -171,8 +171,8 @@ if DATABASE_URL:
     )
 elif not DEBUG and MALLOR_MODE == 'cloud':
     raise ImproperlyConfigured(
-        'DATABASE_URL es obligatorio en producción cloud. '
-        'Configura la Internal Database URL de Render PostgreSQL.',
+        'DATABASE_URL es obligatorio en produccion cloud. '
+        'Configura la cadena de conexion MySQL.',
     )
 
 

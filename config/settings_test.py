@@ -9,12 +9,12 @@ ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'testserver']
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': 'django.db.backends.mysql',
         'NAME': os.getenv('DB_NAME', 'mallor_test'),  # noqa: F405
-        'USER': os.getenv('DB_USER', 'postgres'),  # noqa: F405
-        'PASSWORD': os.getenv('DB_PASSWORD', 'postgres'),  # noqa: F405
-        'HOST': os.getenv('DB_HOST', 'localhost'),  # noqa: F405
-        'PORT': os.getenv('DB_PORT', '5432'),  # noqa: F405
+        'USER': os.getenv('DB_USER', 'root'),  # noqa: F405
+        'PASSWORD': os.getenv('DB_PASSWORD', ''),  # noqa: F405
+        'HOST': os.getenv('DB_HOST', '127.0.0.1'),  # noqa: F405
+        'PORT': os.getenv('DB_PORT', '3306'),  # noqa: F405
         'TEST': {
             'NAME': os.getenv('TEST_DB_NAME', 'test_mallor'),  # noqa: F405
         },
