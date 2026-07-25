@@ -15,7 +15,7 @@ if pgrep -u "$USER" -f "gunicorn config.wsgi:application" >/dev/null; then
   sleep 2
 fi
 
-nohup python -m gunicorn config.wsgi:application \
+nohup python3 -m gunicorn config.wsgi:application \
   --bind "127.0.0.1:$APP_PORT" \
   --workers 3 \
   --timeout 120 \
