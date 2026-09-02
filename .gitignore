@@ -184,8 +184,9 @@ informes/pdfs/
 informes/excel/
 productos/
 
-# Factus API files (configuración local)
+# Factus API files (configuración local y colecciones con credenciales)
 api-factus-local.json
+api-factus-*.json
 *.env
 .env.local
 .env.development

@@ -1,0 +1,78 @@
+# VCS
+.git
+.gitignore
+.github
+
+# Entornos y secretos
+.env
+.env.*
+*.env
+*.pem
+*.key
+
+# Credenciales / colecciones con secretos
+api-factus-v2.json
+api-factus-*.json
+
+# Bases de datos locales
+*.sqlite3
+*.sqlite3-journal
+*.db
+
+# Datos subidos y estáticos generados
+media/
+staticfiles/
+informes/pdfs/
+informes/excel/
+productos/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.pytest_cache/
+.tox/
+.nox/
+htmlcov/
+.coverage
+.coverage.*
+.coveragerc
+*.log
+
+# Node / frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+frontend/coverage/
+frontend/.cache/
+frontend/.next/
+frontend/out/
+
+# Tauri / PyInstaller (no forman parte de la imagen web)
+src-tauri/
+mobile/
+mallor-server.spec
+*.msi
+*.exe
+
+# Configuración de herramientas y skills (no necesarias en runtime)
+.agents/
+.claude/
+.codex/
+.opencode/
+
+# Documentación y artefactos locales
+*.docx
+*.zip
+nul
+
+# Sistema
+.DS_Store
+Thumbs.db
+Desktop.ini

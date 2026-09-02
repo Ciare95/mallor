@@ -214,18 +214,55 @@ app/
 
 ---
 
-## Contribución
+## Despliegue con Docker (VPS)
 
-Las contribuciones son bienvenidas. Por favor lee [CONTRIBUTING.md](./CONTRIBUTING.md) antes de abrir un Pull Request.
+Mallor se despliega en un VPS con **Docker** + **CloudPanel** (proxy/SSL). Todo vive en la imagen Docker: no se instala Python, Node ni MySQL en el host.
 
-**Flujo de trabajo:**
+### 1. Preparar el VPS (una sola vez)
 
-1. Haz fork del repositorio
-2. Crea una rama desde `develop`: `git checkout -b feature/mi-feature`
-3. Realiza commits siguiendo [Conventional Commits](https://www.conventionalcommits.org/)
-4. Abre un Pull Request hacia `develop`
+1. Instalar **Docker Engine** + **Docker Compose plugin** y **CloudPanel**.
+2. Clonar el repo en `/opt/mallor`:
 
----
+   ```bash
+   git clone https://github.com/Ciare95/mallor.git /opt/mallor
+   cd /opt/mallor
+   ```
+
+3. Crear el entorno de producción a partir de la plantilla y rellenar los valores reales:
+
+   ```bash
+   cp .env.production.example .env
+   # edita .env con SECRET_KEY, MYSQL_PASSWORD, MYSQL_ROOT_PASSWORD, FACTUS_*, etc.
+   ```
+
+4. Construir y levantar el stack:
+
+   ```bash
+   docker compose build
+   docker compose up -d
+   ```
+
+5. En **CloudPanel**: crear el sitio, reverse proxy a `http://127.0.0.1:8000`, activar SSL (Let's Encrypt) y, para servir los archivos subidos, añadir un `location /media/` que apunte a `/opt/mallor/media`.
+
+### 2. CI/CD (deploy con `git push`)
+
+El workflow `.github/workflows/deploy.yml` despliega a producción al hacer push a `main`. Configura estos **GitHub Secrets** en el repo (`Settings → Secrets and variables → Actions`):
+
+| Secret     | Descripción                            |
+|------------|----------------------------------------|
+| `SSH_HOST` | IP o dominio del VPS                   |
+| `SSH_USER` | Usuario SSH del servidor               |
+| `SSH_KEY`  | Clave privada SSH del usuario deploy   |
+| `SSH_PORT` | (Opcional) Puerto SSH, por defecto 22  |
+
+Tras configurarlos, `git push origin main` ejecuta en el servidor: `git pull` → `docker compose build` → `docker compose up -d` → `migrate` → `restart`.
+
+### Seguridad
+
+- Los secretos viven solo en el `.env` del servidor y en GitHub Secrets; nunca se versionan.
+- `.dockerignore` excluye `media/`, `*.sqlite3`, `.env*`, `api-factus-*.json`, etc., del contexto de build.
+- `SECRET_KEY` es obligatoria por entorno en producción (`DEBUG=False`).
+
 
 ## Licencia
 

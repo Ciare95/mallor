@@ -45,12 +45,22 @@ def _get_csv_env(name: str, default=None) -> list[str]:
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-txm643xxb+-75c0_vvpb4e87t804x(i!zrmse6q#=ai@70m=jp')
-
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _get_bool_env('DEBUG', True)
 TESTING = 'test' in sys.argv
+
+
+def _resolve_secret_key(debug: bool, provided: str | None) -> str:
+    if not debug and not provided:
+        raise ImproperlyConfigured(
+            'SECRET_KEY es obligatorio en produccion (DEBUG=False). '
+            'Configura la variable SECRET_KEY en el entorno.'
+        )
+    return provided or 'django-insecure-txm643xxb+-75c0_vvpb4e87t804x(i!zrmse6q#=ai@70m=jp'
+
+
+# SECURITY WARNING: keep the secret key used in production secret!
+SECRET_KEY = _resolve_secret_key(DEBUG, os.getenv('SECRET_KEY'))
 
 MALLOR_MODE = os.getenv('MALLOR_MODE', 'cloud').strip().lower()
 MALLOR_LOCAL_SERVER = _get_bool_env('MALLOR_LOCAL_SERVER', MALLOR_MODE == 'local')
